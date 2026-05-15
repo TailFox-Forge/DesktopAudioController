@@ -35,7 +35,7 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
-        // Phase 2부터는 실제 Core Audio 서비스로 장치와 세션을 조회합니다.
+        // 실제 Core Audio 서비스로 장치와 세션을 조회합니다.
         _settingsService = new SettingsService();
         _audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
         _processMetadataCacheService = new CachedProcessMetadataService();

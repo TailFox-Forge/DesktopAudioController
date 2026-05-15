@@ -3,8 +3,7 @@ using DesktopAudioController.Models;
 namespace DesktopAudioController.Services;
 
 /// <summary>
-/// Phase 1 설계 검증용 임시 장치 목록 서비스입니다.
-/// 실제 Core Audio 연동 전까지 화면 골격을 유지하기 위해 사용합니다.
+/// 실제 Core Audio 연동 없이 화면 골격과 바인딩을 점검할 때 쓰는 임시 장치 목록 서비스입니다.
 /// </summary>
 public sealed class PlaceholderAudioDeviceCatalogService : IAudioDeviceCatalogService
 {
@@ -47,21 +46,21 @@ public sealed class PlaceholderAudioDeviceCatalogService : IAudioDeviceCatalogSe
     }
 
     /// <summary>
-    /// Phase 1 플레이스홀더 구현입니다. 실제 장치 볼륨 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
+    /// 임시 구현입니다. 실제 장치 볼륨 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
     /// </summary>
     public void SetVolume(string deviceId, int volume)
     {
     }
 
     /// <summary>
-    /// Phase 1 플레이스홀더 구현입니다. 실제 장치 음소거 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
+    /// 임시 구현입니다. 실제 장치 음소거 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
     /// </summary>
     public void SetMuted(string deviceId, bool muted)
     {
     }
 
     /// <summary>
-    /// Phase 1 플레이스홀더 구현입니다. 실제 기본 장치 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
+    /// 임시 구현입니다. 실제 기본 장치 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
     /// </summary>
     public void SetAsDefault(string deviceId)
     {
