@@ -552,7 +552,7 @@ MVP 기준으로는 **zip 배포가 가장 빠르고 현실적**합니다.
 ## 14. 초기 저장소 구조
 
 ```text
-desktop-audio-controller/
+DesktopAudioController/
   README.md
   .gitignore
   docs/

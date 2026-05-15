@@ -161,9 +161,9 @@ artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip.sha256
 
 현재 게시된 프리릴리즈:
 
-- [v0.7.3-preview2](https://github.com/TailFox-Forge/desktop-audio-controller/releases/tag/v0.7.3-preview2)
-- [v0.6.0-preview2](https://github.com/TailFox-Forge/desktop-audio-controller/releases/tag/v0.6.0-preview2)
-- [v0.3.0-preview1](https://github.com/TailFox-Forge/desktop-audio-controller/releases/tag/v0.3.0-preview1)
+- [v0.7.3-preview2](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview2)
+- [v0.6.0-preview2](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.6.0-preview2)
+- [v0.3.0-preview1](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.3.0-preview1)
 
 ## 문서
 

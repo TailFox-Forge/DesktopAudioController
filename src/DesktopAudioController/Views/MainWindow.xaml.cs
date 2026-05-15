@@ -46,7 +46,7 @@ public partial class MainWindow : Window
     private bool _isExitRequested;
 
     // 사용자를 GitHub 릴리즈 목록으로 보내는 고정 URL입니다.
-    private static readonly string ReleasesPageUrl = "https://github.com/TailFox-Forge/desktop-audio-controller/releases";
+    private static readonly string ReleasesPageUrl = "https://github.com/TailFox-Forge/DesktopAudioController/releases";
 
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
