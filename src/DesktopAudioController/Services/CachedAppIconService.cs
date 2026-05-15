@@ -18,6 +18,9 @@ public sealed class CachedAppIconService : IAppIconService
     // 실행 파일 경로를 키로 사용해 아이콘 또는 실패 상태를 저장합니다.
     private readonly Dictionary<string, IconCacheEntry> _iconCache = new(StringComparer.OrdinalIgnoreCase);
 
+    // 현재 백그라운드에서 실제 아이콘을 읽는 중인 작업을 경로별로 합치기 위한 in-flight 캐시입니다.
+    private readonly Dictionary<string, Task<ImageSource?>> _inflightIconLoads = new(StringComparer.OrdinalIgnoreCase);
+
     // 다음 정리 작업을 수행할 시각입니다. 너무 자주 정리하지 않도록 간격을 둡니다.
     private DateTimeOffset _nextCleanupUtc = DateTimeOffset.MinValue;
 
@@ -94,6 +97,10 @@ public sealed class CachedAppIconService : IAppIconService
         // now는 캐시 만료와 실패 재시도 시점을 계산하는 기준 시각입니다.
         var now = DateTimeOffset.UtcNow;
 
+        // iconLoadTask는 동일 경로에 대해 이미 진행 중인 로드 작업이 있으면 그것을 재사용하고,
+        // 없으면 이번 호출이 새로 만든 백그라운드 적재 작업입니다.
+        Task<ImageSource?> iconLoadTask;
+
         lock (_syncRoot)
         {
             CleanupExpiredEntriesLocked(now);
@@ -108,10 +115,40 @@ public sealed class CachedAppIconService : IAppIconService
                     return null;
                 }
             }
+
+            if (_inflightIconLoads.TryGetValue(executablePath, out var existingLoadTask))
+            {
+                iconLoadTask = existingLoadTask;
+            }
+            else
+            {
+                iconLoadTask = Task.Run(() => LoadIcon(executablePath), CancellationToken.None);
+                _inflightIconLoads[executablePath] = iconLoadTask;
+            }
         }
 
-        // iconImage는 캐시 미스이거나 실패 캐시 재시도 시점이 지난 경우 실제 파일에서 다시 읽은 결과입니다.
-        var iconImage = await Task.Run(() => LoadIcon(executablePath), cancellationToken);
+        ImageSource? iconImage;
+        try
+        {
+            // iconImage는 동일 경로에 대해 하나로 합쳐진 실제 백그라운드 아이콘 적재 결과입니다.
+            iconImage = cancellationToken.CanBeCanceled
+                ? await iconLoadTask.WaitAsync(cancellationToken)
+                : await iconLoadTask;
+        }
+        catch
+        {
+            lock (_syncRoot)
+            {
+                if (_inflightIconLoads.TryGetValue(executablePath, out var inflightTask)
+                    && ReferenceEquals(inflightTask, iconLoadTask))
+                {
+                    _inflightIconLoads.Remove(executablePath);
+                }
+            }
+
+            throw;
+        }
+
         var refreshedEntry = new IconCacheEntry
         {
             IconImage = iconImage,
@@ -123,6 +160,12 @@ public sealed class CachedAppIconService : IAppIconService
         lock (_syncRoot)
         {
             _iconCache[executablePath] = refreshedEntry;
+
+            if (_inflightIconLoads.TryGetValue(executablePath, out var inflightTask)
+                && ReferenceEquals(inflightTask, iconLoadTask))
+            {
+                _inflightIconLoads.Remove(executablePath);
+            }
         }
 
         return iconImage;
