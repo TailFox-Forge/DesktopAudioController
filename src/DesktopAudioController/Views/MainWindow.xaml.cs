@@ -31,6 +31,9 @@ public partial class MainWindow : Window
     // 같은 틱에서 중복 새로고침 요청이 들어올 때 한 번으로 합치기 위한 플래그입니다.
     private bool _isNotificationRefreshQueued;
 
+    // 같은 틱 안에서 여러 이벤트가 섞이면 더 큰 범위의 갱신 종류를 보존하기 위한 필드입니다.
+    private AudioNotificationChangeKind _pendingNotificationKind = AudioNotificationChangeKind.State;
+
     // 사용자 의도로 종료하는 중인지 여부입니다. false면 닫기를 트레이 최소화로 전환합니다.
     private bool _isExitRequested;
 
@@ -199,21 +202,34 @@ public partial class MainWindow : Window
     /// <summary>
     /// Core Audio 콜백이 들어오면 WPF UI 스레드에서 목록 새로고침을 예약합니다.
     /// </summary>
-    private void AudioNotificationService_OnChanged(object? sender, EventArgs e)
+    private void AudioNotificationService_OnChanged(object? sender, AudioNotificationChangedEventArgs e)
     {
         if (_isNotificationRefreshQueued)
         {
+            if (e.Kind == AudioNotificationChangeKind.Topology)
+            {
+                _pendingNotificationKind = AudioNotificationChangeKind.Topology;
+            }
+
             return;
         }
 
         _isNotificationRefreshQueued = true;
+        _pendingNotificationKind = e.Kind;
 
         // Core Audio 콜백은 UI 스레드가 아닐 수 있으므로 Dispatcher를 통해 화면 갱신을 예약합니다.
         Dispatcher.InvokeAsync(() =>
         {
             _isNotificationRefreshQueued = false;
-            _viewModel.Load();
-            UpdateEmptyState();
+            if (_pendingNotificationKind == AudioNotificationChangeKind.Topology)
+            {
+                _viewModel.Load();
+                UpdateEmptyState();
+                RefreshTrayMenu();
+                return;
+            }
+
+            _viewModel.RefreshStateOnly();
             RefreshTrayMenu();
         });
     }

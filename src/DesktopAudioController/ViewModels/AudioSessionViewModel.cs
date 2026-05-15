@@ -8,6 +8,15 @@ namespace DesktopAudioController.ViewModels;
 /// </summary>
 public sealed class AudioSessionViewModel : ObservableObject
 {
+    // 외부 상태 동기화 중 서비스 재호출을 막기 위한 플래그입니다.
+    private bool _suppressCallbacks;
+
+    // UI에 표시할 세션 이름입니다.
+    private string _displayName;
+
+    // 세션 앱 아이콘 이미지입니다.
+    private ImageSource? _iconImage;
+
     // 세션 볼륨 슬라이더와 연결되는 내부 값입니다.
     private int _volume;
 
@@ -35,8 +44,8 @@ public sealed class AudioSessionViewModel : ObservableObject
     {
         DeviceId = deviceId;
         Id = id;
-        DisplayName = displayName;
-        IconImage = iconImage;
+        _displayName = displayName;
+        _iconImage = iconImage;
         _volume = initialVolume;
         _isMuted = initialMuted;
         _onVolumeChanged = onVolumeChanged;
@@ -56,12 +65,20 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// <summary>
     /// UI에 노출할 세션 표시 이름입니다.
     /// </summary>
-    public string DisplayName { get; }
+    public string DisplayName
+    {
+        get => _displayName;
+        private set => SetProperty(ref _displayName, value);
+    }
 
     /// <summary>
     /// 세션 앱을 식별하기 위한 아이콘 이미지입니다.
     /// </summary>
-    public ImageSource? IconImage { get; }
+    public ImageSource? IconImage
+    {
+        get => _iconImage;
+        private set => SetProperty(ref _iconImage, value);
+    }
 
     /// <summary>
     /// 현재 세션 볼륨 값입니다.
@@ -72,6 +89,11 @@ public sealed class AudioSessionViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _volume, value))
+            {
+                return;
+            }
+
+            if (_suppressCallbacks)
             {
                 return;
             }
@@ -100,6 +122,11 @@ public sealed class AudioSessionViewModel : ObservableObject
                 return;
             }
 
+            if (_suppressCallbacks)
+            {
+                return;
+            }
+
             try
             {
                 _onMutedChanged(DeviceId, Id, value);
@@ -108,6 +135,25 @@ public sealed class AudioSessionViewModel : ObservableObject
             {
                 // 장치 분리 등 실시간 오류는 앱 종료 대신 다음 새로고침에서 복구합니다.
             }
+        }
+    }
+
+    /// <summary>
+    /// 서비스에서 읽어온 최신 세션 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
+    /// </summary>
+    public void UpdateSnapshot(string displayName, ImageSource? iconImage, int volume, bool isMuted)
+    {
+        _suppressCallbacks = true;
+        try
+        {
+            DisplayName = displayName;
+            IconImage = iconImage;
+            Volume = volume;
+            IsMuted = isMuted;
+        }
+        finally
+        {
+            _suppressCallbacks = false;
         }
     }
 }

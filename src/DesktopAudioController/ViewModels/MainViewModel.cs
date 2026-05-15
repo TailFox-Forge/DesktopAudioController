@@ -89,6 +89,41 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 현재 보이는 장치 카드 구조를 유지한 채 상태 값만 부분 갱신합니다.
+    /// </summary>
+    public void RefreshStateOnly()
+    {
+        // devicesById는 최신 장치 상태를 빠르게 찾기 위한 인덱스입니다.
+        var devicesById = _audioDeviceCatalogService
+            .GetAvailableOutputDevices()
+            .ToDictionary(device => device.Id);
+
+        foreach (var visibleDevice in VisibleDevices)
+        {
+            if (!devicesById.TryGetValue(visibleDevice.Id, out var currentDevice))
+            {
+                continue;
+            }
+
+            visibleDevice.UpdateSnapshot(
+                currentDevice.Name,
+                currentDevice.IsDefault,
+                currentDevice.IsConnected,
+                currentDevice.Volume,
+                currentDevice.IsMuted);
+
+            if (currentDevice.IsConnected)
+            {
+                RefreshSessionsStateOnly(visibleDevice);
+            }
+            else
+            {
+                visibleDevice.Sessions.Clear();
+            }
+        }
+    }
+
+    /// <summary>
     /// AudioDeviceInfo를 화면용 VisibleDeviceViewModel로 변환합니다.
     /// </summary>
     private VisibleDeviceViewModel CreateVisibleDeviceViewModel(AudioDeviceInfo device)
@@ -127,18 +162,7 @@ public sealed class MainViewModel : ObservableObject
             device.Sessions.Clear();
             foreach (var session in sessions)
             {
-                // sessionViewModel은 장치 카드 아래에 표시될 앱 세션 한 줄입니다.
-                var sessionViewModel = new AudioSessionViewModel(
-                    device.Id,
-                    session.Id,
-                    session.DisplayName,
-                    _appIconService.GetIcon(session.ExecutablePath),
-                    session.Volume,
-                    session.IsMuted,
-                    OnSessionVolumeChanged,
-                    OnSessionMutedChanged);
-
-                device.Sessions.Add(sessionViewModel);
+                device.Sessions.Add(CreateSessionViewModel(device.Id, session));
             }
         }
         catch
@@ -146,6 +170,64 @@ public sealed class MainViewModel : ObservableObject
             // 세션 조회 실패는 앱 종료 대신 빈 세션 목록으로 처리합니다.
             device.Sessions.Clear();
         }
+    }
+
+    /// <summary>
+    /// 상태 변경 알림 시 기존 세션 컬렉션을 최대한 유지하면서 값만 갱신합니다.
+    /// </summary>
+    private void RefreshSessionsStateOnly(VisibleDeviceViewModel device)
+    {
+        try
+        {
+            // sessionSnapshots는 현재 장치에서 확인된 최신 세션 상태입니다.
+            var sessionSnapshots = _audioSessionService.GetSessions(device.Id);
+            var snapshotById = sessionSnapshots.ToDictionary(session => session.Id);
+            var existingById = device.Sessions.ToDictionary(session => session.Id);
+
+            for (var index = device.Sessions.Count - 1; index >= 0; index--)
+            {
+                var session = device.Sessions[index];
+                if (!snapshotById.ContainsKey(session.Id))
+                {
+                    device.Sessions.RemoveAt(index);
+                }
+            }
+
+            foreach (var snapshot in sessionSnapshots)
+            {
+                if (existingById.TryGetValue(snapshot.Id, out var existingSession))
+                {
+                    existingSession.UpdateSnapshot(
+                        snapshot.DisplayName,
+                        _appIconService.GetIcon(snapshot.ExecutablePath),
+                        snapshot.Volume,
+                        snapshot.IsMuted);
+                    continue;
+                }
+
+                device.Sessions.Add(CreateSessionViewModel(device.Id, snapshot));
+            }
+        }
+        catch
+        {
+            // 상태 부분 갱신 실패는 다음 전체 새로고침에서 복구합니다.
+        }
+    }
+
+    /// <summary>
+    /// 서비스 모델을 화면용 세션 뷰모델로 변환합니다.
+    /// </summary>
+    private AudioSessionViewModel CreateSessionViewModel(string deviceId, AudioSessionInfo session)
+    {
+        return new AudioSessionViewModel(
+            deviceId,
+            session.Id,
+            session.DisplayName,
+            _appIconService.GetIcon(session.ExecutablePath),
+            session.Volume,
+            session.IsMuted,
+            OnSessionVolumeChanged,
+            OnSessionMutedChanged);
     }
 
     /// <summary>

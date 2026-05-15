@@ -8,7 +8,7 @@ public interface IAudioNotificationService : IDisposable
     /// <summary>
     /// 오디오 토폴로지 또는 상태가 바뀌었을 때 발생하는 통합 이벤트입니다.
     /// </summary>
-    event EventHandler? Changed;
+    event EventHandler<AudioNotificationChangedEventArgs>? Changed;
 
     /// <summary>
     /// 오디오 이벤트 구독을 시작합니다.

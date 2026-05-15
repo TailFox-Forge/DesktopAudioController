@@ -31,7 +31,7 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// <summary>
     /// 오디오 토폴로지 또는 상태가 바뀌었을 때 발생하는 통합 이벤트입니다.
     /// </summary>
-    public event EventHandler? Changed;
+    public event EventHandler<AudioNotificationChangedEventArgs>? Changed;
 
     /// <summary>
     /// Windows 오디오 엔진 이벤트 구독을 시작합니다.
@@ -66,7 +66,7 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
             RebuildSubscriptionsLocked();
         }
 
-        RaiseChanged();
+        RaiseChanged(AudioNotificationChangeKind.Topology);
     }
 
     /// <summary>
@@ -74,7 +74,7 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     internal void HandleStateChanged()
     {
-        RaiseChanged();
+        RaiseChanged(AudioNotificationChangeKind.State);
     }
 
     /// <summary>
@@ -164,9 +164,9 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// <summary>
     /// 통합 변경 이벤트를 발행합니다.
     /// </summary>
-    private void RaiseChanged()
+    private void RaiseChanged(AudioNotificationChangeKind kind)
     {
-        Changed?.Invoke(this, EventArgs.Empty);
+        Changed?.Invoke(this, new AudioNotificationChangedEventArgs(kind));
     }
 
     /// <summary>

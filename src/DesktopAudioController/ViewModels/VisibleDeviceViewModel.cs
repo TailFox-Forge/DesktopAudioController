@@ -8,6 +8,18 @@ namespace DesktopAudioController.ViewModels;
 /// </summary>
 public sealed class VisibleDeviceViewModel : ObservableObject
 {
+    // 외부 상태 동기화 중 서비스 재호출을 막기 위한 플래그입니다.
+    private bool _suppressCallbacks;
+
+    // 화면에 표시할 장치 이름입니다.
+    private string _name;
+
+    // 현재 기본 출력 장치 여부입니다.
+    private bool _isDefault;
+
+    // 현재 장치 연결 여부입니다.
+    private bool _isConnected;
+
     // 슬라이더와 바인딩되는 현재 볼륨 값입니다.
     private int _volume;
 
@@ -41,9 +53,9 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         Action<string> onSetAsDefault)
     {
         Id = id;
-        Name = name;
-        IsDefault = isDefault;
-        IsConnected = isConnected;
+        _name = name;
+        _isDefault = isDefault;
+        _isConnected = isConnected;
         _volume = initialVolume;
         _isMuted = initialMuted;
         _onVolumeChanged = onVolumeChanged;
@@ -59,17 +71,29 @@ public sealed class VisibleDeviceViewModel : ObservableObject
     /// <summary>
     /// 메인 화면에 표시할 장치 이름입니다.
     /// </summary>
-    public string Name { get; }
+    public string Name
+    {
+        get => _name;
+        private set => SetProperty(ref _name, value);
+    }
 
     /// <summary>
     /// 기본 출력 장치 여부입니다.
     /// </summary>
-    public bool IsDefault { get; }
+    public bool IsDefault
+    {
+        get => _isDefault;
+        private set => SetProperty(ref _isDefault, value);
+    }
 
     /// <summary>
     /// 현재 장치 연결 여부입니다.
     /// </summary>
-    public bool IsConnected { get; }
+    public bool IsConnected
+    {
+        get => _isConnected;
+        private set => SetProperty(ref _isConnected, value);
+    }
 
     /// <summary>
     /// 현재 마스터 볼륨 값입니다.
@@ -80,6 +104,11 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _volume, value))
+            {
+                return;
+            }
+
+            if (_suppressCallbacks)
             {
                 return;
             }
@@ -104,6 +133,11 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _isMuted, value))
+            {
+                return;
+            }
+
+            if (_suppressCallbacks)
             {
                 return;
             }
@@ -144,5 +178,25 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         }
 
         _onSetAsDefault(Id);
+    }
+
+    /// <summary>
+    /// 서비스에서 읽어온 최신 장치 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
+    /// </summary>
+    public void UpdateSnapshot(string name, bool isDefault, bool isConnected, int volume, bool isMuted)
+    {
+        _suppressCallbacks = true;
+        try
+        {
+            Name = name;
+            IsDefault = isDefault;
+            IsConnected = isConnected;
+            Volume = volume;
+            IsMuted = isMuted;
+        }
+        finally
+        {
+            _suppressCallbacks = false;
+        }
     }
 }
