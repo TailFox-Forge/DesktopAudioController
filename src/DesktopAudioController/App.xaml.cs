@@ -28,6 +28,9 @@ public partial class App : System.Windows.Application
     // PID 기준 프로세스 이름/실행 경로를 캐싱하는 서비스입니다.
     private IProcessMetadataCacheService? _processMetadataCacheService;
 
+    // Windows 자동 실행 레지스트리 등록을 제어하는 서비스입니다.
+    private IStartupLaunchService? _startupLaunchService;
+
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
     /// </summary>
@@ -42,7 +45,22 @@ public partial class App : System.Windows.Application
         _audioSessionService = new NativeAudioSessionService(_processMetadataCacheService);
         _audioNotificationService = new NativeAudioNotificationService();
         _appIconService = new CachedAppIconService();
+        _startupLaunchService = new RegistryStartupLaunchService();
         _audioNotificationService.Start();
+
+        // zip 배포 특성상 실행 경로가 바뀔 수 있으므로, 자동 실행이 켜져 있으면 현재 exe 경로로 재동기화합니다.
+        var startupSettings = _settingsService.Load();
+        if (startupSettings.RunAtWindowsStartup)
+        {
+            try
+            {
+                _startupLaunchService.Apply(true);
+            }
+            catch
+            {
+                // 앱 시작 자체는 막지 않고, 사용자가 설정창을 다시 저장할 때 동일 오류를 안내합니다.
+            }
+        }
 
         // 메인 화면에서 사용할 뷰모델을 만들고 저장된 설정 기준으로 데이터를 채웁니다.
         var mainViewModel = new MainViewModel(
@@ -96,6 +114,7 @@ public partial class App : System.Windows.Application
     {
         return new SettingsViewModel(
             _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
-            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."));
+            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
+            _startupLaunchService ?? throw new InvalidOperationException("Startup launch service is not initialized."));
     }
 }

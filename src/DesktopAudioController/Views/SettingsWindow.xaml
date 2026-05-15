@@ -74,6 +74,10 @@
                           IsChecked="{Binding MinimizeToTray}">
                     <TextBlock Text="닫기 대신 트레이로 최소화" />
                 </CheckBox>
+                <CheckBox Margin="0,0,0,8"
+                          IsChecked="{Binding RunAtWindowsStartup}">
+                    <TextBlock Text="Windows 시작 시 자동 실행" />
+                </CheckBox>
                 <CheckBox IsChecked="{Binding StartMinimized}">
                     <TextBlock Text="시작 시 최소화" />
                 </CheckBox>

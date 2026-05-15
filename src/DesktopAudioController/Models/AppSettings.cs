@@ -16,6 +16,11 @@ public sealed class AppSettings
     public bool StartMinimized { get; set; }
 
     /// <summary>
+    /// Windows 로그인 후 현재 사용자 세션에서 앱을 자동 실행할지 여부입니다.
+    /// </summary>
+    public bool RunAtWindowsStartup { get; set; }
+
+    /// <summary>
     /// 창 닫기 동작을 종료 대신 트레이 최소화로 바꿀지 여부입니다.
     /// </summary>
     public bool MinimizeToTray { get; set; } = true;

@@ -42,6 +42,15 @@ public partial class SettingsWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
+        catch (StartupRegistrationException exception)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                $"Windows 자동 실행 옵션을 적용하지 못했습니다.\n\n레지스트리 경로: {exception.RegistryPath}\n값 이름: {exception.ValueName}\n원인: {exception.InnerException?.Message ?? exception.Message}",
+                "자동 실행 설정 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
         catch (Exception exception)
         {
             System.Windows.MessageBox.Show(

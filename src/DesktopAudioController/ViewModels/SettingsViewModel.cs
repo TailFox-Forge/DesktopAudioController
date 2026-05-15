@@ -17,8 +17,14 @@ public sealed class SettingsViewModel : ObservableObject
     // 현재 사용 가능한 오디오 장치를 조회하는 서비스입니다.
     private readonly IAudioDeviceCatalogService _audioDeviceCatalogService;
 
+    // Windows 자동 실행 등록을 적용하는 서비스입니다.
+    private readonly IStartupLaunchService _startupLaunchService;
+
     // 시작 최소화 옵션의 내부 필드입니다.
     private bool _startMinimized;
+
+    // Windows 자동 실행 옵션의 내부 필드입니다.
+    private bool _runAtWindowsStartup;
 
     // 트레이 최소화 옵션의 내부 필드입니다.
     private bool _minimizeToTray;
@@ -34,10 +40,12 @@ public sealed class SettingsViewModel : ObservableObject
     /// </summary>
     public SettingsViewModel(
         ISettingsService settingsService,
-        IAudioDeviceCatalogService audioDeviceCatalogService)
+        IAudioDeviceCatalogService audioDeviceCatalogService,
+        IStartupLaunchService startupLaunchService)
     {
         _settingsService = settingsService;
         _audioDeviceCatalogService = audioDeviceCatalogService;
+        _startupLaunchService = startupLaunchService;
     }
 
     /// <summary>
@@ -52,6 +60,15 @@ public sealed class SettingsViewModel : ObservableObject
     {
         get => _startMinimized;
         set => SetProperty(ref _startMinimized, value);
+    }
+
+    /// <summary>
+    /// Windows 로그인 후 현재 사용자 세션에서 앱을 자동 실행할지 여부입니다.
+    /// </summary>
+    public bool RunAtWindowsStartup
+    {
+        get => _runAtWindowsStartup;
+        set => SetProperty(ref _runAtWindowsStartup, value);
     }
 
     /// <summary>
@@ -110,6 +127,7 @@ public sealed class SettingsViewModel : ObservableObject
 
         // 토글 옵션도 저장된 값으로 복원합니다.
         StartMinimized = settings.StartMinimized;
+        RunAtWindowsStartup = settings.RunAtWindowsStartup;
         MinimizeToTray = settings.MinimizeToTray;
         ShowOnlyConnectedDevices = settings.ShowOnlyConnectedDevices;
         ShowSystemSounds = settings.ShowSystemSounds;
@@ -129,12 +147,15 @@ public sealed class SettingsViewModel : ObservableObject
                 .Select(device => device.Id)
                 .ToList(),
             StartMinimized = StartMinimized,
+            RunAtWindowsStartup = RunAtWindowsStartup,
             MinimizeToTray = MinimizeToTray,
             ShowOnlyConnectedDevices = ShowOnlyConnectedDevices,
             ShowSystemSounds = ShowSystemSounds
         };
 
+        // 설정 파일 저장과 자동 실행 레지스트리 반영은 같은 사용자 의도이므로 함께 적용합니다.
         // 구성된 설정 모델을 파일에 저장합니다.
         _settingsService.Save(settings);
+        _startupLaunchService.Apply(RunAtWindowsStartup);
     }
 }
