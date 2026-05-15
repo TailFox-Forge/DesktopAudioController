@@ -179,7 +179,8 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     }
 
     /// <summary>
-    /// 세션이 따로 제공하는 아이콘 경로가 있으면 우선 사용하고, 없으면 실행 파일 경로를 재사용합니다.
+    /// 세션이 따로 제공하는 아이콘 경로가 있으면 우선 사용하고, 없으면 실행 파일 경로로 폴백합니다.
+    /// UWP 리소스 URI처럼 파일 경로가 아닌 값은 후속 단계에서 걸러집니다.
     /// </summary>
     private string? ResolveIconSourcePath(AudioSessionControl session)
     {

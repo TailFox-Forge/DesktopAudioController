@@ -166,6 +166,7 @@ public sealed class CachedAppIconService : IAppIconService
     /// <summary>
     /// 세션 아이콘 경로나 실행 파일 경로에서 실제 파일 경로만 추출합니다.
     /// 예: "C:\Path\App.exe,-123" -> "C:\Path\App.exe"
+    /// 파일 경로가 아닌 UWP 리소스 URI는 현재 지원하지 않으므로 null을 반환합니다.
     /// </summary>
     internal static string? NormalizeIconSourcePath(string? iconSourcePath)
     {

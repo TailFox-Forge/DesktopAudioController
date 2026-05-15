@@ -812,7 +812,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 큐에 모인 오디오 변경 이벤트를 한 번만 처리합니다.
+    /// 큐에 모인 오디오 변경 이벤트를 배치 단위로 처리합니다.
+    /// 새 이벤트가 이어지는 동안만 루프를 반복하고, 큐가 비면 즉시 빠져나옵니다.
     /// </summary>
     private async Task ProcessQueuedNotificationRefreshAsync()
     {

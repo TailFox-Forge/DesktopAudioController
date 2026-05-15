@@ -146,6 +146,9 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
         }
     }
 
+    /// <summary>
+    /// MainModule 접근이 막힌 프로세스는 제한된 권한으로 전체 실행 경로를 한 번 더 조회합니다.
+    /// </summary>
     private static string? TryGetExecutablePathWithLimitedQuery(uint processId)
     {
         try
