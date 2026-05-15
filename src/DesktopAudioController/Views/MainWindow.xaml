@@ -6,8 +6,9 @@
         mc:Ignorable="d"
         Title="DesktopAudioController"
         Width="560"
-        Height="640"
+        MinHeight="420"
         FontSize="13"
+        SizeToContent="Height"
         WindowStartupLocation="CenterScreen">
     <DockPanel Margin="16">
         <!-- 상단 헤더와 공통 액션 버튼 영역입니다. -->

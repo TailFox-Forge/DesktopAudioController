@@ -97,6 +97,7 @@ public partial class MainWindow : Window
         _notifyIcon = CreateNotifyIcon();
         RefreshTrayMenu();
         DataContext = _viewModel;
+        ApplyPrimaryMonitorHeightLimit();
         _audioNotificationService.Changed += AudioNotificationService_OnChanged;
         Loaded += MainWindow_OnLoaded;
         StateChanged += MainWindow_OnStateChanged;
@@ -224,6 +225,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
+        ApplyPrimaryMonitorHeightLimit();
+
         // 창 표시 이후에 백그라운드 업데이트 확인을 시작해, 오프라인 상태여도 UI가 멈추지 않게 합니다.
         _ = CheckForUpdateInBackgroundAsync();
 
@@ -258,6 +261,15 @@ public partial class MainWindow : Window
         {
             HideToTray();
         }
+    }
+
+    /// <summary>
+    /// 메인 창 높이가 주 모니터 작업 영역을 넘지 않게 제한합니다.
+    /// </summary>
+    private void ApplyPrimaryMonitorHeightLimit()
+    {
+        var primaryWorkAreaHeight = SystemParameters.WorkArea.Height;
+        MaxHeight = Math.Max(MinHeight, primaryWorkAreaHeight);
     }
 
     /// <summary>
