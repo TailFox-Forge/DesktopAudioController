@@ -1,4 +1,5 @@
 using System.Windows;
+using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 
 namespace DesktopAudioController.Views;
@@ -26,9 +27,30 @@ public partial class SettingsWindow : Window
     /// </summary>
     private void SaveButton_OnClick(object sender, RoutedEventArgs e)
     {
-        _viewModel.Save();
-        DialogResult = true;
-        Close();
+        try
+        {
+            _viewModel.Save();
+            DialogResult = true;
+            Close();
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                $"설정을 저장하지 못했습니다.\n\n저장 경로: {exception.SettingsFilePath}\n원인: {exception.InnerException?.Message ?? exception.Message}",
+                "설정 저장 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+        catch (Exception exception)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                $"설정을 저장하는 중 예상하지 못한 오류가 발생했습니다.\n\n원인: {exception.Message}",
+                "설정 저장 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     /// <summary>

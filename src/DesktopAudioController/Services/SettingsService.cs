@@ -56,12 +56,23 @@ public sealed class SettingsService : ISettingsService
     /// </summary>
     public void Save(AppSettings settings)
     {
-        // 상위 폴더가 없을 수 있으므로 먼저 생성합니다.
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsFilePath)!);
+        try
+        {
+            // 상위 폴더가 없을 수 있으므로 먼저 생성합니다.
+            Directory.CreateDirectory(Path.GetDirectoryName(SettingsFilePath)!);
 
-        // 사람이 읽기 쉬운 들여쓰기 형태로 저장합니다.
-        // 저장 직전에 직렬화된 JSON 문자열입니다.
-        var json = JsonSerializer.Serialize(settings, SerializerOptions);
-        File.WriteAllText(SettingsFilePath, json);
+            // 사람이 읽기 쉬운 들여쓰기 형태로 저장합니다.
+            // 저장 직전에 직렬화된 JSON 문자열입니다.
+            var json = JsonSerializer.Serialize(settings, SerializerOptions);
+            File.WriteAllText(SettingsFilePath, json);
+        }
+        catch (Exception exception)
+        {
+            // 저장 실패는 UI에서 사용자에게 안내할 수 있도록 경로와 함께 명시적 예외로 래핑합니다.
+            throw new SettingsPersistenceException(
+                "설정 파일을 저장하지 못했습니다.",
+                SettingsFilePath,
+                exception);
+        }
     }
 }
