@@ -26,6 +26,9 @@ public sealed class MainViewModel : ObservableObject
     // 사용자가 한 번이라도 표시 장치를 설정했는지 여부입니다.
     private bool _hasConfiguredDevices;
 
+    // 마지막 전체 로드 시점의 시스템 사운드 표시 옵션입니다.
+    private bool _showSystemSounds;
+
     /// <summary>
     /// 메인 화면이 사용할 서비스들을 주입받습니다.
     /// </summary>
@@ -62,6 +65,7 @@ public sealed class MainViewModel : ObservableObject
     {
         // 파일에서 읽어온 현재 사용자 설정입니다.
         var settings = _settingsService.Load();
+        _showSystemSounds = settings.ShowSystemSounds;
 
         // 현재 시스템에서 보이는 장치 상태를 조회합니다.
         var devices = _audioDeviceCatalogService.GetAvailableOutputDevices();
@@ -93,9 +97,6 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public void RefreshStateOnly()
     {
-        // settings는 세션 필터 옵션 같은 현재 사용자 선택을 포함합니다.
-        var settings = _settingsService.Load();
-
         // devicesById는 최신 장치 상태를 빠르게 찾기 위한 인덱스입니다.
         var devicesById = _audioDeviceCatalogService
             .GetAvailableOutputDevices()
@@ -117,7 +118,7 @@ public sealed class MainViewModel : ObservableObject
 
             if (currentDevice.IsConnected)
             {
-                RefreshSessionsStateOnly(visibleDevice, settings.ShowSystemSounds);
+                RefreshSessionsStateOnly(visibleDevice, _showSystemSounds);
             }
             else
             {

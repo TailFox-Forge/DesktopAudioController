@@ -41,10 +41,16 @@ rm -f "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
 mkdir -p "${PUBLISH_DIR}" "${PACKAGE_DIR}"
 
 echo "[1/3] publish 시작: ${VERSION}"
+echo "  - RID restore 수행: ${RUNTIME_ID}"
+"${DOTNET_BIN}" restore "${PROJECT_PATH}" \
+    -r "${RUNTIME_ID}" \
+    -p:EnableWindowsTargeting=true
+
 "${DOTNET_BIN}" publish "${PROJECT_PATH}" \
     -c Release \
     -r "${RUNTIME_ID}" \
     --self-contained true \
+    --no-restore \
     -p:PublishSingleFile=true \
     -p:EnableWindowsTargeting=true \
     -o "${PUBLISH_DIR}"

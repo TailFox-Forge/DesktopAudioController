@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
+using System.Threading.Tasks;
 using Forms = System.Windows.Forms;
 
 namespace DesktopAudioController.Views;
@@ -53,6 +54,9 @@ public partial class MainWindow : Window
 
     // 사용자를 GitHub 릴리즈 목록으로 보내는 고정 URL입니다.
     private static readonly string ReleasesPageUrl = "https://github.com/TailFox-Forge/DesktopAudioController/releases";
+
+    // 상태 이벤트 폭주 시 즉시 재열거하지 않도록 짧게 모아두는 지연 시간입니다.
+    private static readonly TimeSpan StateRefreshCoalescingDelay = TimeSpan.FromMilliseconds(120);
 
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
@@ -287,27 +291,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                // pendingKind는 현재 큐에 누적된 새로고침 범위를 잠금 안에서 스냅샷으로 가져온 값입니다.
-                AudioNotificationChangeKind pendingKind;
-                lock (_notificationRefreshSyncRoot)
-                {
-                    pendingKind = _pendingNotificationKind;
-                    _pendingNotificationKind = AudioNotificationChangeKind.State;
-                    _isNotificationRefreshQueued = false;
-                }
-
-                if (pendingKind == AudioNotificationChangeKind.Topology)
-                {
-                    AppLog.Debug("MainWindow", "토폴로지 전체 새로고침 수행");
-                    _viewModel.Load();
-                    UpdateEmptyState();
-                    RefreshTrayMenu();
-                    return;
-                }
-
-                AppLog.Debug("MainWindow", "상태 부분 새로고침 수행");
-                _viewModel.RefreshStateOnly();
-                RefreshTrayMenu();
+                _ = ProcessQueuedNotificationRefreshAsync();
             }
             catch (Exception exception)
             {
@@ -324,10 +308,7 @@ public partial class MainWindow : Window
         AppLog.Info("MainWindow", $"기본 장치 변경 시도 deviceId={device.Id} name={device.Name}");
         // 선택된 장치를 Windows 기본 출력 장치로 변경합니다.
         device.SetAsDefault();
-        _viewModel.Load();
-        UpdateEmptyState();
-        RefreshTrayMenu();
-        AppLog.Info("MainWindow", $"기본 장치 변경 후 UI 재로딩 완료 deviceId={device.Id}");
+        AppLog.Info("MainWindow", $"기본 장치 변경 요청 완료, 토폴로지 이벤트 대기 deviceId={device.Id}");
     }
 
     /// <summary>
@@ -655,10 +636,49 @@ public partial class MainWindow : Window
             // SourceLink 등이 붙여준 build metadata는 화면에 불필요하므로 '+' 뒤는 잘라냅니다.
             var metadataSeparatorIndex = informationalVersion.IndexOf('+');
             return metadataSeparatorIndex >= 0
-                ? informationalVersion[..metadataSeparatorIndex]
+            ? informationalVersion[..metadataSeparatorIndex]
                 : informationalVersion;
         }
 
         return assembly.GetName().Version?.ToString() ?? "알 수 없음";
+    }
+
+    /// <summary>
+    /// 큐에 모인 오디오 변경 이벤트를 한 번만 처리합니다.
+    /// </summary>
+    private async Task ProcessQueuedNotificationRefreshAsync()
+    {
+        AudioNotificationChangeKind firstObservedKind;
+        lock (_notificationRefreshSyncRoot)
+        {
+            firstObservedKind = _pendingNotificationKind;
+        }
+
+        // 상태 변경은 매우 자주 들어오므로 잠시 모은 뒤 마지막 상태만 반영합니다.
+        if (firstObservedKind == AudioNotificationChangeKind.State)
+        {
+            await Task.Delay(StateRefreshCoalescingDelay);
+        }
+
+        AudioNotificationChangeKind pendingKind;
+        lock (_notificationRefreshSyncRoot)
+        {
+            pendingKind = _pendingNotificationKind;
+            _pendingNotificationKind = AudioNotificationChangeKind.State;
+            _isNotificationRefreshQueued = false;
+        }
+
+        if (pendingKind == AudioNotificationChangeKind.Topology)
+        {
+            AppLog.Debug("MainWindow", "토폴로지 전체 새로고침 수행");
+            _viewModel.Load();
+            UpdateEmptyState();
+            RefreshTrayMenu();
+            return;
+        }
+
+        AppLog.Debug("MainWindow", "상태 부분 새로고침 수행");
+        _viewModel.RefreshStateOnly();
+        RefreshTrayMenu();
     }
 }
