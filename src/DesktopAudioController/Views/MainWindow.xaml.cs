@@ -184,6 +184,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            _viewModel.FlushPendingProgramPreferenceSave();
             var settingsViewModel = _settingsViewModelFactory();
             await settingsViewModel.LoadAsync().WaitAsync(SettingsLoadTimeout);
 
@@ -282,6 +283,7 @@ public partial class MainWindow : Window
     {
         if (_isExitRequested || !ShouldMinimizeToTray())
         {
+            _viewModel.FlushPendingProgramPreferenceSave();
             return;
         }
 

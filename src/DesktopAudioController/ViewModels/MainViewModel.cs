@@ -4,6 +4,7 @@ using System.Threading;
 using DesktopAudioController.Infrastructure;
 using DesktopAudioController.Models;
 using DesktopAudioController.Services;
+using System.Windows.Threading;
 
 namespace DesktopAudioController.ViewModels;
 
@@ -59,11 +60,20 @@ public sealed class MainViewModel : ObservableObject
     // 한 번 복원한 라이브 세션은 같은 프로세스 수명 동안 반복 복원하지 않도록 추적합니다.
     private readonly HashSet<string> _restoredSessionIds = new(StringComparer.Ordinal);
 
+    // 슬라이더 드래그 중 연속 저장을 줄이기 위해 마지막 변경만 저장하는 타이머입니다.
+    private readonly DispatcherTimer _programPreferenceSaveDebounceTimer;
+
+    // 아직 파일에 기록되지 않은 프로그램 설정 변경이 있는지 나타냅니다.
+    private bool _hasPendingProgramPreferenceSave;
+
     // 오래 걸리는 백그라운드 스냅샷 작업이 늦게 끝나도 최신 요청만 UI에 적용하기 위한 세대 번호입니다.
     private int _loadGeneration;
 
     // 상태 부분 갱신 역시 마지막 요청만 반영하도록 별도 세대 번호를 둡니다.
     private int _stateGeneration;
+
+    // 프로그램별 볼륨/음소거 저장은 짧게 모아 마지막 값만 파일에 기록합니다.
+    private static readonly TimeSpan ProgramPreferenceSaveDebounceDelay = TimeSpan.FromMilliseconds(400);
 
     /// <summary>
     /// 메인 화면이 사용할 서비스들을 주입받습니다.
@@ -78,6 +88,11 @@ public sealed class MainViewModel : ObservableObject
         _audioDeviceCatalogService = audioDeviceCatalogService;
         _audioSessionService = audioSessionService;
         _appIconService = appIconService;
+        _programPreferenceSaveDebounceTimer = new DispatcherTimer
+        {
+            Interval = ProgramPreferenceSaveDebounceDelay
+        };
+        _programPreferenceSaveDebounceTimer.Tick += ProgramPreferenceSaveDebounceTimer_OnTick;
     }
 
     /// <summary>
@@ -269,10 +284,20 @@ public sealed class MainViewModel : ObservableObject
     private void ApplyLoadSnapshot(LoadSnapshot snapshot)
     {
         _showSystemSounds = snapshot.ShowSystemSounds;
-        _programAudioPreferencesByKey = snapshot.ProgramAudioPreferences
+        var loadedProgramAudioPreferencesByKey = snapshot.ProgramAudioPreferences
             .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
             .GroupBy(preference => preference.MatchKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+
+        if (_hasPendingProgramPreferenceSave)
+        {
+            foreach (var pendingPreference in _programAudioPreferencesByKey)
+            {
+                loadedProgramAudioPreferencesByKey[pendingPreference.Key] = pendingPreference.Value;
+            }
+        }
+
+        _programAudioPreferencesByKey = loadedProgramAudioPreferencesByKey;
 
         VisibleDevices.Clear();
         foreach (var deviceSnapshot in snapshot.Devices)
@@ -496,22 +521,7 @@ public sealed class MainViewModel : ObservableObject
         preference.Volume = volume ?? session.Volume;
         preference.IsMuted = muted ?? session.IsMuted;
         _programAudioPreferencesByKey[matchKey] = preference;
-
-        try
-        {
-            var settings = _settingsService.Load();
-            settings.ProgramAudioPreferences = _programAudioPreferencesByKey.Values
-                .OrderBy(preferenceItem => preferenceItem.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            _settingsService.Save(settings);
-            AppLog.Info(
-                "MainViewModel",
-                $"프로그램 설정 저장 완료 deviceId={deviceId} sessionId={sessionId} matchKey={matchKey} volume={preference.Volume} muted={preference.IsMuted}");
-        }
-        catch (Exception exception)
-        {
-            AppLog.Warn("MainViewModel", $"프로그램 설정 저장 실패 deviceId={deviceId} sessionId={sessionId} matchKey={matchKey}", exception);
-        }
+        QueueProgramPreferenceSave();
     }
 
     /// <summary>
@@ -788,6 +798,68 @@ public sealed class MainViewModel : ObservableObject
                 throw;
             }
         });
+    }
+
+    /// <summary>
+    /// 슬라이더 드래그 중 연속 저장을 줄이기 위해 마지막 변경만 저장하도록 타이머를 다시 예약합니다.
+    /// </summary>
+    private void QueueProgramPreferenceSave()
+    {
+        _hasPendingProgramPreferenceSave = true;
+        _programPreferenceSaveDebounceTimer.Stop();
+        _programPreferenceSaveDebounceTimer.Start();
+    }
+
+    /// <summary>
+    /// debounce 시간이 지나면 마지막 프로그램 설정 상태만 한 번 파일에 저장합니다.
+    /// </summary>
+    private void ProgramPreferenceSaveDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _programPreferenceSaveDebounceTimer.Stop();
+        SaveProgramPreferencesNow();
+    }
+
+    /// <summary>
+    /// 종료 직전이나 설정창 진입 전에는 대기 중인 프로그램 설정 저장을 즉시 반영합니다.
+    /// </summary>
+    public void FlushPendingProgramPreferenceSave()
+    {
+        if (!_hasPendingProgramPreferenceSave)
+        {
+            return;
+        }
+
+        _programPreferenceSaveDebounceTimer.Stop();
+        SaveProgramPreferencesNow();
+    }
+
+    /// <summary>
+    /// 메모리에 모아둔 프로그램별 설정을 현재 settings.json에 한 번만 기록합니다.
+    /// </summary>
+    private void SaveProgramPreferencesNow()
+    {
+        if (!_hasPendingProgramPreferenceSave)
+        {
+            return;
+        }
+
+        try
+        {
+            var settings = _settingsService.Load();
+            settings.ProgramAudioPreferences = _programAudioPreferencesByKey.Values
+                .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
+                .OrderBy(preference => preference.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _settingsService.Save(settings);
+            _hasPendingProgramPreferenceSave = false;
+            AppLog.Info(
+                "MainViewModel",
+                $"프로그램 설정 저장 완료 count={settings.ProgramAudioPreferences.Count}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainViewModel", "프로그램 설정 저장 실패", exception);
+        }
     }
 
     /// <summary>
