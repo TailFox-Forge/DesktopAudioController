@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 using DesktopAudioController.Models;
@@ -12,6 +11,17 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
 {
     // 장치 ID 기준 세션 조회에 사용하는 COM 열거자입니다.
     private readonly MMDeviceEnumerator _enumerator = new();
+
+    // 프로세스 이름과 실행 파일 경로를 PID 기준으로 재사용하는 메타데이터 캐시 서비스입니다.
+    private readonly IProcessMetadataCacheService _processMetadataCacheService;
+
+    /// <summary>
+    /// 세션 서비스와 메타데이터 캐시 서비스를 함께 초기화합니다.
+    /// </summary>
+    public NativeAudioSessionService(IProcessMetadataCacheService processMetadataCacheService)
+    {
+        _processMetadataCacheService = processMetadataCacheService;
+    }
 
     /// <summary>
     /// 지정한 장치에서 현재 활성화된 세션 목록을 반환합니다.
@@ -131,7 +141,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// <summary>
     /// 세션 표시 이름을 결정합니다.
     /// </summary>
-    private static string ResolveDisplayName(AudioSessionControl session)
+    private string ResolveDisplayName(AudioSessionControl session)
     {
         // displayName은 앱이 직접 제공한 표시 이름입니다.
         var displayName = session.DisplayName;
@@ -140,35 +150,19 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             return displayName;
         }
 
-        try
-        {
-            // process는 이 세션을 소유한 실제 실행 프로세스입니다.
-            using var process = Process.GetProcessById((int)session.GetProcessID);
-            return process.ProcessName;
-        }
-        catch
-        {
-            // 프로세스 조회도 실패하면 PID 기반 이름으로 폴백합니다.
-            return $"PID {session.GetProcessID}";
-        }
+        // 메타데이터 캐시는 PID 기준으로 프로세스 이름을 재사용해 세션 재로딩 비용을 줄입니다.
+        var metadata = _processMetadataCacheService.GetProcessMetadata(session.GetProcessID);
+        return metadata.ProcessName;
     }
 
     /// <summary>
     /// 세션을 소유한 프로세스의 실행 파일 경로를 확인합니다.
     /// </summary>
-    private static string? ResolveExecutablePath(AudioSessionControl session)
+    private string? ResolveExecutablePath(AudioSessionControl session)
     {
-        try
-        {
-            // process는 세션을 생성한 앱 프로세스이며, MainModule 경로에서 아이콘 조회에 필요한 실행 파일 경로를 얻습니다.
-            using var process = Process.GetProcessById((int)session.GetProcessID);
-            return process.MainModule?.FileName;
-        }
-        catch
-        {
-            // 보호 프로세스나 이미 종료된 프로세스는 경로 조회가 실패할 수 있습니다.
-            return null;
-        }
+        // 메타데이터 캐시는 실행 경로도 함께 재사용하므로 아이콘 조회 전 비용을 한 번 줄일 수 있습니다.
+        var metadata = _processMetadataCacheService.GetProcessMetadata(session.GetProcessID);
+        return metadata.ExecutablePath;
     }
 
     /// <summary>

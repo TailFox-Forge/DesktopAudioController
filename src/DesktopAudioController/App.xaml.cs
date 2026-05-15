@@ -25,6 +25,9 @@ public partial class App : System.Windows.Application
     // 세션 앱 실행 파일 경로 기준으로 아이콘을 캐싱하는 서비스입니다.
     private IAppIconService? _appIconService;
 
+    // PID 기준 프로세스 이름/실행 경로를 캐싱하는 서비스입니다.
+    private IProcessMetadataCacheService? _processMetadataCacheService;
+
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
     /// </summary>
@@ -35,7 +38,8 @@ public partial class App : System.Windows.Application
         // Phase 2부터는 실제 Core Audio 서비스로 장치와 세션을 조회합니다.
         _settingsService = new SettingsService();
         _audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
-        _audioSessionService = new NativeAudioSessionService();
+        _processMetadataCacheService = new CachedProcessMetadataService();
+        _audioSessionService = new NativeAudioSessionService(_processMetadataCacheService);
         _audioNotificationService = new NativeAudioNotificationService();
         _appIconService = new CachedAppIconService();
         _audioNotificationService.Start();

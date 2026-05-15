@@ -1,0 +1,175 @@
+using System.Diagnostics;
+using DesktopAudioController.Models;
+
+namespace DesktopAudioController.Services;
+
+/// <summary>
+/// PID 기준으로 프로세스 이름과 실행 경로를 캐싱하는 서비스입니다.
+/// </summary>
+public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
+{
+    // 메타데이터 캐시 읽기/쓰기와 정리 시점을 직렬화하기 위한 잠금 객체입니다.
+    private readonly object _syncRoot = new();
+
+    // PID를 키로 사용해 프로세스 이름/실행 경로 또는 실패 상태를 보관합니다.
+    private readonly Dictionary<uint, ProcessMetadataCacheEntry> _metadataCache = [];
+
+    // 다음 정리 작업을 수행할 시각입니다.
+    private DateTimeOffset _nextCleanupUtc = DateTimeOffset.MinValue;
+
+    // 정상 조회에 성공한 메타데이터는 마지막 접근 후 이 시간 동안 재사용합니다.
+    private static readonly TimeSpan SuccessEntryRetention = TimeSpan.FromMinutes(10);
+
+    // 실패한 PID는 이 시간 동안 다시 실제 프로세스 조회를 시도하지 않습니다.
+    private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(1);
+
+    // 실패 캐시 자체를 제거하기 전 유지 시간입니다.
+    private static readonly TimeSpan FailureEntryRetention = TimeSpan.FromMinutes(5);
+
+    // 캐시 정리 작업 최소 간격입니다.
+    private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(3);
+
+    /// <summary>
+    /// PID 기준 프로세스 메타데이터를 반환합니다.
+    /// </summary>
+    public ProcessMetadataInfo GetProcessMetadata(uint processId)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        lock (_syncRoot)
+        {
+            CleanupExpiredEntriesLocked(now);
+
+            if (_metadataCache.TryGetValue(processId, out var cachedEntry))
+            {
+                cachedEntry.LastAccessUtc = now;
+
+                // 최근 실패한 PID는 재시도 유예 시간 동안 실패 캐시를 그대로 사용합니다.
+                if (!cachedEntry.ShouldRetry(now))
+                {
+                    return cachedEntry.Metadata;
+                }
+
+                if (!cachedEntry.IsFailure)
+                {
+                    return cachedEntry.Metadata;
+                }
+            }
+        }
+
+        // refreshedMetadata는 실제 프로세스 조회를 다시 수행해 얻은 최신 메타데이터입니다.
+        var refreshedMetadata = LoadProcessMetadata(processId);
+        var refreshedEntry = new ProcessMetadataCacheEntry
+        {
+            Metadata = refreshedMetadata,
+            IsFailure = string.Equals(refreshedMetadata.ProcessName, $"PID {processId}", StringComparison.Ordinal),
+            LastAccessUtc = now,
+            RetryAfterUtc = string.Equals(refreshedMetadata.ProcessName, $"PID {processId}", StringComparison.Ordinal)
+                ? now + FailureRetryDelay
+                : DateTimeOffset.MinValue
+        };
+
+        lock (_syncRoot)
+        {
+            _metadataCache[processId] = refreshedEntry;
+        }
+
+        return refreshedMetadata;
+    }
+
+    /// <summary>
+    /// 실제 프로세스를 조회해 메타데이터를 읽습니다.
+    /// </summary>
+    private static ProcessMetadataInfo LoadProcessMetadata(uint processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+
+            return new ProcessMetadataInfo
+            {
+                ProcessName = process.ProcessName,
+                ExecutablePath = process.MainModule?.FileName
+            };
+        }
+        catch
+        {
+            // 권한 문제 또는 종료된 프로세스는 PID 기반 이름으로 폴백합니다.
+            return new ProcessMetadataInfo
+            {
+                ProcessName = $"PID {processId}",
+                ExecutablePath = null
+            };
+        }
+    }
+
+    /// <summary>
+    /// 오랫동안 사용되지 않은 성공 캐시와 실패 캐시를 제거합니다.
+    /// </summary>
+    private void CleanupExpiredEntriesLocked(DateTimeOffset now)
+    {
+        if (now < _nextCleanupUtc)
+        {
+            return;
+        }
+
+        var removalKeys = new List<uint>();
+        foreach (var pair in _metadataCache)
+        {
+            var entry = pair.Value;
+            var idleDuration = now - entry.LastAccessUtc;
+
+            if (!entry.IsFailure && idleDuration >= SuccessEntryRetention)
+            {
+                removalKeys.Add(pair.Key);
+                continue;
+            }
+
+            if (entry.IsFailure && idleDuration >= FailureEntryRetention)
+            {
+                removalKeys.Add(pair.Key);
+            }
+        }
+
+        foreach (var removalKey in removalKeys)
+        {
+            _metadataCache.Remove(removalKey);
+        }
+
+        _nextCleanupUtc = now + CleanupInterval;
+    }
+
+    /// <summary>
+    /// PID 하나에 대한 프로세스 메타데이터 캐시 상태를 표현합니다.
+    /// </summary>
+    private sealed class ProcessMetadataCacheEntry
+    {
+        /// <summary>
+        /// 현재 캐시에 저장된 프로세스 메타데이터입니다.
+        /// </summary>
+        public required ProcessMetadataInfo Metadata { get; init; }
+
+        /// <summary>
+        /// 최근 접근 시각입니다.
+        /// </summary>
+        public DateTimeOffset LastAccessUtc { get; set; }
+
+        /// <summary>
+        /// 직전 실제 조회가 실패했는지 여부입니다.
+        /// </summary>
+        public bool IsFailure { get; init; }
+
+        /// <summary>
+        /// 실패 캐시가 다시 실제 프로세스 조회를 허용하는 시각입니다.
+        /// </summary>
+        public DateTimeOffset RetryAfterUtc { get; init; }
+
+        /// <summary>
+        /// 현재 시각 기준으로 실제 재조회가 필요한지 여부를 반환합니다.
+        /// </summary>
+        public bool ShouldRetry(DateTimeOffset now)
+        {
+            return IsFailure && now >= RetryAfterUtc;
+        }
+    }
+}
