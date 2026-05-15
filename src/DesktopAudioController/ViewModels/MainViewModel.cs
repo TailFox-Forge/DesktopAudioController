@@ -620,8 +620,8 @@ public sealed class MainViewModel : ObservableObject
     {
         var candidates = new[]
         {
-            BuildReadablePathTail(session.ExecutablePath),
-            BuildReadablePathTail(TryExtractSessionPathToken(session.Id)),
+            BuildExecutablePathHint(session.ExecutablePath),
+            BuildSessionPathHint(TryExtractSessionPathToken(session.Id)),
             BuildShortSessionHint(session.Id)
         };
 
@@ -696,6 +696,24 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 실행 파일 경로를 사용자에게 보여줄 짧은 설명으로 바꿉니다.
+    /// </summary>
+    private static string? BuildExecutablePathHint(string? path)
+    {
+        var tail = BuildReadablePathTail(path);
+        return string.IsNullOrWhiteSpace(tail) ? null : $"실행 파일: {tail}";
+    }
+
+    /// <summary>
+    /// 세션 ID 안에 포함된 경로 조각을 보조 라벨로 바꿉니다.
+    /// </summary>
+    private static string? BuildSessionPathHint(string? path)
+    {
+        var tail = BuildReadablePathTail(path);
+        return string.IsNullOrWhiteSpace(tail) ? null : $"세션 경로: {tail}";
+    }
+
+    /// <summary>
     /// 경로를 못 얻은 세션을 UI에서만 구분하기 위한 짧은 힌트입니다.
     /// </summary>
     private static string BuildShortSessionHint(string sessionId)
@@ -707,14 +725,14 @@ public sealed class MainViewModel : ObservableObject
             var guidLength = Math.Min(8, sessionId.Length - guidStart);
             if (guidLength > 0)
             {
-                return $"세션 {sessionId.Substring(guidStart, guidLength)}";
+                return $"세션 ID: {sessionId.Substring(guidStart, guidLength)}";
             }
         }
 
         var trimmedSessionId = sessionId.Trim();
         return trimmedSessionId.Length <= 8
-            ? $"세션 {trimmedSessionId}"
-            : $"세션 {trimmedSessionId[^8..]}";
+            ? $"세션 ID: {trimmedSessionId}"
+            : $"세션 ID: {trimmedSessionId[^8..]}";
     }
 
     /// <summary>

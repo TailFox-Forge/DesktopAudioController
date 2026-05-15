@@ -65,23 +65,55 @@
 
                 <CheckBox Margin="0,0,0,8"
                           IsChecked="{Binding ShowOnlyConnectedDevices}">
-                    <TextBlock Text="연결된 장치만 메인 화면에 표시" />
+                    <TextBlock Text="연결된 장치만 표시" />
                 </CheckBox>
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#666"
+                           Text="연결이 끊긴 장치나 오프라인 가상 장치는 메인 화면에서 숨깁니다."
+                           TextWrapping="Wrap" />
                 <CheckBox Margin="0,0,0,8"
                           IsChecked="{Binding ShowSystemSounds}">
-                    <TextBlock Text="Windows 시스템 사운드 세션도 표시" />
+                    <TextBlock Text="시스템 사운드 세션도 표시" />
                 </CheckBox>
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#666"
+                           Text="Windows 알림음과 시스템 소리도 프로그램 목록에 함께 표시합니다."
+                           TextWrapping="Wrap" />
+
+                <Separator Margin="0,8,0,16" />
+
+                <TextBlock FontSize="15"
+                           FontWeight="SemiBold"
+                           Text="실행 동작" />
+                <TextBlock Margin="0,8,0,16"
+                           Foreground="#666"
+                           Text="창을 닫을 때의 동작과 자동 실행 방식을 정합니다."
+                           TextWrapping="Wrap" />
+
                 <CheckBox Margin="0,0,0,8"
                           IsChecked="{Binding MinimizeToTray}">
-                    <TextBlock Text="닫기 대신 트레이로 최소화" />
+                    <TextBlock Text="닫기 버튼을 누르면 트레이로 최소화" />
                 </CheckBox>
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#666"
+                           Text="완전히 종료하려면 트레이 메뉴의 종료를 사용합니다."
+                           TextWrapping="Wrap" />
                 <CheckBox Margin="0,0,0,8"
                           IsChecked="{Binding RunAtWindowsStartup}">
-                    <TextBlock Text="Windows 시작 시 자동 실행" />
+                    <TextBlock Text="Windows 로그인 후 자동 실행" />
                 </CheckBox>
-                <CheckBox IsChecked="{Binding StartMinimized}">
-                    <TextBlock Text="Windows 자동 실행 시 최소화" />
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#666"
+                           Text="현재 사용자 계정에만 적용되며, 앱은 백그라운드에서 자동으로 시작됩니다."
+                           TextWrapping="Wrap" />
+                <CheckBox IsChecked="{Binding StartMinimized}"
+                          IsEnabled="{Binding RunAtWindowsStartup}">
+                    <TextBlock Text="자동 실행 시 시작하자마자 최소화" />
                 </CheckBox>
+                <TextBlock Margin="24,-4,0,0"
+                           Foreground="#666"
+                           Text="자동 실행이 켜져 있을 때만 적용됩니다."
+                           TextWrapping="Wrap" />
             </StackPanel>
         </ScrollViewer>
     </DockPanel>

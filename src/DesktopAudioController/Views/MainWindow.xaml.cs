@@ -180,7 +180,7 @@ public partial class MainWindow : Window
 
         var result = System.Windows.MessageBox.Show(
             this,
-            $"현재 버전: {currentVersion}\n최신 버전: {updateCheckResult.LatestVersion}\n\n업데이트 방법:\n1. 새 zip 다운로드\n2. 실행 중인 앱 종료\n3. 압축 해제 후 기존 실행 폴더에 덮어쓰기\n4. DesktopAudioController.exe 다시 실행\n\n지금 다운로드 페이지를 열까요?",
+            $"현재 버전: {currentVersion}\n새 버전: {updateCheckResult.LatestVersion}\n\n이 앱은 자동 설치 대신 zip 덮어쓰기 방식으로 업데이트합니다.\n1. 새 zip 다운로드\n2. 실행 중인 앱 종료\n3. 압축 해제 후 기존 실행 폴더에 덮어쓰기\n4. DesktopAudioController.exe 다시 실행\n\n지금 다운로드 페이지를 열까요?",
             "업데이트 안내",
             System.Windows.MessageBoxButton.OKCancel,
             System.Windows.MessageBoxImage.Information);
@@ -752,7 +752,7 @@ public partial class MainWindow : Window
                 ? $" · {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd} 공개"
                 : string.Empty;
             var preReleaseText = updateCheckResult.IsPreRelease ? " (프리릴리즈)" : string.Empty;
-            UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion}{preReleaseText} 사용 가능{publishedDateText}";
+            UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion}{preReleaseText} 다운로드 가능{publishedDateText}";
             UpdateStatusText.Visibility = Visibility.Visible;
             UpdateButton.Visibility = Visibility.Visible;
         });

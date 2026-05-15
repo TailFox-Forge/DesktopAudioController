@@ -31,6 +31,8 @@
                 <TextBlock x:Name="UpdateStatusText"
                            Margin="0,4,0,0"
                            Foreground="#0A6"
+                           MaxWidth="420"
+                           TextWrapping="Wrap"
                            Visibility="Collapsed" />
             </StackPanel>
 
@@ -39,15 +41,17 @@
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top">
                 <Button x:Name="UpdateButton"
-                        Width="88"
+                        Width="96"
                         Margin="0,0,8,0"
                         Click="UpdateButton_OnClick"
-                        Content="업데이트"
+                        Content="다운로드"
+                        ToolTip="새 zip을 내려받은 뒤 기존 실행 폴더에 덮어씁니다."
                         Visibility="Collapsed" />
-                <Button Width="88"
+                <Button Width="104"
                         Margin="0,0,8,0"
                         Click="OpenReleasePageButton_OnClick"
-                        Content="릴리즈" />
+                        Content="릴리즈 노트"
+                        ToolTip="GitHub 릴리즈 페이지를 엽니다." />
                 <Button Width="88"
                         Margin="0,0,8,0"
                         Click="RefreshButton_OnClick"
@@ -69,7 +73,7 @@
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            Foreground="#666"
-                           Text="표시할 장치가 아직 선택되지 않았습니다. 설정에서 출력 장치를 고르세요."
+                           Text="메인 화면에 표시할 출력 장치가 없습니다. 설정에서 장치를 고르세요."
                            TextAlignment="Center"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
@@ -90,6 +94,8 @@
                                         <DockPanel Margin="0,0,0,8">
                                             <TextBlock FontSize="14"
                                                        FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Name}"
                                                        Text="{Binding Name}" />
                                             <StackPanel DockPanel.Dock="Right"
                                                         Orientation="Horizontal">
@@ -116,9 +122,9 @@
                                         </DockPanel>
 
                                         <!-- 장치를 선택하면 프로그램별 세션 목록을 펼쳐 볼 수 있습니다. -->
-                                        <ToggleButton Margin="0,12,0,0"
-                                                      IsChecked="{Binding IsExpanded}"
-                                                      Content="프로그램별 볼륨 보기" />
+                                                <ToggleButton Margin="0,12,0,0"
+                                                              IsChecked="{Binding IsExpanded}"
+                                                      Content="프로그램별 볼륨 열기" />
 
                                         <Border Margin="0,12,0,0"
                                                 Padding="10"
@@ -158,13 +164,16 @@
                                                                                    Height="16"
                                                                                    Margin="0,0,6,0"
                                                                                    Source="{Binding IconImage}" />
-                                                                            <StackPanel>
+                                                                            <StackPanel ToolTip="{Binding ExecutablePath}">
                                                                                 <TextBlock VerticalAlignment="Center"
                                                                                            FontSize="13"
                                                                                            FontWeight="SemiBold"
+                                                                                           TextTrimming="CharacterEllipsis"
                                                                                            Text="{Binding DisplayName}" />
                                                                                 <TextBlock FontSize="11"
                                                                                            Foreground="#666"
+                                                                                           TextTrimming="CharacterEllipsis"
+                                                                                           ToolTip="{Binding ExecutablePath}"
                                                                                            Text="{Binding DisambiguationText}">
                                                                                     <TextBlock.Style>
                                                                                         <Style TargetType="TextBlock">
