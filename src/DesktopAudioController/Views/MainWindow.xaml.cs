@@ -475,8 +475,13 @@ public partial class MainWindow : Window
     /// </summary>
     private void ExitApplication()
     {
-        _isExitRequested = true;
-        Close();
+        RunOnUiThread(() =>
+        {
+            AppLog.Info("MainWindow", "트레이 종료 요청 처리");
+            _isExitRequested = true;
+            _notifyIcon.Visible = false;
+            System.Windows.Application.Current.Shutdown();
+        });
     }
 
     /// <summary>
@@ -517,18 +522,18 @@ public partial class MainWindow : Window
         };
 
         trayMenu.Items.Add(statusItem);
-        trayMenu.Items.Add("열기", null, (_, _) => RestoreFromTray());
-        trayMenu.Items.Add("설정", null, (_, _) =>
+        trayMenu.Items.Add("열기", null, (_, _) => RunOnUiThread(RestoreFromTray));
+        trayMenu.Items.Add("설정", null, (_, _) => RunOnUiThread(() =>
         {
             RestoreFromTray();
             OpenSettingsInternal();
-        });
-        trayMenu.Items.Add("새로고침", null, (_, _) =>
+        }));
+        trayMenu.Items.Add("새로고침", null, (_, _) => RunOnUiThread(() =>
         {
             _viewModel.Load();
             UpdateEmptyState();
             RefreshTrayMenu();
-        });
+        }));
 
         if (_viewModel.VisibleDevices.Count > 0)
         {
@@ -547,7 +552,7 @@ public partial class MainWindow : Window
                 Enabled = localDevice.IsConnected
             };
 
-            defaultItem.Click += (_, _) =>
+            defaultItem.Click += (_, _) => RunOnUiThread(() =>
             {
                 try
                 {
@@ -557,7 +562,7 @@ public partial class MainWindow : Window
                 {
                     HandleSetDefaultFailure(localDevice, exception);
                 }
-            };
+            });
 
             var muteItem = new Forms.ToolStripMenuItem(localDevice.Name)
             {
@@ -565,7 +570,7 @@ public partial class MainWindow : Window
                 Enabled = localDevice.IsConnected
             };
 
-            muteItem.Click += (_, _) =>
+            muteItem.Click += (_, _) => RunOnUiThread(() =>
             {
                 try
                 {
@@ -576,7 +581,7 @@ public partial class MainWindow : Window
                 {
                     // 트레이 토글 실패는 다음 새로고침에서 복구합니다.
                 }
-            };
+            });
 
             deviceMenu.DropDownItems.Add(defaultItem);
             muteMenu.DropDownItems.Add(muteItem);
@@ -594,6 +599,20 @@ public partial class MainWindow : Window
     private static string TrimNotifyText(string text)
     {
         return text.Length <= 32 ? text : $"{text[..29]}...";
+    }
+
+    /// <summary>
+    /// 트레이 메뉴처럼 UI 스레드가 아닐 수 있는 호출 지점을 WPF Dispatcher로 정규화합니다.
+    /// </summary>
+    private void RunOnUiThread(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        _ = Dispatcher.InvokeAsync(action);
     }
 
     /// <summary>
