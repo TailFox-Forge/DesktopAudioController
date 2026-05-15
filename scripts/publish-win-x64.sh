@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csproj"
 
 # 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.6.0-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+VERSION="${1:-v0.8.3-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 
 # 우선순위:
 # 1. DOTNET_BIN 환경 변수
@@ -40,6 +40,25 @@ rm -rf "${PUBLISH_ROOT}"
 rm -f "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
 mkdir -p "${PUBLISH_DIR}" "${PACKAGE_DIR}"
 
+create_zip() {
+    local source_dir="$1"
+    local target_zip="$2"
+
+    python3 - "${source_dir}" "${target_zip}" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+source_dir = pathlib.Path(sys.argv[1])
+target_zip = pathlib.Path(sys.argv[2])
+
+with zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    for file_path in sorted(source_dir.rglob("*")):
+        if file_path.is_file():
+            archive.write(file_path, file_path.relative_to(source_dir))
+PY
+}
+
 echo "[1/3] publish 시작: ${VERSION}"
 echo "  - RID restore 수행: ${RUNTIME_ID}"
 "${DOTNET_BIN}" restore "${PROJECT_PATH}" \
@@ -56,19 +75,7 @@ echo "  - RID restore 수행: ${RUNTIME_ID}"
     -o "${PUBLISH_DIR}"
 
 echo "[2/3] zip 생성: ${PACKAGE_PATH}"
-python3 - "${PUBLISH_DIR}" "${PACKAGE_PATH}" <<'PY'
-import pathlib
-import sys
-import zipfile
-
-publish_dir = pathlib.Path(sys.argv[1])
-package_path = pathlib.Path(sys.argv[2])
-
-with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-    for file_path in sorted(publish_dir.rglob("*")):
-        if file_path.is_file():
-            archive.write(file_path, file_path.relative_to(publish_dir))
-PY
+create_zip "${PUBLISH_DIR}" "${PACKAGE_PATH}"
 
 echo "[3/3] sha256 생성: ${CHECKSUM_PATH}"
 (

@@ -1,119 +1,164 @@
 # DesktopAudioController
 
-Windows에서 **사용자가 고른 출력 장치만 표시**하고,
-그 장치의 **마스터 볼륨 / 음소거 / 기본 출력 장치 전환**과
-**해당 장치에서 실제로 소리를 내는 프로그램별 세션 볼륨 / 음소거**까지 빠르게 제어하는 WPF 데스크톱 유틸리티입니다.
+Windows에서 사용자가 고른 출력 장치만 표시하고, 장치 마스터 볼륨과 해당 장치에서 실제로 소리를 내는 프로그램별 세션 볼륨을 빠르게 제어하는 WPF 데스크톱 유틸리티입니다.
+
+## 실행 화면 예시
+
+![DesktopAudioController 실행 화면 예시](docs/images/main-window-example.png)
 
 ## 현재 상태
 
 ```text
-단계: Phase 6 완료 + Phase 7-1 배포 자동화 완료
-상태: 핵심 기능 구현, 안정화, 배포 자동화, 빌드 검증 완료
-빌드 검증: dotnet build 0 Warning / 0 Error
-배포 형태: 임시 zip 배포 우선, installer는 추후
-최신 GitHub 프리릴리즈: v0.7.3-preview12
-최신 로컬 배포 검증: v0.7.3-preview12
+기준 버전: v0.8.3
+개발 단계: Phase 9 완료
+런타임: .NET 8 / WPF / Windows 전용
+배포 형태: win-x64 self-contained single-file zip
+최신 프리릴리즈: https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.8.3-p3-test
+최근 확인 사항:
+- 프로그램 설정 저장 debounce 적용 완료
+- 트레이 우클릭 종료 시 프로세스 잔류 대응 반영 완료
+- SettingsService / 프로그램 설정 저장 복원 테스트 9개 통과
+- portable zip 배포 기준으로 Phase 9 범위 확정
+- 업데이트 방식은 zip 다운로드 후 압축 해제 / 덮어쓰기 기준
 ```
 
-## 현재 구현 범위
+## 프로그램 동작 방식
+
+### 1. 앱 시작
 
 ```text
-1. 최초 실행 시 설정창 표시
-2. 출력 장치 목록 조회
-3. 선택한 장치만 메인 화면에 표시
-4. 장치 마스터 볼륨 조절
-5. 장치 음소거
-6. 기본 출력 장치 변경
-7. 장치 확장 시 앱 세션 목록 표시
-8. 앱 세션별 볼륨 조절
-9. 앱 세션별 음소거
-10. 장치 / 볼륨 / 세션 이벤트 기반 자동 갱신
-11. 세션 아이콘 표시
-12. 트레이 최소화 / 복원 / 종료
-13. PerMonitorV2 DPI 대응
-14. 설정 저장 / 재로딩
-15. Windows 시작 시 자동 실행 옵션
-16. 기본 장치 변경 실패 시 원인 분류 / 재시도 / 설정 fallback
-17. 시스템 사운드 세션 표시 옵션
-18. 트레이에서 기본 장치 빠른 전환 / 장치 음소거 토글
-19. 상태 변경 시 부분 갱신, 토폴로지 변경 시 전체 갱신
-20. 아이콘 실패 캐시 / 만료 정리
-21. PID 기준 프로세스 메타데이터 캐시
-22. 세션 아이콘 비동기 로딩
-23. 오디오 변경 이벤트 큐 스레드 안전화
-24. 설정 저장 실패 시 사용자 안내 및 창 유지
-25. 캐시 히트 시 아이콘 비동기 로딩 중복 예약 차단
-26. 동일 exe 아이콘 로딩 in-flight dedupe
-27. 설정 파일 손상 시 .bak 백업 및 1회 경고
-28. 메인 화면 현재 앱 버전 표시
-29. GitHub 릴리즈 페이지 열기 버튼
-30. 파일 기반 진단 로그 기록
+- 시작 시 settings.json을 로드합니다.
+- 설정 파일이 손상되어 있으면 기존 파일을 settings.json.bak로 백업하고 기본값으로 복구합니다.
+- 최초 실행이거나 표시할 장치를 아직 고르지 않았으면 설정창을 먼저 엽니다.
+- RunAtWindowsStartup가 켜져 있으면 시작 시 자동 실행 레지스트리 상태를 다시 맞춥니다.
+- 로그 파일은 앱 시작과 함께 초기화됩니다.
 ```
 
-## 핵심 UX
+### 2. 메인 화면
 
 ```text
-초기 화면
-- 사용자가 선택한 출력 장치만 카드 형태로 표시
-- 각 장치의 마스터 볼륨과 음소거, 기본 장치 변경 제공
+- 설정에서 선택한 출력 장치만 메인 화면에 표시합니다.
+- ShowOnlyConnectedDevices가 켜져 있으면 연결된 장치만 보여줍니다.
+- 각 장치 카드에서 마스터 볼륨, 음소거, 기본 출력 장치 전환을 수행할 수 있습니다.
+- 기본 장치는 화면 갱신 시 자동으로 눈에 띄게 반영됩니다.
+```
 
-장치 확장
-- 해당 장치에서 실제로 출력 중인 프로그램 목록 표시
-- 프로그램별 볼륨과 음소거를 바로 조절
+### 3. 장치 / 세션 제어
 
-설정창
-- 표시할 장치 선택
-- 연결된 장치만 표시 여부
-- 시스템 사운드 세션 표시 여부
-- 트레이 최소화 여부
-- Windows 시작 시 자동 실행 여부
-- 시작 시 최소화 여부
+```text
+- 장치 마스터 볼륨 변경은 약 80ms debounce 후 실제 오디오 서비스에 반영됩니다.
+- 장치 음소거는 즉시 반영됩니다.
+- 장치를 펼치면 해당 장치에서 현재 활성인 프로그램 세션 목록을 표시합니다.
+- 프로그램 세션에서도 볼륨 / 음소거를 각각 제어할 수 있습니다.
+- 세션 볼륨 변경 역시 약 80ms debounce 후 실제 오디오 서비스에 반영됩니다.
+- 이름이 같은 프로그램이 여러 개면 경로나 세션 힌트로 표시명을 구분합니다.
+- 시스템 사운드 세션은 옵션으로 포함하거나 숨길 수 있습니다.
+```
 
-트레이 메뉴
-- 창 열기
-- 설정 열기
-- 새로고침
-- 기본 장치 빠른 전환
-- 장치 음소거 토글
-- 종료
+### 4. 프로그램별 설정 저장 / 복원
+
+```text
+- 프로그램별 볼륨 / 음소거 상태를 저장합니다.
+- 저장 키는 가능한 경우 실행 파일 경로 기반으로 잡고, 필요하면 세션 경로 또는 표시명으로 보정합니다.
+- 세션 슬라이더를 짧게 여러 번 움직여도 설정 파일 저장은 마지막 입력 기준 약 400ms 뒤 1회만 수행됩니다.
+- 설정창을 열기 직전과 앱 종료 직전에는 pending 저장을 즉시 flush합니다.
+- 살아 있는 세션이 다시 보이면 저장된 프로그램 설정을 자동 복원합니다.
+```
+
+### 5. 자동 갱신
+
+```text
+- 오디오 장치 / 세션 / 상태 변경 이벤트를 받아 화면을 자동 갱신합니다.
+- 상태 변화만 있으면 부분 갱신으로 처리하고, 장치 구조 변화가 있으면 전체 갱신으로 전환합니다.
+- 앱 아이콘과 프로세스 메타데이터는 캐시를 사용해 반복 조회 비용을 줄입니다.
+- GitHub 릴리즈 확인은 백그라운드에서 수행하며 UI를 멈추지 않도록 짧은 timeout과 예외 무시 정책을 사용합니다.
+```
+
+### 6. 트레이 동작
+
+```text
+- MinimizeToTray가 켜져 있으면 창 닫기 시 종료 대신 트레이로 숨깁니다.
+- 트레이 메뉴에서 창 열기, 설정 열기, 새로고침, 기본 장치 빠른 전환, 장치 음소거 토글, 종료를 실행할 수 있습니다.
+- v0.8.3부터 트레이 종료는 Shutdown 단독 호출이 아니라 메인 창 Close 경로를 타도록 변경했습니다.
+- 이 경로에서 종료 직전 pending 설정을 flush하고 WPF 종료 파이프라인을 정상적으로 통과합니다.
+```
+
+## 설정 항목
+
+```text
+- 표시할 출력 장치 선택
+- 시작 시 최소화
+- Windows 시작 시 자동 실행
+- 트레이로 최소화
+- 연결된 장치만 표시
+- 시스템 사운드 세션 표시
+```
+
+## 저장 파일과 로그
+
+설정 파일:
+
+```text
+%LocalAppData%\DesktopAudioController\settings.json
+%LocalAppData%\DesktopAudioController\settings.json.bak
+```
+
+진단 로그:
+
+```text
+%LocalAppData%\DesktopAudioController\logs\DesktopAudioController-YYYYMMDD.log
+```
+
+로그에서 바로 확인할 수 있는 대표 항목:
+
+```text
+- 설정 로드 / 저장 경로
+- 프로그램 설정 저장 완료 count=...
+- 저장된 프로그램 설정 복원
+- 트레이 종료 요청 처리
+- OnExit 시작 / OnExit 완료
 ```
 
 ## 기술 스택
 
 ```text
-- 언어: C#
-- 런타임: .NET 8
-- UI: WPF
-- 오디오 장치/세션 제어: Windows Core Audio API + NAudio
-- 기본 장치 변경: PolicyConfig COM interop
-- 트레이: Windows Forms NotifyIcon
+- C#
+- .NET 8
+- WPF
+- Windows Forms NotifyIcon
+- Windows Core Audio API + NAudio
+- PolicyConfig COM interop
 ```
 
-## 현재 구조
+## 프로젝트 구조
 
 ```text
 DesktopAudioController/
   docs/
     design.md
+    release-notes-template.md
+  scripts/
+    publish-win-x64.sh
   src/
     DesktopAudioController/
       Models/
       Services/
       ViewModels/
       Views/
-      app.manifest
+      App.xaml.cs
+      DesktopAudioController.csproj
 ```
 
 ## 빌드
 
-Windows 또는 Windows 타겟팅이 가능한 환경에서 아래 순서로 검증합니다.
+Windows 또는 Windows 타겟팅이 가능한 환경에서 실행합니다.
 
 ```bash
 dotnet restore src/DesktopAudioController/DesktopAudioController.csproj -p:EnableWindowsTargeting=true
 dotnet build src/DesktopAudioController/DesktopAudioController.csproj -p:EnableWindowsTargeting=true
 ```
 
-현재 검증 기준:
+최근 기준 빌드 검증:
 
 ```text
 Build succeeded.
@@ -121,34 +166,24 @@ Build succeeded.
 0 Error(s)
 ```
 
-## 임시 배포 방식
+## 배포
 
-현 단계에서는 installer 대신 **publish 결과물 zip 배포**를 사용합니다.
-
-권장 이유:
-
-```text
-- 설치 제거 로직을 아직 강제하지 않아도 됨
-- 내부 테스트 배포 속도가 빠름
-- 문제 발생 시 교체와 회수가 단순함
-```
-
-배포 자동화 스크립트:
+win-x64 self-contained single-file zip 생성 스크립트:
 
 ```bash
-bash scripts/publish-win-x64.sh v0.7.3-preview12-local
+bash scripts/publish-win-x64.sh v0.8.3-local
 ```
 
 스크립트가 수행하는 작업:
 
 ```text
-1. Release publish
-2. win-x64 self-contained / single-file 산출물 생성
+1. RID restore
+2. Release publish
 3. zip 패키지 생성
 4. sha256 체크섬 생성
 ```
 
-생성 경로:
+산출물 경로:
 
 ```text
 artifacts/release/win-x64/<version>/publish/
@@ -156,157 +191,42 @@ artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip
 artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip.sha256
 ```
 
-릴리즈 노트 작성 템플릿:
-
-- [docs/release-notes-template.md](docs/release-notes-template.md)
-
-현재 게시된 프리릴리즈:
-
-- [v0.7.3-preview12](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview12)
-- [v0.7.3-preview9](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview9)
-- [v0.7.3-preview8](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview8)
-- [v0.7.3-preview7](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview7)
-- [v0.7.3-preview6](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview6)
-- [v0.7.3-preview5](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview5)
-- [v0.7.3-preview4](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview4)
-- [v0.7.3-preview3](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview3)
-- [v0.7.3-preview2](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview2)
-- [v0.6.0-preview2](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.6.0-preview2)
-- [v0.3.0-preview1](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.3.0-preview1)
-
-## 진단 로그
-
-재현 테스트 시 아래 경로에 로그 파일이 생성됩니다.
+업데이트 방식:
 
 ```text
-%LocalAppData%\DesktopAudioController\logs\DesktopAudioController-YYYYMMDD.log
+1. 새 zip 다운로드
+2. 압축 해제
+3. 기존 실행 폴더에 파일 덮어쓰기
+4. settings.json / logs 는 %LocalAppData%\DesktopAudioController 경로에 유지
 ```
 
-## 문서
+## 문서 / 릴리즈
 
 - [설계 문서](docs/design.md)
+- [릴리즈 노트 템플릿](docs/release-notes-template.md)
+- [GitHub Releases](https://github.com/TailFox-Forge/DesktopAudioController/releases)
 
-## Phase 4 완료 내역
+## 라이선스
 
 ```text
-Phase 4-1 기본 장치 변경 실패 UX 개선 완료
-Phase 4-2 세션 이벤트 반영 정교화 완료
-Phase 4-3 System Sounds 필터 옵션 완료
-Phase 4-4 트레이 메뉴 확장 완료
+MIT License
 ```
 
-진행 원칙:
+자세한 내용은 [LICENSE](LICENSE)를 따릅니다.
+
+## 진행 현황
+
+### Phase 9 완료 항목
 
 ```text
-- 항목별 커밋 분리
-- 각 항목마다 빌드 검증
-- 소스 주석 동시 반영
+1. LICENSE 반영 및 Public 전환 준비
+2. 자동 테스트 추가
+3. portable zip 배포 기준 확정
 ```
 
-## Phase 5 완료 내역
+### Phase 10 후보
 
 ```text
-Phase 5-1 실패 캐시 및 만료 정리 완료
-Phase 5-2 프로세스 메타데이터 캐시 분리 완료
-Phase 5-3 아이콘 비동기 로딩 완료
-```
-
-반영 효과:
-
-```text
-- 캐시가 무한정 쌓이지 않게 정리 정책 추가
-- 반복 실패 경로에 대한 재시도 간격 제어
-- 대량 세션 환경에서 아이콘/메타데이터 조회 부하 감소
-- UI 첫 렌더링 시 아이콘 조회로 인한 체감 지연 감소
-```
-
-## Phase 6 완료 내역
-
-```text
-Phase 6-1 오디오 변경 이벤트 큐 스레드 안전화 완료
-Phase 6-2 설정 저장 실패 UX 처리 완료
-Phase 6-3 아이콘 비동기 로딩 중복 예약 제거 완료
-Phase 6-4 동일 exe 아이콘 로딩 in-flight dedupe 완료
-Phase 6-5 설정 파일 손상 백업 및 1회 경고 완료
-```
-
-반영 효과:
-
-```text
-- 오디오 이벤트가 동시에 들어와도 중복 Dispatcher 예약이 줄어듦
-- 설정 저장 실패 시 원인과 경로를 사용자에게 명확히 안내
-- 캐시 히트 상황에서 불필요한 아이콘 로딩 작업 제거
-- 같은 exe 아이콘을 동시에 여러 번 읽는 낭비 제거
-- 손상된 설정 파일을 조용히 덮어쓰지 않고 복구 사실을 사용자에게 알림
-```
-
-## Phase 7 진행 내역
-
-```text
-Phase 7-1 배포 자동화 완료
-Phase 7-3 1단계 앱 버전 표시와 릴리즈 버튼 완료
-Phase 7-3 2단계 백그라운드 최신 버전 감지와 안내 완료
-```
-
-반영 내용:
-
-```text
-- publish / zip / sha256 생성 스크립트 추가
-- 버전별 배포 산출물 경로 표준화
-- 릴리즈 노트 템플릿 추가
-- 현재 빌드 버전을 메인 화면에 표시
-- GitHub 릴리즈 페이지를 여는 버튼 추가
-- 앱 시작 후 GitHub 릴리즈 기준 백그라운드 업데이트 확인
-- 인터넷이 없거나 응답이 느릴 때도 UI가 멈추지 않도록 짧은 timeout과 예외 무시 적용
-```
-
-## 남은 고도화 후보
-
-### Phase 7 후보
-
-#### 7-2. 설치 체계 정리
-
-배경:
-
-```text
-현재 배포는 self-contained single-file zip까지 정리되어 있고,
-설치/제거/바로가기 생성 같은 사용자 설치 절차는 아직 없습니다.
-```
-
-추가 목표:
-
-```text
-- MSI 또는 installer 도입
-- 설치 경로 / 바로가기 / 제거 절차 정리
-- 내부 배포 표준 절차 수립
-```
-
-기대 효과:
-
-```text
-- 일반 사용자 배포 편의성 향상
-- 운영/지원 절차 단순화
-```
-
-#### 7-3. 업데이트 체계 검토
-
-배경:
-
-```text
-현재는 새 버전이 나와도 사용자가 zip을 다시 받아 교체해야 합니다.
-```
-
-추가 목표:
-
-```text
-- 1단계: 앱 내 버전 표시 / 릴리즈 페이지 열기 완료
-- 2단계: 최신 버전 감지와 새 버전 안내 완료
-- 3단계: installer 도입 시 auto-update 연계 검토
-```
-
-기대 효과:
-
-```text
-- 사용자 업데이트 부담 감소
-- 버전 불일치 운영 리스크 감소
+1. 업데이트 체계 고도화
+2. 장시간 안정화 및 UX 마감
 ```

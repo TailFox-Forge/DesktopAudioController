@@ -24,10 +24,7 @@ public sealed class SettingsService : ISettingsService
     /// <summary>
     /// 현재 사용자 프로필 기준 설정 파일 저장 경로입니다.
     /// </summary>
-    public string SettingsFilePath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "DesktopAudioController",
-        "settings.json");
+    public string SettingsFilePath { get; }
 
     /// <summary>
     /// 손상된 설정 파일을 백업할 때 사용하는 경로입니다.
@@ -35,7 +32,18 @@ public sealed class SettingsService : ISettingsService
     public string BackupSettingsFilePath { get; }
 
     public SettingsService()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "DesktopAudioController",
+            "settings.json"))
     {
+    }
+
+    public SettingsService(string settingsFilePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsFilePath);
+
+        SettingsFilePath = settingsFilePath;
         BackupSettingsFilePath = $"{SettingsFilePath}.bak";
     }
 

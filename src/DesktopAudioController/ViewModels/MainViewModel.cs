@@ -460,15 +460,7 @@ public sealed class MainViewModel : ObservableObject
                 _audioSessionService.SetSessionMuted(deviceId, session.Id, preference.IsMuted);
             });
 
-        return new AudioSessionInfo
-        {
-            Id = session.Id,
-            DisplayName = session.DisplayName,
-            DisambiguationText = session.DisambiguationText,
-            ExecutablePath = session.ExecutablePath,
-            Volume = preference.Volume,
-            IsMuted = preference.IsMuted
-        };
+        return ProgramAudioPreferenceStore.CreateRestoredSessionSnapshot(session, preference);
     }
 
     /// <summary>
@@ -476,14 +468,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private bool TryGetStoredSessionPreference(AudioSessionInfo session, out ProgramAudioPreference preference)
     {
-        var matchKey = CreateProgramPreferenceMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
-        if (matchKey is not null && _programAudioPreferencesByKey.TryGetValue(matchKey, out preference!))
-        {
-            return true;
-        }
-
-        preference = null!;
-        return false;
+        return ProgramAudioPreferenceStore.TryGetStoredPreference(_programAudioPreferencesByKey, session, out preference);
     }
 
     /// <summary>
@@ -501,51 +486,27 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        var matchKey = CreateProgramPreferenceMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
+        var matchKey = ProgramAudioPreferenceStore.CreateMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
         if (matchKey is null)
         {
             AppLog.Debug("MainViewModel", $"프로그램 설정 저장 생략: 매칭 키 없음 deviceId={deviceId} sessionId={sessionId}");
             return;
         }
 
-        if (!_programAudioPreferencesByKey.TryGetValue(matchKey, out var preference))
+        var sessionSnapshot = new AudioSessionInfo
         {
-            preference = new ProgramAudioPreference
-            {
-                MatchKey = matchKey
-            };
-        }
+            Id = session.Id,
+            DisplayName = session.DisplayName,
+            DisambiguationText = session.DisambiguationText,
+            ExecutablePath = session.ExecutablePath,
+            Volume = session.Volume,
+            IsMuted = session.IsMuted
+        };
 
-        preference.ExecutablePath = session.ExecutablePath;
-        preference.DisplayName = session.DisplayName;
-        preference.Volume = volume ?? session.Volume;
-        preference.IsMuted = muted ?? session.IsMuted;
+        _programAudioPreferencesByKey.TryGetValue(matchKey, out var preference);
+        preference = ProgramAudioPreferenceStore.CreateOrUpdatePreference(preference, sessionSnapshot, volume, muted);
         _programAudioPreferencesByKey[matchKey] = preference;
         QueueProgramPreferenceSave();
-    }
-
-    /// <summary>
-    /// 프로그램 재실행 뒤에도 유지될 수 있는 안정적인 저장 키를 계산합니다.
-    /// </summary>
-    private static string? CreateProgramPreferenceMatchKey(string sessionId, string? executablePath, string displayName)
-    {
-        if (!string.IsNullOrWhiteSpace(executablePath))
-        {
-            return $"path:{executablePath.Trim()}";
-        }
-
-        var extractedSessionPath = TryExtractSessionPathToken(sessionId);
-        if (!string.IsNullOrWhiteSpace(extractedSessionPath))
-        {
-            return $"session-path:{extractedSessionPath}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(displayName))
-        {
-            return $"name:{displayName.Trim()}";
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -846,10 +807,7 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var settings = _settingsService.Load();
-            settings.ProgramAudioPreferences = _programAudioPreferencesByKey.Values
-                .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
-                .OrderBy(preference => preference.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            settings.ProgramAudioPreferences = ProgramAudioPreferenceStore.BuildPersistedPreferences(_programAudioPreferencesByKey).ToList();
             _settingsService.Save(settings);
             _hasPendingProgramPreferenceSave = false;
             AppLog.Info(
