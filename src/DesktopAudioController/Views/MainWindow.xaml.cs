@@ -30,6 +30,12 @@ public partial class MainWindow : Window
     // GitHub 릴리즈 기준 새 버전 존재 여부를 확인하는 서비스입니다.
     private readonly IUpdateCheckService _updateCheckService;
 
+    // 현재 실행이 Windows 자동 실행으로 시작된 경우에만 true입니다.
+    private readonly bool _isStartupLaunch;
+
+    // 첫 실행처럼 장치 설정이 필요한 경우 창을 강제로 보이게 유지하기 위한 플래그입니다.
+    private readonly bool _forceVisibleOnStartup;
+
     // 시스템 트레이 영역에 표시할 아이콘 인스턴스입니다.
     private readonly Forms.NotifyIcon _notifyIcon;
 
@@ -56,7 +62,9 @@ public partial class MainWindow : Window
         Func<SettingsViewModel> settingsViewModelFactory,
         IAudioNotificationService audioNotificationService,
         ISettingsService settingsService,
-        IUpdateCheckService updateCheckService)
+        IUpdateCheckService updateCheckService,
+        bool isStartupLaunch,
+        bool forceVisibleOnStartup)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -64,6 +72,8 @@ public partial class MainWindow : Window
         _audioNotificationService = audioNotificationService;
         _settingsService = settingsService;
         _updateCheckService = updateCheckService;
+        _isStartupLaunch = isStartupLaunch;
+        _forceVisibleOnStartup = forceVisibleOnStartup;
         _notifyIcon = CreateNotifyIcon();
         DataContext = _viewModel;
         _audioNotificationService.Changed += AudioNotificationService_OnChanged;
@@ -79,6 +89,11 @@ public partial class MainWindow : Window
     /// </summary>
     public void OpenSettingsOnFirstRun()
     {
+        // 첫 실행 설정창은 시작 최소화 여부와 무관하게 항상 보이도록 창을 먼저 복원합니다.
+        ShowInTaskbar = true;
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
         OpenSettingsInternal();
     }
 
@@ -171,6 +186,12 @@ public partial class MainWindow : Window
     {
         // 창 표시 이후에 백그라운드 업데이트 확인을 시작해, 오프라인 상태여도 UI가 멈추지 않게 합니다.
         _ = CheckForUpdateInBackgroundAsync();
+
+        // 수동 실행 또는 첫 실행 설정이 필요한 경우에는 시작 최소화를 적용하지 않습니다.
+        if (!_isStartupLaunch || _forceVisibleOnStartup)
+        {
+            return;
+        }
 
         // settings는 사용자가 마지막으로 저장한 창 동작 옵션입니다.
         var settings = _settingsService.Load();

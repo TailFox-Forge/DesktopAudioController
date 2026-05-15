@@ -79,7 +79,7 @@
                     <TextBlock Text="Windows 시작 시 자동 실행" />
                 </CheckBox>
                 <CheckBox IsChecked="{Binding StartMinimized}">
-                    <TextBlock Text="시작 시 최소화" />
+                    <TextBlock Text="Windows 자동 실행 시 최소화" />
                 </CheckBox>
             </StackPanel>
         </ScrollViewer>

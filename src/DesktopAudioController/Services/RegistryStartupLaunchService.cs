@@ -7,6 +7,9 @@ namespace DesktopAudioController.Services;
 /// </summary>
 public sealed class RegistryStartupLaunchService : IStartupLaunchService
 {
+    // Windows 로그인 직후 자동 실행으로 시작됐음을 앱에 전달하는 명령줄 인자입니다.
+    public const string StartupLaunchArgument = "--windows-startup";
+
     // 현재 사용자 자동 실행 레지스트리 경로입니다.
     private const string RunRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
@@ -50,8 +53,12 @@ public sealed class RegistryStartupLaunchService : IStartupLaunchService
                 throw new InvalidOperationException("현재 실행 파일 경로를 확인하지 못했습니다.");
             }
 
-            // 공백이 있는 경로도 자동 실행 시 정확히 해석되도록 큰따옴표로 감쌉니다.
-            runKey.SetValue(RunValueName, $"\"{processPath}\"", RegistryValueKind.String);
+            // 공백이 있는 경로도 자동 실행 시 정확히 해석되도록 큰따옴표로 감싸고,
+            // 수동 실행과 자동 실행을 구분할 수 있게 전용 인자를 함께 넘깁니다.
+            runKey.SetValue(
+                RunValueName,
+                $"\"{processPath}\" {StartupLaunchArgument}",
+                RegistryValueKind.String);
         }
         catch (Exception exception)
         {

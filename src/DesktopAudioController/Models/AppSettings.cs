@@ -11,7 +11,7 @@ public sealed class AppSettings
     public List<string> VisibleDeviceIds { get; set; } = [];
 
     /// <summary>
-    /// 앱 시작 시 최소화 상태로 띄울지 여부입니다.
+    /// Windows 자동 실행으로 시작할 때 최소화 상태로 띄울지 여부입니다.
     /// </summary>
     public bool StartMinimized { get; set; }
 

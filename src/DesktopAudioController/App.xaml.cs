@@ -2,6 +2,8 @@ using System.Windows;
 using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 using DesktopAudioController.Views;
+using System;
+using System.Linq;
 
 namespace DesktopAudioController;
 
@@ -40,6 +42,13 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // 현재 실행이 Windows 자동 실행 레지스트리를 통해 시작된 경우에만 true입니다.
+        var isStartupLaunch = e.Args.Any(argument =>
+            string.Equals(
+                argument,
+                RegistryStartupLaunchService.StartupLaunchArgument,
+                StringComparison.OrdinalIgnoreCase));
 
         // 실제 Core Audio 서비스로 장치와 세션을 조회합니다.
         _settingsService = new SettingsService();
@@ -80,7 +89,9 @@ public partial class App : System.Windows.Application
             CreateSettingsViewModel,
             _audioNotificationService,
             _settingsService,
-            _updateCheckService);
+            _updateCheckService,
+            isStartupLaunch,
+            !mainViewModel.HasConfiguredDevices);
         MainWindow = mainWindow;
         mainWindow.Show();
 

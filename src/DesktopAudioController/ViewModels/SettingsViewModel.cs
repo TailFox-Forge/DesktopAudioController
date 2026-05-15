@@ -54,7 +54,7 @@ public sealed class SettingsViewModel : ObservableObject
     public ObservableCollection<AudioDeviceSelectionViewModel> AvailableDevices { get; } = [];
 
     /// <summary>
-    /// 시작 시 최소화 여부입니다.
+    /// Windows 자동 실행 시 최소화 여부입니다.
     /// </summary>
     public bool StartMinimized
     {
