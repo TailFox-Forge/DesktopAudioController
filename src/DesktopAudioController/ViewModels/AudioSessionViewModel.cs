@@ -1,4 +1,5 @@
 using DesktopAudioController.Infrastructure;
+using System.Windows.Media;
 
 namespace DesktopAudioController.ViewModels;
 
@@ -26,6 +27,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         string deviceId,
         string id,
         string displayName,
+        ImageSource? iconImage,
         int initialVolume,
         bool initialMuted,
         Action<string, string, int> onVolumeChanged,
@@ -34,6 +36,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         DeviceId = deviceId;
         Id = id;
         DisplayName = displayName;
+        IconImage = iconImage;
         _volume = initialVolume;
         _isMuted = initialMuted;
         _onVolumeChanged = onVolumeChanged;
@@ -54,6 +57,11 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// UI에 노출할 세션 표시 이름입니다.
     /// </summary>
     public string DisplayName { get; }
+
+    /// <summary>
+    /// 세션 앱을 식별하기 위한 아이콘 이미지입니다.
+    /// </summary>
+    public ImageSource? IconImage { get; }
 
     /// <summary>
     /// 현재 세션 볼륨 값입니다.

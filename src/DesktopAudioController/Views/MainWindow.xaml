@@ -121,8 +121,15 @@
                                                                     BorderThickness="1">
                                                                 <StackPanel>
                                                                     <DockPanel Margin="0,0,0,6">
-                                                                        <TextBlock FontWeight="SemiBold"
-                                                                                   Text="{Binding DisplayName}" />
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <Image Width="16"
+                                                                                   Height="16"
+                                                                                   Margin="0,0,6,0"
+                                                                                   Source="{Binding IconImage}" />
+                                                                            <TextBlock VerticalAlignment="Center"
+                                                                                       FontWeight="SemiBold"
+                                                                                       Text="{Binding DisplayName}" />
+                                                                        </StackPanel>
                                                                         <CheckBox DockPanel.Dock="Right"
                                                                                   IsChecked="{Binding IsMuted}"
                                                                                   Content="음소거" />

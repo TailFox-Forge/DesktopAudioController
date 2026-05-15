@@ -50,6 +50,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
                 {
                     Id = session.GetSessionIdentifier,
                     DisplayName = ResolveDisplayName(session),
+                    ExecutablePath = ResolveExecutablePath(session),
                     Volume = (int)Math.Round(session.SimpleAudioVolume.Volume * 100),
                     IsMuted = session.SimpleAudioVolume.Mute
                 });
@@ -149,6 +150,24 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
         {
             // 프로세스 조회도 실패하면 PID 기반 이름으로 폴백합니다.
             return $"PID {session.GetProcessID}";
+        }
+    }
+
+    /// <summary>
+    /// 세션을 소유한 프로세스의 실행 파일 경로를 확인합니다.
+    /// </summary>
+    private static string? ResolveExecutablePath(AudioSessionControl session)
+    {
+        try
+        {
+            // process는 세션을 생성한 앱 프로세스이며, MainModule 경로에서 아이콘 조회에 필요한 실행 파일 경로를 얻습니다.
+            using var process = Process.GetProcessById((int)session.GetProcessID);
+            return process.MainModule?.FileName;
+        }
+        catch
+        {
+            // 보호 프로세스나 이미 종료된 프로세스는 경로 조회가 실패할 수 있습니다.
+            return null;
         }
     }
 

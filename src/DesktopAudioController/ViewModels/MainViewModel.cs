@@ -20,6 +20,9 @@ public sealed class MainViewModel : ObservableObject
     // 장치별 앱 세션을 조회하기 위한 서비스입니다.
     private readonly IAudioSessionService _audioSessionService;
 
+    // 실행 파일 경로 기준으로 세션 아이콘을 조회하는 서비스입니다.
+    private readonly IAppIconService _appIconService;
+
     // 사용자가 한 번이라도 표시 장치를 설정했는지 여부입니다.
     private bool _hasConfiguredDevices;
 
@@ -29,11 +32,13 @@ public sealed class MainViewModel : ObservableObject
     public MainViewModel(
         ISettingsService settingsService,
         IAudioDeviceCatalogService audioDeviceCatalogService,
-        IAudioSessionService audioSessionService)
+        IAudioSessionService audioSessionService,
+        IAppIconService appIconService)
     {
         _settingsService = settingsService;
         _audioDeviceCatalogService = audioDeviceCatalogService;
         _audioSessionService = audioSessionService;
+        _appIconService = appIconService;
     }
 
     /// <summary>
@@ -127,6 +132,7 @@ public sealed class MainViewModel : ObservableObject
                     device.Id,
                     session.Id,
                     session.DisplayName,
+                    _appIconService.GetIcon(session.ExecutablePath),
                     session.Volume,
                     session.IsMuted,
                     OnSessionVolumeChanged,

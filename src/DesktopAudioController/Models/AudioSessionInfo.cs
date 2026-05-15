@@ -16,6 +16,11 @@ public sealed class AudioSessionInfo
     public required string DisplayName { get; init; }
 
     /// <summary>
+    /// 세션을 소유한 실행 파일 경로입니다. 아이콘 조회나 진단 로그에 사용합니다.
+    /// </summary>
+    public string? ExecutablePath { get; init; }
+
+    /// <summary>
     /// 현재 세션 볼륨 값입니다.
     /// </summary>
     public int Volume { get; set; } = 100;
