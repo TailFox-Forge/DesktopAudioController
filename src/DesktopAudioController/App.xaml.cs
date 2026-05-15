@@ -61,6 +61,16 @@ public partial class App : System.Windows.Application
         MainWindow = mainWindow;
         mainWindow.Show();
 
+        if (_settingsService.TryConsumeLoadWarning(out var warningMessage))
+        {
+            System.Windows.MessageBox.Show(
+                mainWindow,
+                warningMessage,
+                "설정 파일 복구 안내",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
         // 첫 실행처럼 표시할 장치가 아직 없으면 설정 창을 바로 띄웁니다.
         if (!mainViewModel.HasConfiguredDevices)
         {

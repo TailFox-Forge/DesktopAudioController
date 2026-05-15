@@ -9,6 +9,9 @@ namespace DesktopAudioController.Services;
 /// </summary>
 public sealed class SettingsService : ISettingsService
 {
+    // 손상된 설정 파일 감지 후 사용자에게 1회 표시할 경고 메시지 저장소입니다.
+    private string? _pendingLoadWarningMessage;
+
     /// <summary>
     /// 설정 파일을 직렬화/역직렬화할 때 사용하는 공통 옵션입니다.
     /// </summary>
@@ -25,6 +28,16 @@ public sealed class SettingsService : ISettingsService
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "DesktopAudioController",
         "settings.json");
+
+    /// <summary>
+    /// 손상된 설정 파일을 백업할 때 사용하는 경로입니다.
+    /// </summary>
+    public string BackupSettingsFilePath { get; }
+
+    public SettingsService()
+    {
+        BackupSettingsFilePath = $"{SettingsFilePath}.bak";
+    }
 
     /// <summary>
     /// 저장된 설정 파일이 있으면 읽고, 없거나 손상되었으면 기본 설정을 반환합니다.
@@ -47,6 +60,9 @@ public sealed class SettingsService : ISettingsService
         catch
         {
             // 파일 손상이나 읽기 오류가 나도 앱이 죽지 않도록 기본값으로 복구합니다.
+            TryBackupCorruptedSettingsFile();
+            _pendingLoadWarningMessage =
+                $"설정 파일을 읽지 못해 기본 설정으로 복구했습니다.\n\n원본 경로: {SettingsFilePath}\n백업 경로: {BackupSettingsFilePath}";
             return new AppSettings();
         }
     }
@@ -73,6 +89,43 @@ public sealed class SettingsService : ISettingsService
                 "설정 파일을 저장하지 못했습니다.",
                 SettingsFilePath,
                 exception);
+        }
+    }
+
+    /// <summary>
+    /// 직전 로드 과정에서 기록한 경고 메시지를 한 번만 반환합니다.
+    /// </summary>
+    public bool TryConsumeLoadWarning(out string warningMessage)
+    {
+        if (string.IsNullOrWhiteSpace(_pendingLoadWarningMessage))
+        {
+            warningMessage = string.Empty;
+            return false;
+        }
+
+        warningMessage = _pendingLoadWarningMessage;
+        _pendingLoadWarningMessage = null;
+        return true;
+    }
+
+    /// <summary>
+    /// 손상되었을 가능성이 있는 설정 파일을 .bak로 복사합니다.
+    /// </summary>
+    private void TryBackupCorruptedSettingsFile()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFilePath))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(BackupSettingsFilePath)!);
+            File.Copy(SettingsFilePath, BackupSettingsFilePath, overwrite: true);
+        }
+        catch
+        {
+            // 백업 실패는 원본 로드 실패보다 우선순위가 낮으므로 추가 예외를 만들지 않습니다.
         }
     }
 }

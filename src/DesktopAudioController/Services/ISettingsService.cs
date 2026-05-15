@@ -13,6 +13,11 @@ public interface ISettingsService
     string SettingsFilePath { get; }
 
     /// <summary>
+    /// 손상된 설정 파일을 백업할 때 사용하는 경로입니다.
+    /// </summary>
+    string BackupSettingsFilePath { get; }
+
+    /// <summary>
     /// 설정 파일을 읽어 설정 모델로 반환합니다.
     /// </summary>
     AppSettings Load();
@@ -21,4 +26,9 @@ public interface ISettingsService
     /// 현재 설정 모델을 영구 저장합니다.
     /// </summary>
     void Save(AppSettings settings);
+
+    /// <summary>
+    /// 직전 설정 로드 과정에서 발생한 경고를 한 번만 소비합니다.
+    /// </summary>
+    bool TryConsumeLoadWarning(out string warningMessage);
 }
