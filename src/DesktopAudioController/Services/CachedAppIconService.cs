@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Drawing;
 using System.IO;
 using System.Windows;
@@ -9,15 +8,33 @@ using System.Windows.Media.Imaging;
 namespace DesktopAudioController.Services;
 
 /// <summary>
-/// 실행 파일 경로별로 앱 아이콘을 캐싱해 반복 조회 비용을 줄이는 서비스입니다.
+/// 실행 파일 경로별로 앱 아이콘을 캐싱하고, 실패 캐시와 만료 정리를 함께 관리하는 서비스입니다.
 /// </summary>
 public sealed class CachedAppIconService : IAppIconService
 {
-    // 실행 파일 경로를 키로 사용해 한 번 읽은 아이콘을 재사용합니다.
-    private readonly ConcurrentDictionary<string, ImageSource?> _iconCache = new(StringComparer.OrdinalIgnoreCase);
+    // 캐시 딕셔너리 읽기/쓰기와 정리 시점을 직렬화하기 위한 잠금 객체입니다.
+    private readonly object _syncRoot = new();
+
+    // 실행 파일 경로를 키로 사용해 아이콘 또는 실패 상태를 저장합니다.
+    private readonly Dictionary<string, IconCacheEntry> _iconCache = new(StringComparer.OrdinalIgnoreCase);
+
+    // 다음 정리 작업을 수행할 시각입니다. 너무 자주 정리하지 않도록 간격을 둡니다.
+    private DateTimeOffset _nextCleanupUtc = DateTimeOffset.MinValue;
+
+    // 정상적으로 읽은 캐시는 마지막 접근 후 이 시간이 지나면 제거 후보가 됩니다.
+    private static readonly TimeSpan SuccessEntryRetention = TimeSpan.FromMinutes(30);
+
+    // 실패한 경로는 이 시간 동안 즉시 재시도하지 않고 실패 캐시를 재사용합니다.
+    private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(2);
+
+    // 실패한 경로도 이 시간이 지나면 캐시 자체를 버려 다시 깨끗하게 시작합니다.
+    private static readonly TimeSpan FailureEntryRetention = TimeSpan.FromMinutes(10);
+
+    // 캐시 정리 작업을 수행하는 최소 간격입니다.
+    private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// 실행 파일 경로의 아이콘을 조회하고, 이미 읽은 경로라면 캐시된 값을 반환합니다.
+    /// 실행 파일 경로의 아이콘을 조회하고, 캐시가 유효하면 재사용합니다.
     /// </summary>
     public ImageSource? GetIcon(string? executablePath)
     {
@@ -31,7 +48,83 @@ public sealed class CachedAppIconService : IAppIconService
             return null;
         }
 
-        return _iconCache.GetOrAdd(executablePath, static path => LoadIcon(path));
+        // now는 캐시 만료와 실패 재시도 시점을 계산하는 기준 시각입니다.
+        var now = DateTimeOffset.UtcNow;
+
+        lock (_syncRoot)
+        {
+            CleanupExpiredEntriesLocked(now);
+
+            if (_iconCache.TryGetValue(executablePath, out var cachedEntry))
+            {
+                cachedEntry.LastAccessUtc = now;
+
+                // 최근 실패한 경로는 실패 캐시가 살아 있는 동안 재시도를 건너뜁니다.
+                if (cachedEntry.IsFailure && now < cachedEntry.RetryAfterUtc)
+                {
+                    return null;
+                }
+
+                if (!cachedEntry.IsFailure)
+                {
+                    return cachedEntry.IconImage;
+                }
+            }
+        }
+
+        // iconImage는 캐시 미스이거나 실패 캐시 재시도 시점이 지난 경우 실제 파일에서 다시 읽은 결과입니다.
+        var iconImage = LoadIcon(executablePath);
+        var refreshedEntry = new IconCacheEntry
+        {
+            IconImage = iconImage,
+            IsFailure = iconImage is null,
+            LastAccessUtc = now,
+            RetryAfterUtc = iconImage is null ? now + FailureRetryDelay : DateTimeOffset.MinValue
+        };
+
+        lock (_syncRoot)
+        {
+            _iconCache[executablePath] = refreshedEntry;
+        }
+
+        return iconImage;
+    }
+
+    /// <summary>
+    /// 오래된 성공 캐시와 재시도 기한이 한참 지난 실패 캐시를 제거합니다.
+    /// </summary>
+    private void CleanupExpiredEntriesLocked(DateTimeOffset now)
+    {
+        if (now < _nextCleanupUtc)
+        {
+            return;
+        }
+
+        // removalKeys는 이번 정리 주기에서 제거할 캐시 키 목록입니다.
+        var removalKeys = new List<string>();
+        foreach (var pair in _iconCache)
+        {
+            var entry = pair.Value;
+            var idleDuration = now - entry.LastAccessUtc;
+
+            if (!entry.IsFailure && idleDuration >= SuccessEntryRetention)
+            {
+                removalKeys.Add(pair.Key);
+                continue;
+            }
+
+            if (entry.IsFailure && idleDuration >= FailureEntryRetention)
+            {
+                removalKeys.Add(pair.Key);
+            }
+        }
+
+        foreach (var removalKey in removalKeys)
+        {
+            _iconCache.Remove(removalKey);
+        }
+
+        _nextCleanupUtc = now + CleanupInterval;
     }
 
     /// <summary>
@@ -58,8 +151,34 @@ public sealed class CachedAppIconService : IAppIconService
         }
         catch
         {
-            // 권한 문제나 특수 경로 문제로 아이콘을 읽지 못하면 아이콘 없이 표시합니다.
+            // 권한 문제나 특수 경로 문제로 아이콘을 읽지 못하면 실패 캐시 대상이 됩니다.
             return null;
         }
+    }
+
+    /// <summary>
+    /// 개별 실행 파일 경로에 대한 아이콘 캐시 또는 실패 캐시 상태를 담습니다.
+    /// </summary>
+    private sealed class IconCacheEntry
+    {
+        /// <summary>
+        /// 정상 조회에 성공했을 때 재사용할 아이콘 이미지입니다.
+        /// </summary>
+        public ImageSource? IconImage { get; init; }
+
+        /// <summary>
+        /// 마지막으로 이 캐시 항목에 접근한 시각입니다.
+        /// </summary>
+        public DateTimeOffset LastAccessUtc { get; set; }
+
+        /// <summary>
+        /// 최근 조회가 실패했는지 여부입니다.
+        /// </summary>
+        public bool IsFailure { get; init; }
+
+        /// <summary>
+        /// 실패 캐시가 다시 실제 조회를 허용하는 시각입니다.
+        /// </summary>
+        public DateTimeOffset RetryAfterUtc { get; init; }
     }
 }
