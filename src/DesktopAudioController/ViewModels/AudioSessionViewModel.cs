@@ -16,6 +16,9 @@ public sealed class AudioSessionViewModel : ObservableObject
     // UI에 표시할 세션 이름입니다.
     private string _displayName;
 
+    // 동일 이름 세션을 구분하기 위한 보조 텍스트입니다.
+    private string? _disambiguationText;
+
     // 세션 앱 실행 파일 경로입니다. 비동기 아이콘 로딩 결과가 현재 세션과 맞는지 확인할 때 사용합니다.
     private string? _executablePath;
 
@@ -47,6 +50,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         string deviceId,
         string id,
         string displayName,
+        string? disambiguationText,
         string? executablePath,
         ImageSource? iconImage,
         int initialVolume,
@@ -57,6 +61,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         DeviceId = deviceId;
         Id = id;
         _displayName = displayName;
+        _disambiguationText = disambiguationText;
         _executablePath = executablePath;
         _iconImage = iconImage;
         _volume = initialVolume;
@@ -87,6 +92,15 @@ public sealed class AudioSessionViewModel : ObservableObject
     {
         get => _displayName;
         private set => SetProperty(ref _displayName, value);
+    }
+
+    /// <summary>
+    /// 동일 이름 세션을 UI에서 구분하기 위한 보조 표시 텍스트입니다.
+    /// </summary>
+    public string? DisambiguationText
+    {
+        get => _disambiguationText;
+        private set => SetProperty(ref _disambiguationText, value);
     }
 
     /// <summary>
@@ -165,7 +179,7 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// <summary>
     /// 서비스에서 읽어온 최신 세션 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
     /// </summary>
-    public void UpdateSnapshot(string displayName, string? executablePath, ImageSource? iconImage, int volume, bool isMuted)
+    public void UpdateSnapshot(string displayName, string? disambiguationText, string? executablePath, ImageSource? iconImage, int volume, bool isMuted)
     {
         _suppressCallbacks = true;
         _hasPendingVolumeCommit = false;
@@ -173,6 +187,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         try
         {
             DisplayName = displayName;
+            DisambiguationText = disambiguationText;
             ExecutablePath = executablePath;
             IconImage = iconImage;
             Volume = volume;

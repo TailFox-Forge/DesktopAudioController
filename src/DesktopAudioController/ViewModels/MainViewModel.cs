@@ -249,6 +249,7 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             sessions = _audioSessionService.GetSessions(device.Id, includeSystemSounds).ToList();
+            sessions = DisambiguateSessionDisplayNames(sessions).ToList();
         }
         catch (Exception exception)
         {
@@ -381,6 +382,7 @@ public sealed class MainViewModel : ObservableObject
 
                 existingSession.UpdateSnapshot(
                     snapshot.DisplayName,
+                    snapshot.DisambiguationText,
                     snapshot.ExecutablePath,
                     iconImageForSnapshot,
                     snapshot.Volume,
@@ -437,6 +439,7 @@ public sealed class MainViewModel : ObservableObject
         {
             Id = session.Id,
             DisplayName = session.DisplayName,
+            DisambiguationText = session.DisambiguationText,
             ExecutablePath = session.ExecutablePath,
             Volume = preference.Volume,
             IsMuted = preference.IsMuted
@@ -448,7 +451,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private bool TryGetStoredSessionPreference(AudioSessionInfo session, out ProgramAudioPreference preference)
     {
-        var matchKey = CreateProgramPreferenceMatchKey(session.ExecutablePath, session.DisplayName);
+        var matchKey = CreateProgramPreferenceMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
         if (matchKey is not null && _programAudioPreferencesByKey.TryGetValue(matchKey, out preference!))
         {
             return true;
@@ -473,7 +476,7 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        var matchKey = CreateProgramPreferenceMatchKey(session.ExecutablePath, session.DisplayName);
+        var matchKey = CreateProgramPreferenceMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
         if (matchKey is null)
         {
             AppLog.Debug("MainViewModel", $"프로그램 설정 저장 생략: 매칭 키 없음 deviceId={deviceId} sessionId={sessionId}");
@@ -514,11 +517,17 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>
     /// 프로그램 재실행 뒤에도 유지될 수 있는 안정적인 저장 키를 계산합니다.
     /// </summary>
-    private static string? CreateProgramPreferenceMatchKey(string? executablePath, string displayName)
+    private static string? CreateProgramPreferenceMatchKey(string sessionId, string? executablePath, string displayName)
     {
         if (!string.IsNullOrWhiteSpace(executablePath))
         {
             return $"path:{executablePath.Trim()}";
+        }
+
+        var extractedSessionPath = TryExtractSessionPathToken(sessionId);
+        if (!string.IsNullOrWhiteSpace(extractedSessionPath))
+        {
+            return $"session-path:{extractedSessionPath}";
         }
 
         if (!string.IsNullOrWhiteSpace(displayName))
@@ -575,6 +584,7 @@ public sealed class MainViewModel : ObservableObject
             deviceId,
             session.Id,
             session.DisplayName,
+            session.DisambiguationText,
             session.ExecutablePath,
             cachedIcon,
             session.Volume,
@@ -589,6 +599,151 @@ public sealed class MainViewModel : ObservableObject
         }
 
         return viewModel;
+    }
+
+    /// <summary>
+    /// 이름이 같은 세션이 여러 개면 보조 라벨을 붙여 UI에서 구분 가능하게 만듭니다.
+    /// </summary>
+    private static IReadOnlyList<AudioSessionInfo> DisambiguateSessionDisplayNames(IReadOnlyList<AudioSessionInfo> sessions)
+    {
+        var duplicateGroups = sessions
+            .GroupBy(session => session.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .ToList();
+        if (duplicateGroups.Count == 0)
+        {
+            return sessions;
+        }
+
+        var disambiguationById = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var duplicateGroup in duplicateGroups)
+        {
+            var usedLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var session in duplicateGroup)
+            {
+                var label = BuildSessionDisambiguationText(session, usedLabels);
+                usedLabels.Add(label);
+                disambiguationById[session.Id] = label;
+            }
+        }
+
+        return sessions
+            .Select(session => disambiguationById.TryGetValue(session.Id, out var label)
+                ? new AudioSessionInfo
+                {
+                    Id = session.Id,
+                    DisplayName = session.DisplayName,
+                    DisambiguationText = label,
+                    ExecutablePath = session.ExecutablePath,
+                    Volume = session.Volume,
+                    IsMuted = session.IsMuted
+                }
+                : session)
+            .ToList();
+    }
+
+    /// <summary>
+    /// 중복 세션 하나에 대한 사람이 읽을 수 있는 보조 식별자를 만듭니다.
+    /// </summary>
+    private static string BuildSessionDisambiguationText(AudioSessionInfo session, ISet<string> usedLabels)
+    {
+        var candidates = new[]
+        {
+            BuildReadablePathTail(session.ExecutablePath),
+            BuildReadablePathTail(TryExtractSessionPathToken(session.Id)),
+            BuildShortSessionHint(session.Id)
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            if (!usedLabels.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        var fallback = BuildShortSessionHint(session.Id);
+        var suffix = 2;
+        while (usedLabels.Contains($"{fallback} #{suffix}"))
+        {
+            suffix++;
+        }
+
+        return $"{fallback} #{suffix}";
+    }
+
+    /// <summary>
+    /// 세션 ID에서 안정적으로 보이는 실행 경로 조각만 추출합니다.
+    /// </summary>
+    private static string? TryExtractSessionPathToken(string sessionId)
+    {
+        var separatorIndex = sessionId.IndexOf('|');
+        if (separatorIndex < 0 || separatorIndex == sessionId.Length - 1)
+        {
+            return null;
+        }
+
+        var tail = sessionId[(separatorIndex + 1)..];
+        var exeIndex = tail.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        if (exeIndex < 0)
+        {
+            return null;
+        }
+
+        var pathToken = tail[..(exeIndex + 4)].Trim();
+        return pathToken.Contains('\\', StringComparison.Ordinal) ? pathToken : null;
+    }
+
+    /// <summary>
+    /// 경로 전체 대신 마지막 2개 세그먼트만 보여 줘 같은 이름 항목을 구분합니다.
+    /// </summary>
+    private static string? BuildReadablePathTail(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var segments = path
+            .Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            return null;
+        }
+
+        if (segments.Length == 1)
+        {
+            return segments[0];
+        }
+
+        return $"{segments[^2]}\\{segments[^1]}";
+    }
+
+    /// <summary>
+    /// 경로를 못 얻은 세션을 UI에서만 구분하기 위한 짧은 힌트입니다.
+    /// </summary>
+    private static string BuildShortSessionHint(string sessionId)
+    {
+        var markerIndex = sessionId.IndexOf("%b{", StringComparison.OrdinalIgnoreCase);
+        if (markerIndex >= 0)
+        {
+            var guidStart = markerIndex + 3;
+            var guidLength = Math.Min(8, sessionId.Length - guidStart);
+            if (guidLength > 0)
+            {
+                return $"세션 {sessionId.Substring(guidStart, guidLength)}";
+            }
+        }
+
+        var trimmedSessionId = sessionId.Trim();
+        return trimmedSessionId.Length <= 8
+            ? $"세션 {trimmedSessionId}"
+            : $"세션 {trimmedSessionId[^8..]}";
     }
 
     /// <summary>

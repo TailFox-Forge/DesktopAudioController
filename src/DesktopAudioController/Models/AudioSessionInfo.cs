@@ -16,6 +16,11 @@ public sealed class AudioSessionInfo
     public required string DisplayName { get; init; }
 
     /// <summary>
+    /// 동일 이름 세션을 UI에서 구분하기 위한 보조 표시 텍스트입니다.
+    /// </summary>
+    public string? DisambiguationText { get; init; }
+
+    /// <summary>
     /// 세션을 소유한 실행 파일 경로입니다. 아이콘 조회나 진단 로그에 사용합니다.
     /// </summary>
     public string? ExecutablePath { get; init; }
