@@ -16,7 +16,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
     // GitHub API는 User-Agent 헤더가 필요합니다.
     private static readonly HttpClient HttpClient = CreateHttpClient();
 
-    // 현재 프로젝트가 쓰는 태그 규칙(v0.6.0-preview2)을 해석하기 위한 정규식입니다.
+    // 현재 프로젝트가 쓰는 태그 규칙(v0.6.0-preview3)을 해석하기 위한 정규식입니다.
     private static readonly Regex VersionRegex = new(
         @"^v?(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:-(?<label>[A-Za-z]+)(?<number>\d+)?)?$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -166,7 +166,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             Timeout = TimeSpan.FromSeconds(3)
         };
 
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("DesktopAudioController/0.6.0");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("DesktopAudioController/update-check");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
     }
