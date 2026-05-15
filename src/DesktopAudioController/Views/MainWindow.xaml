@@ -66,15 +66,72 @@
                                                        Foreground="#666"
                                                        Text="{Binding IsDefault, StringFormat=기본 장치: {0}}" />
                                         </DockPanel>
-                                        <!-- Phase 1에서는 장치 마스터 볼륨만 우선 노출합니다. -->
+                                        <!-- 장치 마스터 볼륨은 초기 화면에서 항상 바로 조절할 수 있게 둡니다. -->
                                         <Slider Minimum="0"
                                                 Maximum="100"
                                                 Value="{Binding Volume}" />
                                         <DockPanel Margin="0,8,0,0">
                                             <TextBlock Text="{Binding Volume, StringFormat=마스터 볼륨: {0}%}" />
-                                            <TextBlock DockPanel.Dock="Right"
-                                                       Text="{Binding IsMuted, StringFormat=음소거: {0}}" />
+                                            <CheckBox DockPanel.Dock="Right"
+                                                      IsChecked="{Binding IsMuted}"
+                                                      Content="음소거" />
                                         </DockPanel>
+
+                                        <!-- 장치를 선택하면 프로그램별 세션 목록을 펼쳐 볼 수 있습니다. -->
+                                        <ToggleButton Margin="0,12,0,0"
+                                                      IsChecked="{Binding IsExpanded}"
+                                                      Content="프로그램별 볼륨 보기" />
+
+                                        <Border Margin="0,12,0,0"
+                                                Padding="10"
+                                                CornerRadius="6"
+                                                BorderBrush="#EEE"
+                                                BorderThickness="1">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility"
+                                                            Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsExpanded}"
+                                                                     Value="True">
+                                                            <Setter Property="Visibility"
+                                                                    Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel>
+                                                <TextBlock Margin="0,0,0,8"
+                                                           FontWeight="SemiBold"
+                                                           Text="해당 장치에서 출력 중인 프로그램" />
+                                                <ItemsControl ItemsSource="{Binding Sessions}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Margin="0,0,0,8"
+                                                                    Padding="8"
+                                                                    CornerRadius="4"
+                                                                    BorderBrush="#DDD"
+                                                                    BorderThickness="1">
+                                                                <StackPanel>
+                                                                    <DockPanel Margin="0,0,0,6">
+                                                                        <TextBlock FontWeight="SemiBold"
+                                                                                   Text="{Binding DisplayName}" />
+                                                                        <CheckBox DockPanel.Dock="Right"
+                                                                                  IsChecked="{Binding IsMuted}"
+                                                                                  Content="음소거" />
+                                                                    </DockPanel>
+                                                                    <Slider Minimum="0"
+                                                                            Maximum="100"
+                                                                            Value="{Binding Volume}" />
+                                                                    <TextBlock Margin="0,6,0,0"
+                                                                               Text="{Binding Volume, StringFormat=세션 볼륨: {0}%}" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>

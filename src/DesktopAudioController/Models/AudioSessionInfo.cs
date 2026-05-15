@@ -1,0 +1,27 @@
+namespace DesktopAudioController.Models;
+
+/// <summary>
+/// 출력 장치에서 현재 소리를 내고 있는 애플리케이션 세션 한 개의 상태를 담는 모델입니다.
+/// </summary>
+public sealed class AudioSessionInfo
+{
+    /// <summary>
+    /// Windows 오디오 세션을 식별하는 고유 ID 문자열입니다.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// UI에 표시할 세션 이름입니다. 일반적으로 프로세스 이름 또는 세션 표시 이름이 들어갑니다.
+    /// </summary>
+    public required string DisplayName { get; init; }
+
+    /// <summary>
+    /// 현재 세션 볼륨 값입니다.
+    /// </summary>
+    public int Volume { get; set; } = 100;
+
+    /// <summary>
+    /// 현재 세션 음소거 상태입니다.
+    /// </summary>
+    public bool IsMuted { get; set; }
+}

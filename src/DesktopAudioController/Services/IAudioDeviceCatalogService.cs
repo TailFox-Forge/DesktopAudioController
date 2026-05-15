@@ -3,7 +3,7 @@ using DesktopAudioController.Models;
 namespace DesktopAudioController.Services;
 
 /// <summary>
-/// 출력 장치 목록을 조회하는 서비스 계약입니다.
+/// 출력 장치 목록 조회와 장치 수준 볼륨 제어를 담당하는 서비스 계약입니다.
 /// </summary>
 public interface IAudioDeviceCatalogService
 {
@@ -11,4 +11,14 @@ public interface IAudioDeviceCatalogService
     /// 현재 사용 가능한 출력 장치 목록을 반환합니다.
     /// </summary>
     IReadOnlyList<AudioDeviceInfo> GetAvailableOutputDevices();
+
+    /// <summary>
+    /// 지정한 장치의 마스터 볼륨을 설정합니다.
+    /// </summary>
+    void SetVolume(string deviceId, int volume);
+
+    /// <summary>
+    /// 지정한 장치의 음소거 상태를 설정합니다.
+    /// </summary>
+    void SetMuted(string deviceId, bool muted);
 }

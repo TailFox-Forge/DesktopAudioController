@@ -32,7 +32,7 @@
                            Text="표시할 출력 장치 선택" />
                 <TextBlock Margin="0,8,0,16"
                            Foreground="#666"
-                           Text="처음에는 표시할 장치만 선택합니다. 실제 장치 조회는 Phase 2에서 Core Audio 연동으로 대체됩니다."
+                           Text="여기서 고른 장치만 메인 화면에 표시됩니다. 장치 목록은 실제 Windows Core Audio 기준으로 조회됩니다."
                            TextWrapping="Wrap" />
 
                 <ItemsControl ItemsSource="{Binding AvailableDevices}">

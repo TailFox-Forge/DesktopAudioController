@@ -45,4 +45,18 @@ public sealed class PlaceholderAudioDeviceCatalogService : IAudioDeviceCatalogSe
             }
         ];
     }
+
+    /// <summary>
+    /// Phase 1 플레이스홀더 구현입니다. 실제 장치 볼륨 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
+    /// </summary>
+    public void SetVolume(string deviceId, int volume)
+    {
+    }
+
+    /// <summary>
+    /// Phase 1 플레이스홀더 구현입니다. 실제 장치 음소거 변경은 NativeAudioDeviceCatalogService에서 수행합니다.
+    /// </summary>
+    public void SetMuted(string deviceId, bool muted)
+    {
+    }
 }

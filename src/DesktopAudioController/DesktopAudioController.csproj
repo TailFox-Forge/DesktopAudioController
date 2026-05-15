@@ -6,4 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows Core Audio API 래퍼: 장치 열거, 볼륨/음소거, 세션 조회에 사용합니다. -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
 </Project>

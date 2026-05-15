@@ -16,6 +16,9 @@ public partial class App : Application
     // 출력 장치 목록을 조회하는 서비스입니다.
     private IAudioDeviceCatalogService? _audioDeviceCatalogService;
 
+    // 장치별 애플리케이션 세션 목록을 조회하는 서비스입니다.
+    private IAudioSessionService? _audioSessionService;
+
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
     /// </summary>
@@ -23,12 +26,16 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        // Phase 1에서는 실제 Core Audio 대신 기본 구현을 직접 생성합니다.
+        // Phase 2부터는 실제 Core Audio 서비스로 장치와 세션을 조회합니다.
         _settingsService = new SettingsService();
-        _audioDeviceCatalogService = new PlaceholderAudioDeviceCatalogService();
+        _audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
+        _audioSessionService = new NativeAudioSessionService();
 
         // 메인 화면에서 사용할 뷰모델을 만들고 저장된 설정 기준으로 데이터를 채웁니다.
-        var mainViewModel = new MainViewModel(_settingsService, _audioDeviceCatalogService);
+        var mainViewModel = new MainViewModel(
+            _settingsService,
+            _audioDeviceCatalogService,
+            _audioSessionService);
         mainViewModel.Load();
 
         // 메인 창은 설정 창 팩토리를 받아 필요할 때마다 새 설정 뷰모델을 생성합니다.
@@ -41,6 +48,16 @@ public partial class App : Application
         {
             mainWindow.OpenSettingsOnFirstRun();
         }
+    }
+
+    /// <summary>
+    /// 앱 종료 시 네이티브 오디오 서비스가 잡고 있는 COM 리소스를 정리합니다.
+    /// </summary>
+    protected override void OnExit(ExitEventArgs e)
+    {
+        (_audioDeviceCatalogService as IDisposable)?.Dispose();
+        (_audioSessionService as IDisposable)?.Dispose();
+        base.OnExit(e);
     }
 
     /// <summary>
