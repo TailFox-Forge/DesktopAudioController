@@ -213,6 +213,7 @@ artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip.sha256
 
 - [설계 문서](docs/design.md)
 - [v1.0.0 출고 기준](docs/v1-release-criteria.md)
+- [회귀 검증 체크리스트](docs/regression-checklist.md)
 - [릴리즈 노트 템플릿](docs/release-notes-template.md)
 - [GitHub Releases](https://github.com/TailFox-Forge/DesktopAudioController/releases)
 
@@ -248,5 +249,5 @@ MIT License
 1. P11-1 릴리즈 채널 정책 1차 구현 완료
 2. P11-2 v1.0.0 출고 기준 정의 완료
 3. P11-3 Public 전환 준비 최종 점검 대기
-4. P11-4 회귀 검증 체크리스트 문서화 대기
+4. P11-4 회귀 검증 체크리스트 문서화 완료
 ```
