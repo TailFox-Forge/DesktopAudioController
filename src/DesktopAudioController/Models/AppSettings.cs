@@ -24,4 +24,9 @@ public sealed class AppSettings
     /// 연결이 끊긴 장치는 메인 화면에서 숨길지 여부입니다.
     /// </summary>
     public bool ShowOnlyConnectedDevices { get; set; } = true;
+
+    /// <summary>
+    /// Windows 시스템 사운드 세션도 프로그램 목록에 함께 표시할지 여부입니다.
+    /// </summary>
+    public bool ShowSystemSounds { get; set; }
 }

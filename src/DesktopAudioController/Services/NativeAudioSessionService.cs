@@ -16,7 +16,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// <summary>
     /// 지정한 장치에서 현재 활성화된 세션 목록을 반환합니다.
     /// </summary>
-    public IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId)
+    public IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId, bool includeSystemSounds = false)
     {
         // device는 세션을 읽어올 대상 출력 장치입니다.
         using var device = _enumerator.GetDevice(deviceId);
@@ -41,7 +41,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
                 }
 
                 // Windows 시스템 사운드는 일반 앱 목록과 분리하는 편이 UX가 낫습니다.
-                if (session.IsSystemSoundsSession)
+                if (!includeSystemSounds && session.IsSystemSoundsSession)
                 {
                     continue;
                 }

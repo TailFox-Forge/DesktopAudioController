@@ -26,6 +26,9 @@ public sealed class SettingsViewModel : ObservableObject
     // 연결된 장치만 표시할지 여부의 내부 필드입니다.
     private bool _showOnlyConnectedDevices;
 
+    // 시스템 사운드 세션까지 표시할지 여부의 내부 필드입니다.
+    private bool _showSystemSounds;
+
     /// <summary>
     /// 설정 창에서 사용할 서비스들을 주입받습니다.
     /// </summary>
@@ -70,6 +73,15 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Windows 시스템 사운드 세션도 메인 화면 프로그램 목록에 포함할지 여부입니다.
+    /// </summary>
+    public bool ShowSystemSounds
+    {
+        get => _showSystemSounds;
+        set => SetProperty(ref _showSystemSounds, value);
+    }
+
+    /// <summary>
     /// 설정 파일과 장치 목록을 읽어 현재 설정 창 상태를 구성합니다.
     /// </summary>
     public void Load()
@@ -100,6 +112,7 @@ public sealed class SettingsViewModel : ObservableObject
         StartMinimized = settings.StartMinimized;
         MinimizeToTray = settings.MinimizeToTray;
         ShowOnlyConnectedDevices = settings.ShowOnlyConnectedDevices;
+        ShowSystemSounds = settings.ShowSystemSounds;
     }
 
     /// <summary>
@@ -117,7 +130,8 @@ public sealed class SettingsViewModel : ObservableObject
                 .ToList(),
             StartMinimized = StartMinimized,
             MinimizeToTray = MinimizeToTray,
-            ShowOnlyConnectedDevices = ShowOnlyConnectedDevices
+            ShowOnlyConnectedDevices = ShowOnlyConnectedDevices,
+            ShowSystemSounds = ShowSystemSounds
         };
 
         // 구성된 설정 모델을 파일에 저장합니다.

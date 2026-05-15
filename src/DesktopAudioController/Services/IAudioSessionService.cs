@@ -10,7 +10,7 @@ public interface IAudioSessionService
     /// <summary>
     /// 지정한 장치에서 현재 활성화된 세션 목록을 반환합니다.
     /// </summary>
-    IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId);
+    IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId, bool includeSystemSounds = false);
 
     /// <summary>
     /// 지정한 장치의 특정 세션 볼륨을 설정합니다.

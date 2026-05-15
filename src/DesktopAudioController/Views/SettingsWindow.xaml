@@ -67,6 +67,10 @@
                     <TextBlock Text="연결된 장치만 메인 화면에 표시" />
                 </CheckBox>
                 <CheckBox Margin="0,0,0,8"
+                          IsChecked="{Binding ShowSystemSounds}">
+                    <TextBlock Text="Windows 시스템 사운드 세션도 표시" />
+                </CheckBox>
+                <CheckBox Margin="0,0,0,8"
                           IsChecked="{Binding MinimizeToTray}">
                     <TextBlock Text="닫기 대신 트레이로 최소화" />
                 </CheckBox>

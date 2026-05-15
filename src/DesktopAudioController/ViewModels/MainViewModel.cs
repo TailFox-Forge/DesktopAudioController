@@ -73,7 +73,7 @@ public sealed class MainViewModel : ObservableObject
         var visibleDevices = devices
             .Where(device => selectedIds.Contains(device.Id))
             .Where(device => !settings.ShowOnlyConnectedDevices || device.IsConnected)
-            .Select(CreateVisibleDeviceViewModel)
+            .Select(device => CreateVisibleDeviceViewModel(device, settings.ShowSystemSounds))
             .ToList();
 
         // 새 결과를 화면 컬렉션에 반영합니다.
@@ -93,6 +93,9 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public void RefreshStateOnly()
     {
+        // settings는 세션 필터 옵션 같은 현재 사용자 선택을 포함합니다.
+        var settings = _settingsService.Load();
+
         // devicesById는 최신 장치 상태를 빠르게 찾기 위한 인덱스입니다.
         var devicesById = _audioDeviceCatalogService
             .GetAvailableOutputDevices()
@@ -114,7 +117,7 @@ public sealed class MainViewModel : ObservableObject
 
             if (currentDevice.IsConnected)
             {
-                RefreshSessionsStateOnly(visibleDevice);
+                RefreshSessionsStateOnly(visibleDevice, settings.ShowSystemSounds);
             }
             else
             {
@@ -126,7 +129,7 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>
     /// AudioDeviceInfo를 화면용 VisibleDeviceViewModel로 변환합니다.
     /// </summary>
-    private VisibleDeviceViewModel CreateVisibleDeviceViewModel(AudioDeviceInfo device)
+    private VisibleDeviceViewModel CreateVisibleDeviceViewModel(AudioDeviceInfo device, bool includeSystemSounds)
     {
         // deviceViewModel은 메인 화면 장치 카드 한 개를 표현하는 뷰모델입니다.
         var deviceViewModel = new VisibleDeviceViewModel(
@@ -143,7 +146,7 @@ public sealed class MainViewModel : ObservableObject
         // 연결된 장치만 현재 활성 세션 목록을 미리 읽어옵니다.
         if (device.IsConnected)
         {
-            LoadSessions(deviceViewModel);
+            LoadSessions(deviceViewModel, includeSystemSounds);
         }
 
         return deviceViewModel;
@@ -152,12 +155,12 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>
     /// 지정한 장치 카드에 현재 세션 목록을 채웁니다.
     /// </summary>
-    private void LoadSessions(VisibleDeviceViewModel device)
+    private void LoadSessions(VisibleDeviceViewModel device, bool includeSystemSounds)
     {
         try
         {
             // sessions는 지정 장치에서 현재 소리를 내는 앱 세션 목록입니다.
-            var sessions = _audioSessionService.GetSessions(device.Id);
+            var sessions = _audioSessionService.GetSessions(device.Id, includeSystemSounds);
 
             device.Sessions.Clear();
             foreach (var session in sessions)
@@ -175,12 +178,12 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>
     /// 상태 변경 알림 시 기존 세션 컬렉션을 최대한 유지하면서 값만 갱신합니다.
     /// </summary>
-    private void RefreshSessionsStateOnly(VisibleDeviceViewModel device)
+    private void RefreshSessionsStateOnly(VisibleDeviceViewModel device, bool includeSystemSounds)
     {
         try
         {
             // sessionSnapshots는 현재 장치에서 확인된 최신 세션 상태입니다.
-            var sessionSnapshots = _audioSessionService.GetSessions(device.Id);
+            var sessionSnapshots = _audioSessionService.GetSessions(device.Id, includeSystemSounds);
             var snapshotById = sessionSnapshots.ToDictionary(session => session.Id);
             var existingById = device.Sessions.ToDictionary(session => session.Id);
 
