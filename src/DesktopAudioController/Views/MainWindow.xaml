@@ -5,11 +5,11 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="DesktopAudioController"
-        Width="700"
+        Width="750"
         MinHeight="420"
         FontSize="13"
         SizeToContent="Height"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="Manual">
     <DockPanel Margin="16">
         <!-- 상단 헤더와 공통 액션 버튼 영역입니다. -->
         <Grid DockPanel.Dock="Top"
@@ -104,6 +104,7 @@
                                         <DockPanel Margin="0,8,0,0">
                                             <TextBlock Text="{Binding Volume, StringFormat=마스터 볼륨: {0}%}" />
                                             <CheckBox DockPanel.Dock="Right"
+                                                      Margin="16,0,0,0"
                                                       IsChecked="{Binding IsMuted}"
                                                       Content="음소거" />
                                         </DockPanel>
@@ -157,6 +158,7 @@
                                                                                        Text="{Binding DisplayName}" />
                                                                         </StackPanel>
                                                                         <CheckBox DockPanel.Dock="Right"
+                                                                                  Margin="16,0,0,0"
                                                                                   IsChecked="{Binding IsMuted}"
                                                                                   Content="음소거" />
                                                                     </DockPanel>
