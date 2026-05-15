@@ -13,16 +13,15 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     // undocumented PolicyConfig COM 클래스 ID입니다.
     private static readonly Guid PolicyConfigClientClsid = new("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9");
 
-    // Windows 출력 장치 열거와 조회에 사용하는 COM 래퍼입니다.
-    private readonly MMDeviceEnumerator _enumerator = new();
-
     /// <summary>
     /// 현재 시스템에 등록된 렌더 장치 목록을 반환합니다.
     /// </summary>
     public IReadOnlyList<AudioDeviceInfo> GetAvailableOutputDevices()
     {
+        using var enumerator = new MMDeviceEnumerator();
+
         // 현재 연결된 장치와 최근 분리된 장치를 함께 보여주기 위해 두 상태를 같이 조회합니다.
-        var deviceCollection = _enumerator.EnumerateAudioEndPoints(
+        var deviceCollection = enumerator.EnumerateAudioEndPoints(
             DataFlow.Render,
             DeviceState.Active | DeviceState.Unplugged);
 
@@ -31,7 +30,7 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
 
         try
         {
-            defaultDeviceId = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
+            defaultDeviceId = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
         }
         catch
         {
@@ -78,7 +77,8 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
         try
         {
         // ID로 대상 장치를 다시 열어 현재 볼륨 값을 적용합니다.
-            using var device = _enumerator.GetDevice(deviceId);
+            using var enumerator = new MMDeviceEnumerator();
+            using var device = enumerator.GetDevice(deviceId);
 
             // 슬라이더 값은 0~100이므로 Core Audio 스칼라 값 0.0~1.0으로 변환합니다.
             device.AudioEndpointVolume.MasterVolumeLevelScalar = Math.Clamp(volume, 0, 100) / 100f;
@@ -102,7 +102,8 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
         try
         {
             // ID로 대상 장치를 다시 열어 음소거 상태를 변경합니다.
-            using var device = _enumerator.GetDevice(deviceId);
+            using var enumerator = new MMDeviceEnumerator();
+            using var device = enumerator.GetDevice(deviceId);
             device.AudioEndpointVolume.Mute = muted;
             AppLog.Info("NativeAudioDeviceCatalogService", $"SetMuted 완료 deviceId={deviceId} muted={muted} elapsedMs={stopwatch.ElapsedMilliseconds}");
         }
@@ -149,7 +150,7 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     /// </summary>
     public void Dispose()
     {
-        _enumerator.Dispose();
+        // 메서드별로 열거자를 생성/정리하므로 종료 시 추가 정리할 리소스가 없습니다.
     }
 
     /// <summary>

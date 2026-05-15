@@ -97,10 +97,13 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public void RefreshStateOnly()
     {
+        AppLog.Debug("MainViewModel", $"상태 부분 갱신 시작 visibleDevices={VisibleDevices.Count}");
+
         // devicesById는 최신 장치 상태를 빠르게 찾기 위한 인덱스입니다.
         var devicesById = _audioDeviceCatalogService
             .GetAvailableOutputDevices()
             .ToDictionary(device => device.Id);
+        AppLog.Debug("MainViewModel", $"상태 부분 갱신 장치 조회 완료 devices={devicesById.Count}");
 
         foreach (var visibleDevice in VisibleDevices)
         {
@@ -125,6 +128,8 @@ public sealed class MainViewModel : ObservableObject
                 visibleDevice.Sessions.Clear();
             }
         }
+
+        AppLog.Debug("MainViewModel", "상태 부분 갱신 완료");
     }
 
     /// <summary>
@@ -172,6 +177,7 @@ public sealed class MainViewModel : ObservableObject
         catch
         {
             // 세션 조회 실패는 앱 종료 대신 빈 세션 목록으로 처리합니다.
+            AppLog.Warn("MainViewModel", $"세션 초기 로드 실패 deviceId={device.Id}");
             device.Sessions.Clear();
         }
     }
@@ -233,6 +239,7 @@ public sealed class MainViewModel : ObservableObject
         catch
         {
             // 상태 부분 갱신 실패는 다음 전체 새로고침에서 복구합니다.
+            AppLog.Warn("MainViewModel", $"세션 상태 부분 갱신 실패 deviceId={device.Id}");
         }
     }
 

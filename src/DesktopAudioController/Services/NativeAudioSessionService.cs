@@ -9,9 +9,6 @@ namespace DesktopAudioController.Services;
 /// </summary>
 public sealed class NativeAudioSessionService : IAudioSessionService, IDisposable
 {
-    // 장치 ID 기준 세션 조회에 사용하는 COM 열거자입니다.
-    private readonly MMDeviceEnumerator _enumerator = new();
-
     // 프로세스 이름과 실행 파일 경로를 PID 기준으로 재사용하는 메타데이터 캐시 서비스입니다.
     private readonly IProcessMetadataCacheService _processMetadataCacheService;
 
@@ -28,8 +25,10 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// </summary>
     public IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId, bool includeSystemSounds = false)
     {
+        using var enumerator = new MMDeviceEnumerator();
+
         // device는 세션을 읽어올 대상 출력 장치입니다.
-        using var device = _enumerator.GetDevice(deviceId);
+        using var device = enumerator.GetDevice(deviceId);
 
         // sessions는 해당 출력 장치에 연결된 현재 오디오 세션 컬렉션입니다.
         var sessions = device.AudioSessionManager.Sessions;
@@ -80,8 +79,9 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     public void SetSessionVolume(string deviceId, string sessionId, int volume)
     {
         AppLog.Debug("NativeAudioSessionService", $"SetSessionVolume 시작 deviceId={deviceId} sessionId={sessionId} volume={volume}");
+        using var enumerator = new MMDeviceEnumerator();
         // device는 세션을 제어할 대상 출력 장치입니다.
-        using var device = _enumerator.GetDevice(deviceId);
+        using var device = enumerator.GetDevice(deviceId);
 
         // targetSession은 sessionId와 일치하는 실제 오디오 세션입니다.
         using var targetSession = FindSession(device.AudioSessionManager.Sessions, sessionId);
@@ -101,8 +101,9 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     public void SetSessionMuted(string deviceId, string sessionId, bool muted)
     {
         AppLog.Info("NativeAudioSessionService", $"SetSessionMuted 시작 deviceId={deviceId} sessionId={sessionId} muted={muted}");
+        using var enumerator = new MMDeviceEnumerator();
         // device는 세션을 제어할 대상 출력 장치입니다.
-        using var device = _enumerator.GetDevice(deviceId);
+        using var device = enumerator.GetDevice(deviceId);
 
         // targetSession은 sessionId와 일치하는 실제 오디오 세션입니다.
         using var targetSession = FindSession(device.AudioSessionManager.Sessions, sessionId);
@@ -176,6 +177,6 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// </summary>
     public void Dispose()
     {
-        _enumerator.Dispose();
+        // 메서드별로 열거자를 생성/정리하므로 종료 시 추가 정리할 리소스가 없습니다.
     }
 }
