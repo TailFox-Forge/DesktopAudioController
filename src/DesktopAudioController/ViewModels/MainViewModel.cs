@@ -57,6 +57,9 @@ public sealed class MainViewModel : ObservableObject
     // 사용자가 저장한 프로그램별 볼륨/음소거 설정입니다.
     private Dictionary<string, ProgramAudioPreference> _programAudioPreferencesByKey = new(StringComparer.OrdinalIgnoreCase);
 
+    // 마지막으로 읽거나 저장한 설정 사본입니다. 프로그램 설정 저장 시 settings.json 재로드를 피합니다.
+    private AppSettings _cachedSettings = new();
+
     // 한 번 복원한 라이브 세션은 같은 프로세스 수명 동안 반복 복원하지 않도록 추적합니다.
     private readonly HashSet<string> _restoredSessionIds = new(StringComparer.Ordinal);
 
@@ -191,6 +194,7 @@ public sealed class MainViewModel : ObservableObject
     {
         // 파일에서 읽어온 현재 사용자 설정입니다.
         var settings = _settingsService.Load();
+        _cachedSettings = CloneSettings(settings);
 
         // 현재 시스템에서 보이는 장치 상태를 조회합니다.
         var devices = _audioDeviceCatalogService.GetAvailableOutputDevices();
@@ -802,9 +806,10 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            var settings = _settingsService.Load();
+            var settings = CloneSettings(_cachedSettings);
             settings.ProgramAudioPreferences = ProgramAudioPreferenceStore.BuildPersistedPreferences(_programAudioPreferencesByKey).ToList();
             _settingsService.Save(settings);
+            _cachedSettings = CloneSettings(settings);
             _hasPendingProgramPreferenceSave = false;
             AppLog.Info(
                 "MainViewModel",
@@ -869,5 +874,28 @@ public sealed class MainViewModel : ObservableObject
         _ = RunAudioControlAsync(
             $"세션 음소거 제어 deviceId={deviceId} sessionId={sessionId} muted={muted}",
             () => _audioSessionService.SetSessionMuted(deviceId, sessionId, muted));
+    }
+
+    private static AppSettings CloneSettings(AppSettings settings)
+    {
+        return new AppSettings
+        {
+            VisibleDeviceIds = [.. settings.VisibleDeviceIds],
+            StartMinimized = settings.StartMinimized,
+            RunAtWindowsStartup = settings.RunAtWindowsStartup,
+            MinimizeToTray = settings.MinimizeToTray,
+            ShowOnlyConnectedDevices = settings.ShowOnlyConnectedDevices,
+            ShowSystemSounds = settings.ShowSystemSounds,
+            ProgramAudioPreferences = settings.ProgramAudioPreferences
+                .Select(preference => new ProgramAudioPreference
+                {
+                    MatchKey = preference.MatchKey,
+                    ExecutablePath = preference.ExecutablePath,
+                    DisplayName = preference.DisplayName,
+                    Volume = preference.Volume,
+                    IsMuted = preference.IsMuted
+                })
+                .ToList()
+        };
     }
 }

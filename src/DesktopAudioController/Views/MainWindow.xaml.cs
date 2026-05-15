@@ -49,6 +49,9 @@ public partial class MainWindow : Window
     // 첫 실행처럼 장치 설정이 필요한 경우 창을 강제로 보이게 유지하기 위한 플래그입니다.
     private readonly bool _forceVisibleOnStartup;
 
+    // 창 닫기/최소화 때마다 settings.json을 다시 읽지 않도록 트레이 옵션을 메모리에 유지합니다.
+    private bool _minimizeToTray = true;
+
     // 시스템 트레이 영역에 표시할 아이콘 인스턴스입니다.
     private readonly Forms.NotifyIcon _notifyIcon;
 
@@ -94,6 +97,9 @@ public partial class MainWindow : Window
     // 설정창 장치 로딩도 COM 조회이므로 메인 UI를 막지 않게 비동기로 열고, 실패 시 에러로 돌립니다.
     private static readonly TimeSpan SettingsLoadTimeout = TimeSpan.FromSeconds(6);
 
+    // 트레이 메뉴는 실제 표시 내용이 바뀔 때만 다시 구성합니다.
+    private string? _lastTrayMenuSignature;
+
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
     /// </summary>
@@ -115,7 +121,7 @@ public partial class MainWindow : Window
         _isStartupLaunch = isStartupLaunch;
         _forceVisibleOnStartup = forceVisibleOnStartup;
         _notifyIcon = CreateNotifyIcon();
-        RefreshTrayMenu();
+        RefreshTrayMenu(force: true);
         DataContext = _viewModel;
         ApplyPrimaryMonitorBounds();
         _audioNotificationService.Changed += AudioNotificationService_OnChanged;
@@ -248,6 +254,7 @@ public partial class MainWindow : Window
             var result = settingsWindow.ShowDialog();
             if (result == true)
             {
+                _minimizeToTray = settingsViewModel.MinimizeToTray;
                 await ReloadViewModelAsync("settings_saved");
             }
         }
@@ -291,6 +298,7 @@ public partial class MainWindow : Window
 
         // settings는 사용자가 마지막으로 저장한 창 동작 옵션입니다.
         var settings = _settingsService.Load();
+        _minimizeToTray = settings.MinimizeToTray;
         if (!settings.StartMinimized)
         {
             return;
@@ -592,20 +600,26 @@ public partial class MainWindow : Window
     /// </summary>
     private bool ShouldMinimizeToTray()
     {
-        // settings는 현재 파일에 저장된 최신 사용자 옵션입니다.
-        var settings = _settingsService.Load();
-        return settings.MinimizeToTray;
+        return _minimizeToTray;
     }
 
     /// <summary>
     /// 현재 보이는 장치 기준으로 트레이 메뉴를 다시 구성합니다.
     /// </summary>
-    private void RefreshTrayMenu()
+    private void RefreshTrayMenu(bool force = false)
     {
         if (_notifyIcon.ContextMenuStrip is null)
         {
             return;
         }
+
+        var trayMenuSignature = BuildTrayMenuSignature();
+        if (!force && string.Equals(_lastTrayMenuSignature, trayMenuSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastTrayMenuSignature = trayMenuSignature;
 
         // trayMenu는 현재 상태 기준으로 완전히 다시 만드는 트레이 메뉴입니다.
         var trayMenu = _notifyIcon.ContextMenuStrip;
@@ -676,7 +690,7 @@ public partial class MainWindow : Window
                 try
                 {
                     localDevice.IsMuted = !localDevice.IsMuted;
-                    RefreshTrayMenu();
+                    RefreshTrayMenu(force: true);
                 }
                 catch
                 {
@@ -916,7 +930,15 @@ public partial class MainWindow : Window
                 device.IsMuted);
         }
 
-        RefreshTrayMenu();
+        RefreshTrayMenu(force: true);
+    }
+
+    private string BuildTrayMenuSignature()
+    {
+        return string.Join(
+            "\n",
+            _viewModel.VisibleDevices.Select(device =>
+                $"{device.Id}|{device.Name}|{device.IsDefault}|{device.IsConnected}|{device.IsMuted}"));
     }
 
     private NotificationRefreshBatch DrainPendingNotificationBatchLocked()
