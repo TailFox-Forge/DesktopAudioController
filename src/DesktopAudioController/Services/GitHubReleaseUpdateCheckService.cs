@@ -14,12 +14,27 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
     private static readonly Uri ReleasesApiUri = new("https://api.github.com/repos/TailFox-Forge/DesktopAudioController/releases?per_page=10");
 
     // GitHub API는 User-Agent 헤더가 필요합니다.
-    private static readonly HttpClient HttpClient = CreateHttpClient();
+    private static readonly HttpClient DefaultHttpClient = CreateHttpClient();
 
     // 현재 프로젝트가 쓰는 태그 규칙(v0.7.3-preview2)을 해석하기 위한 정규식입니다.
     private static readonly Regex VersionRegex = new(
         @"^v?(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:-(?<label>[A-Za-z]+)(?<number>\d+)?)?$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // portable zip 한 개만 배포하므로 업데이트 안내도 이 자산명 규칙을 기준으로 연결합니다.
+    private const string PortableZipSuffix = "-win-x64.zip";
+
+    private readonly HttpClient _httpClient;
+
+    public GitHubReleaseUpdateCheckService()
+        : this(DefaultHttpClient)
+    {
+    }
+
+    public GitHubReleaseUpdateCheckService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
 
     /// <summary>
     /// 현재 버전보다 더 새로운 GitHub 릴리즈가 있는지 확인합니다.
@@ -32,7 +47,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
 
         try
         {
-            using var response = await HttpClient.GetAsync(ReleasesApiUri, timeoutCts.Token);
+            using var response = await _httpClient.GetAsync(ReleasesApiUri, timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
                 return new UpdateCheckResult();
@@ -41,13 +56,13 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             await using var contentStream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
             using var document = await JsonDocument.ParseAsync(contentStream, cancellationToken: timeoutCts.Token);
 
-            if (!TryGetLatestRelease(document.RootElement, out var latestVersion, out var releasePageUrl))
+            if (!TryGetLatestRelease(document.RootElement, out var releaseCandidate))
             {
                 return new UpdateCheckResult();
             }
 
             if (!TryParseVersion(currentVersion, out var currentParsedVersion)
-                || !TryParseVersion(latestVersion, out var latestParsedVersion))
+                || !TryParseVersion(releaseCandidate.VersionText, out var latestParsedVersion))
             {
                 return new UpdateCheckResult();
             }
@@ -57,16 +72,22 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
                 return new UpdateCheckResult
                 {
                     IsUpdateAvailable = false,
-                    LatestVersion = latestVersion,
-                    ReleasePageUrl = releasePageUrl
+                    LatestVersion = releaseCandidate.VersionText,
+                    ReleasePageUrl = releaseCandidate.ReleasePageUrl,
+                    DownloadUrl = releaseCandidate.DownloadUrl,
+                    PublishedAtUtc = releaseCandidate.PublishedAtUtc,
+                    IsPreRelease = releaseCandidate.IsPreRelease
                 };
             }
 
             return new UpdateCheckResult
             {
                 IsUpdateAvailable = true,
-                LatestVersion = latestVersion,
-                ReleasePageUrl = releasePageUrl
+                LatestVersion = releaseCandidate.VersionText,
+                ReleasePageUrl = releaseCandidate.ReleasePageUrl,
+                DownloadUrl = releaseCandidate.DownloadUrl,
+                PublishedAtUtc = releaseCandidate.PublishedAtUtc,
+                IsPreRelease = releaseCandidate.IsPreRelease
             };
         }
         catch
@@ -79,15 +100,16 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
     /// <summary>
     /// 릴리즈 배열에서 가장 먼저 쓸 수 있는 태그와 페이지 URL을 찾습니다.
     /// </summary>
-    private static bool TryGetLatestRelease(JsonElement releasesElement, out string latestVersion, out string releasePageUrl)
+    private static bool TryGetLatestRelease(JsonElement releasesElement, out ReleaseCandidate releaseCandidate)
     {
-        latestVersion = string.Empty;
-        releasePageUrl = string.Empty;
+        releaseCandidate = default;
 
         if (releasesElement.ValueKind != JsonValueKind.Array)
         {
             return false;
         }
+
+        var hasCandidate = false;
 
         foreach (var releaseElement in releasesElement.EnumerateArray())
         {
@@ -108,15 +130,36 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
                 continue;
             }
 
-            releasePageUrl = releaseElement.TryGetProperty("html_url", out var htmlUrlProperty)
+            var normalizedVersion = NormalizeVersionString(tagName);
+            if (!TryParseVersion(normalizedVersion, out var comparableVersion))
+            {
+                continue;
+            }
+
+            var releasePageUrl = releaseElement.TryGetProperty("html_url", out var htmlUrlProperty)
                 ? htmlUrlProperty.GetString() ?? string.Empty
                 : string.Empty;
+            var downloadUrl = TryGetPortableZipDownloadUrl(releaseElement);
+            var publishedAtUtc = TryGetPublishedAtUtc(releaseElement);
+            var isPreRelease = releaseElement.TryGetProperty("prerelease", out var prereleaseProperty)
+                && prereleaseProperty.GetBoolean();
 
-            latestVersion = NormalizeVersionString(tagName);
-            return true;
+            var candidate = new ReleaseCandidate(
+                normalizedVersion,
+                comparableVersion,
+                releasePageUrl,
+                downloadUrl,
+                publishedAtUtc,
+                isPreRelease);
+
+            if (!hasCandidate || candidate.CompareTo(releaseCandidate) > 0)
+            {
+                releaseCandidate = candidate;
+                hasCandidate = true;
+            }
         }
 
-        return false;
+        return hasCandidate;
     }
 
     /// <summary>
@@ -171,6 +214,75 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
         return client;
     }
 
+    private static string? TryGetPortableZipDownloadUrl(JsonElement releaseElement)
+    {
+        if (!releaseElement.TryGetProperty("assets", out var assetsElement) || assetsElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        string? fallbackZipUrl = null;
+
+        foreach (var assetElement in assetsElement.EnumerateArray())
+        {
+            if (!assetElement.TryGetProperty("name", out var nameProperty))
+            {
+                continue;
+            }
+
+            var assetName = nameProperty.GetString();
+            if (string.IsNullOrWhiteSpace(assetName) || assetName.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!assetElement.TryGetProperty("browser_download_url", out var urlProperty))
+            {
+                continue;
+            }
+
+            var assetUrl = urlProperty.GetString();
+            if (string.IsNullOrWhiteSpace(assetUrl))
+            {
+                continue;
+            }
+
+            if (assetName.EndsWith(PortableZipSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return assetUrl;
+            }
+
+            if (assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && fallbackZipUrl is null)
+            {
+                fallbackZipUrl = assetUrl;
+            }
+        }
+
+        return fallbackZipUrl;
+    }
+
+    private static DateTimeOffset? TryGetPublishedAtUtc(JsonElement releaseElement)
+    {
+        if (!releaseElement.TryGetProperty("published_at", out var publishedAtProperty))
+        {
+            return null;
+        }
+
+        var publishedAtText = publishedAtProperty.GetString();
+        if (string.IsNullOrWhiteSpace(publishedAtText))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(
+            publishedAtText,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var publishedAtUtc)
+            ? publishedAtUtc
+            : null;
+    }
+
     /// <summary>
     /// 현재 프로젝트 버전 규칙에 맞춘 단순 비교용 구조체입니다.
     /// </summary>
@@ -221,6 +333,36 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             }
 
             return PreReleaseNumber.CompareTo(other.PreReleaseNumber);
+        }
+    }
+
+    private readonly record struct ReleaseCandidate(
+        string VersionText,
+        ComparableVersion Version,
+        string ReleasePageUrl,
+        string? DownloadUrl,
+        DateTimeOffset? PublishedAtUtc,
+        bool IsPreRelease) : IComparable<ReleaseCandidate>
+    {
+        public int CompareTo(ReleaseCandidate other)
+        {
+            var versionCompare = Version.CompareTo(other.Version);
+            if (versionCompare != 0)
+            {
+                return versionCompare;
+            }
+
+            if (PublishedAtUtc.HasValue && other.PublishedAtUtc.HasValue)
+            {
+                return PublishedAtUtc.Value.CompareTo(other.PublishedAtUtc.Value);
+            }
+
+            if (PublishedAtUtc.HasValue != other.PublishedAtUtc.HasValue)
+            {
+                return PublishedAtUtc.HasValue ? 1 : -1;
+            }
+
+            return string.Compare(VersionText, other.VersionText, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

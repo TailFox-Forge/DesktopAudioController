@@ -25,10 +25,13 @@
     <Compile Include="..\..\src\DesktopAudioController\Models\AudioSessionInfo.cs" Link="Source\Models\AudioSessionInfo.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Models\ProgramAudioPreference.cs" Link="Source\Models\ProgramAudioPreference.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AppLog.cs" Link="Source\Services\AppLog.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\GitHubReleaseUpdateCheckService.cs" Link="Source\Services\GitHubReleaseUpdateCheckService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ISettingsService.cs" Link="Source\Services\ISettingsService.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\IUpdateCheckService.cs" Link="Source\Services\IUpdateCheckService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ProgramAudioPreferenceStore.cs" Link="Source\Services\ProgramAudioPreferenceStore.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\SettingsPersistenceException.cs" Link="Source\Services\SettingsPersistenceException.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\SettingsService.cs" Link="Source\Services\SettingsService.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\UpdateCheckResult.cs" Link="Source\Services\UpdateCheckResult.cs" />
   </ItemGroup>
 
 </Project>

@@ -38,6 +38,12 @@
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top">
+                <Button x:Name="UpdateButton"
+                        Width="88"
+                        Margin="0,0,8,0"
+                        Click="UpdateButton_OnClick"
+                        Content="업데이트"
+                        Visibility="Collapsed" />
                 <Button Width="88"
                         Margin="0,0,8,0"
                         Click="OpenReleasePageButton_OnClick"

@@ -19,4 +19,20 @@ public sealed class UpdateCheckResult
     /// 사용자를 이동시킬 릴리즈 페이지 URL입니다.
     /// </summary>
     public string? ReleasePageUrl { get; init; }
+
+    /// <summary>
+    /// zip 배포 파일을 바로 받을 수 있는 다운로드 URL입니다.
+    /// 없으면 ReleasePageUrl로 안내합니다.
+    /// </summary>
+    public string? DownloadUrl { get; init; }
+
+    /// <summary>
+    /// 감지된 최신 릴리즈의 공개 시각입니다.
+    /// </summary>
+    public DateTimeOffset? PublishedAtUtc { get; init; }
+
+    /// <summary>
+    /// 감지된 최신 릴리즈가 prerelease인지 여부입니다.
+    /// </summary>
+    public bool IsPreRelease { get; init; }
 }
