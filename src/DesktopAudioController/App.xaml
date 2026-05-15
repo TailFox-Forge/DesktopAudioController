@@ -3,5 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
+        <!-- 전역 리소스는 Phase 2 이후 스타일/테마가 늘어날 때 여기에 모읍니다. -->
     </Application.Resources>
 </Application>

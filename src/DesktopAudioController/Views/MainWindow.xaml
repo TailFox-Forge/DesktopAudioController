@@ -9,6 +9,7 @@
         Height="640"
         WindowStartupLocation="CenterScreen">
     <DockPanel Margin="16">
+        <!-- 상단 헤더와 공통 액션 버튼 영역입니다. -->
         <StackPanel DockPanel.Dock="Top"
                     Orientation="Horizontal"
                     Margin="0,0,0,16">
@@ -28,11 +29,13 @@
             </StackPanel>
         </StackPanel>
 
+        <!-- 본문 영역은 빈 상태 안내와 장치 카드 목록을 같은 영역에서 전환합니다. -->
         <Border Padding="12"
                 CornerRadius="6"
                 BorderBrush="#DDD"
                 BorderThickness="1">
             <Grid>
+                <!-- 아직 표시 장치를 고르지 않았을 때 보여주는 안내 문구입니다. -->
                 <TextBlock x:Name="EmptyStateText"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
@@ -43,10 +46,12 @@
                            Visibility="Collapsed" />
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <!-- 사용자가 선택한 장치만 카드 형태로 렌더링합니다. -->
                     <ItemsControl x:Name="DevicesItemsControl"
                                   ItemsSource="{Binding VisibleDevices}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
+                                <!-- 장치 한 개의 마스터 볼륨 카드입니다. -->
                                 <Border Margin="0,0,0,12"
                                         Padding="12"
                                         CornerRadius="6"
@@ -61,6 +66,7 @@
                                                        Foreground="#666"
                                                        Text="{Binding IsDefault, StringFormat=기본 장치: {0}}" />
                                         </DockPanel>
+                                        <!-- Phase 1에서는 장치 마스터 볼륨만 우선 노출합니다. -->
                                         <Slider Minimum="0"
                                                 Maximum="100"
                                                 Value="{Binding Volume}" />

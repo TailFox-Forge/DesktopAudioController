@@ -5,31 +5,47 @@ using DesktopAudioController.Views;
 
 namespace DesktopAudioController;
 
+/// <summary>
+/// 애플리케이션 시작 시 서비스와 초기 창을 구성하는 진입점입니다.
+/// </summary>
 public partial class App : Application
 {
+    // 설정 파일 입출력을 담당하는 서비스입니다.
     private ISettingsService? _settingsService;
+
+    // 출력 장치 목록을 조회하는 서비스입니다.
     private IAudioDeviceCatalogService? _audioDeviceCatalogService;
 
+    /// <summary>
+    /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
+    /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
+        // Phase 1에서는 실제 Core Audio 대신 기본 구현을 직접 생성합니다.
         _settingsService = new SettingsService();
         _audioDeviceCatalogService = new PlaceholderAudioDeviceCatalogService();
 
+        // 메인 화면에서 사용할 뷰모델을 만들고 저장된 설정 기준으로 데이터를 채웁니다.
         var mainViewModel = new MainViewModel(_settingsService, _audioDeviceCatalogService);
         mainViewModel.Load();
 
+        // 메인 창은 설정 창 팩토리를 받아 필요할 때마다 새 설정 뷰모델을 생성합니다.
         var mainWindow = new MainWindow(mainViewModel, CreateSettingsViewModel);
         MainWindow = mainWindow;
         mainWindow.Show();
 
+        // 첫 실행처럼 표시할 장치가 아직 없으면 설정 창을 바로 띄웁니다.
         if (!mainViewModel.HasConfiguredDevices)
         {
             mainWindow.OpenSettingsOnFirstRun();
         }
     }
 
+    /// <summary>
+    /// 설정 창 전용 뷰모델을 새로 생성합니다.
+    /// </summary>
     private SettingsViewModel CreateSettingsViewModel()
     {
         return new SettingsViewModel(

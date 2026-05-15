@@ -10,6 +10,7 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanMinimize">
     <DockPanel Margin="16">
+        <!-- 하단 버튼 영역은 저장/취소만 담당합니다. -->
         <StackPanel DockPanel.Dock="Bottom"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
@@ -25,6 +26,7 @@
 
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <!-- 최초 실행 또는 설정 변경 시 표시할 장치를 선택하는 영역입니다. -->
                 <TextBlock FontSize="20"
                            FontWeight="SemiBold"
                            Text="표시할 출력 장치 선택" />
@@ -36,6 +38,7 @@
                 <ItemsControl ItemsSource="{Binding AvailableDevices}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
+                            <!-- 장치별 체크 카드입니다. -->
                             <Border Margin="0,0,0,8"
                                     Padding="10"
                                     CornerRadius="6"
@@ -56,6 +59,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <!-- 장치 선택 아래에는 메인 화면 표시 방식 옵션을 둡니다. -->
                 <Separator Margin="0,16,0,16" />
 
                 <CheckBox Margin="0,0,0,8"
