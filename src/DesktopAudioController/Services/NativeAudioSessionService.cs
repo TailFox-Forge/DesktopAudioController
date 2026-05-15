@@ -70,7 +70,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             }
         }
 
-        return results;
+        return CoalesceSessions(results);
     }
 
     /// <summary>
@@ -178,5 +178,60 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     public void Dispose()
     {
         // 메서드별로 열거자를 생성/정리하므로 종료 시 추가 정리할 리소스가 없습니다.
+    }
+
+    /// <summary>
+    /// Core Audio가 동일 세션 ID를 중복으로 내놓을 수 있어, 세션 ID 기준으로 하나로 합칩니다.
+    /// </summary>
+    private static IReadOnlyList<AudioSessionInfo> CoalesceSessions(IReadOnlyList<AudioSessionInfo> sessions)
+    {
+        var sessionsById = new Dictionary<string, AudioSessionInfo>();
+        foreach (var session in sessions)
+        {
+            if (!sessionsById.TryGetValue(session.Id, out var existing))
+            {
+                sessionsById[session.Id] = session;
+                continue;
+            }
+
+            sessionsById[session.Id] = MergeSession(existing, session);
+        }
+
+        return sessionsById.Values.ToList();
+    }
+
+    /// <summary>
+    /// 중복 세션 둘 중 메타데이터가 더 풍부한 쪽을 우선해 하나의 스냅샷으로 합칩니다.
+    /// </summary>
+    private static AudioSessionInfo MergeSession(AudioSessionInfo current, AudioSessionInfo incoming)
+    {
+        return new AudioSessionInfo
+        {
+            Id = current.Id,
+            DisplayName = PreferDisplayName(current.DisplayName, incoming.DisplayName),
+            ExecutablePath = PreferExecutablePath(current.ExecutablePath, incoming.ExecutablePath),
+            Volume = incoming.Volume,
+            IsMuted = incoming.IsMuted
+        };
+    }
+
+    private static string PreferDisplayName(string current, string incoming)
+    {
+        if (IsPidFallback(current) && !IsPidFallback(incoming))
+        {
+            return incoming;
+        }
+
+        return !string.IsNullOrWhiteSpace(current) ? current : incoming;
+    }
+
+    private static string? PreferExecutablePath(string? current, string? incoming)
+    {
+        return !string.IsNullOrWhiteSpace(current) ? current : incoming;
+    }
+
+    private static bool IsPidFallback(string value)
+    {
+        return value.StartsWith("PID ", StringComparison.Ordinal);
     }
 }

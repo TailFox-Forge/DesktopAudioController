@@ -7,6 +7,7 @@
         Title="설정"
         Width="520"
         Height="640"
+        FontSize="13"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanMinimize">
     <DockPanel Margin="16">
@@ -27,7 +28,7 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel>
                 <!-- 최초 실행 또는 설정 변경 시 표시할 장치를 선택하는 영역입니다. -->
-                <TextBlock FontSize="20"
+                <TextBlock FontSize="18"
                            FontWeight="SemiBold"
                            Text="표시할 출력 장치 선택" />
                 <TextBlock Margin="0,8,0,16"

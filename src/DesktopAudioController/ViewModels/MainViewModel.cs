@@ -333,8 +333,8 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void ApplySessionSnapshots(VisibleDeviceViewModel device, IReadOnlyList<AudioSessionInfo> sessionSnapshots)
     {
-        var snapshotById = sessionSnapshots.ToDictionary(session => session.Id);
-        var existingById = device.Sessions.ToDictionary(session => session.Id);
+        var snapshotById = BuildSessionSnapshotMap(sessionSnapshots);
+        var existingById = BuildExistingSessionMap(device);
 
         for (var index = device.Sessions.Count - 1; index >= 0; index--)
         {
@@ -345,7 +345,7 @@ public sealed class MainViewModel : ObservableObject
             }
         }
 
-        foreach (var snapshot in sessionSnapshots)
+        foreach (var snapshot in snapshotById.Values)
         {
             if (existingById.TryGetValue(snapshot.Id, out var existingSession))
             {
@@ -377,6 +377,40 @@ public sealed class MainViewModel : ObservableObject
 
             device.Sessions.Add(CreateSessionViewModel(device.Id, snapshot));
         }
+    }
+
+    /// <summary>
+    /// 새로 읽은 세션 스냅샷 목록을 세션 ID 기준으로 하나로 합칩니다.
+    /// </summary>
+    private static Dictionary<string, AudioSessionInfo> BuildSessionSnapshotMap(IReadOnlyList<AudioSessionInfo> sessionSnapshots)
+    {
+        var snapshotsById = new Dictionary<string, AudioSessionInfo>();
+        foreach (var sessionSnapshot in sessionSnapshots)
+        {
+            snapshotsById[sessionSnapshot.Id] = sessionSnapshot;
+        }
+
+        return snapshotsById;
+    }
+
+    /// <summary>
+    /// 기존 UI 세션 목록에도 중복 ID가 남아 있을 수 있어, 마지막 항목만 남기고 정리합니다.
+    /// </summary>
+    private static Dictionary<string, AudioSessionViewModel> BuildExistingSessionMap(VisibleDeviceViewModel device)
+    {
+        var existingById = new Dictionary<string, AudioSessionViewModel>();
+        for (var index = device.Sessions.Count - 1; index >= 0; index--)
+        {
+            var session = device.Sessions[index];
+            if (existingById.TryAdd(session.Id, session))
+            {
+                continue;
+            }
+
+            device.Sessions.RemoveAt(index);
+        }
+
+        return existingById;
     }
 
     /// <summary>

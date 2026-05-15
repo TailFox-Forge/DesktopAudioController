@@ -7,6 +7,7 @@
         Title="DesktopAudioController"
         Width="560"
         Height="640"
+        FontSize="13"
         WindowStartupLocation="CenterScreen">
     <DockPanel Margin="16">
         <!-- 상단 헤더와 공통 액션 버튼 영역입니다. -->
@@ -19,7 +20,7 @@
 
             <StackPanel Grid.Column="0">
                 <TextBlock VerticalAlignment="Center"
-                           FontSize="24"
+                           FontSize="20"
                            FontWeight="SemiBold"
                            Text="DesktopAudioController" />
                 <TextBlock x:Name="VersionText"
@@ -80,7 +81,7 @@
                                         BorderThickness="1">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,8">
-                                            <TextBlock FontSize="16"
+                                            <TextBlock FontSize="14"
                                                        FontWeight="SemiBold"
                                                        Text="{Binding Name}" />
                                             <StackPanel DockPanel.Dock="Right"
@@ -131,6 +132,7 @@
                                             </Border.Style>
                                             <StackPanel>
                                                 <TextBlock Margin="0,0,0,8"
+                                                           FontSize="13"
                                                            FontWeight="SemiBold"
                                                            Text="해당 장치에서 출력 중인 프로그램" />
                                                 <ItemsControl ItemsSource="{Binding Sessions}">
@@ -149,6 +151,7 @@
                                                                                    Margin="0,0,6,0"
                                                                                    Source="{Binding IconImage}" />
                                                                             <TextBlock VerticalAlignment="Center"
+                                                                                       FontSize="13"
                                                                                        FontWeight="SemiBold"
                                                                                        Text="{Binding DisplayName}" />
                                                                         </StackPanel>
