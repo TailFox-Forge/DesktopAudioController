@@ -219,14 +219,11 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private StateSnapshot BuildStateSnapshot(IReadOnlyList<string> visibleDeviceIds, bool includeSystemSounds)
     {
-        AppLog.Debug("MainViewModel", $"상태 부분 갱신 시작 visibleDevices={visibleDeviceIds.Count}");
-
         // devicesById는 최신 장치 상태를 빠르게 찾기 위한 인덱스입니다.
         var devicesById = _audioDeviceCatalogService
             .GetAvailableOutputDevices()
             .Where(device => visibleDeviceIds.Contains(device.Id))
             .ToDictionary(device => device.Id);
-        AppLog.Debug("MainViewModel", $"상태 부분 갱신 장치 조회 완료 devices={devicesById.Count}");
 
         var snapshotsById = new Dictionary<string, DeviceSnapshot>();
         foreach (var visibleDeviceId in visibleDeviceIds)
@@ -343,7 +340,6 @@ public sealed class MainViewModel : ObservableObject
             }
         }
 
-        AppLog.Debug("MainViewModel", "상태 부분 갱신 완료");
     }
 
     /// <summary>

@@ -17,6 +17,14 @@ namespace DesktopAudioController.Views;
 /// </summary>
 public partial class MainWindow : Window
 {
+    private readonly record struct NotificationRefreshBatch(
+        AudioNotificationChangeKind Kind,
+        int StateEventCount,
+        int TopologyEventCount)
+    {
+        public int TotalEventCount => StateEventCount + TopologyEventCount;
+    }
+
     // 메인 화면 데이터와 바인딩되는 뷰모델입니다.
     private readonly MainViewModel _viewModel;
 
@@ -53,8 +61,17 @@ public partial class MainWindow : Window
     // 같은 틱에서 중복 새로고침 요청이 들어올 때 한 번으로 합치기 위한 플래그입니다.
     private bool _isNotificationRefreshQueued;
 
+    // 실제 새로고침 작업이 실행 중인지 나타냅니다. true인 동안 새 이벤트는 다음 1회로만 합칩니다.
+    private bool _isNotificationRefreshProcessing;
+
     // 같은 틱 안에서 여러 이벤트가 섞이면 더 큰 범위의 갱신 종류를 보존하기 위한 필드입니다.
     private AudioNotificationChangeKind _pendingNotificationKind = AudioNotificationChangeKind.State;
+
+    // 현재 배치에 합쳐진 상태 변경 이벤트 개수입니다.
+    private int _pendingStateNotificationCount;
+
+    // 현재 배치에 합쳐진 토폴로지 변경 이벤트 개수입니다.
+    private int _pendingTopologyNotificationCount;
 
     // 사용자 의도로 종료하는 중인지 여부입니다. false면 닫기를 트레이 최소화로 전환합니다.
     private bool _isExitRequested;
@@ -342,33 +359,26 @@ public partial class MainWindow : Window
     /// </summary>
     private void AudioNotificationService_OnChanged(object? sender, AudioNotificationChangedEventArgs e)
     {
-        AppLog.Debug("MainWindow", $"오디오 변경 이벤트 수신 kind={e.Kind}");
-        // shouldScheduleRefresh는 이번 콜백이 Dispatcher 작업을 새로 예약해야 하는지 여부입니다.
-        var shouldScheduleRefresh = false;
-
         // 오디오 콜백은 서로 다른 스레드에서 거의 동시에 들어올 수 있으므로
         // 읽기-수정-쓰기 전체를 lock으로 감싸 원자적으로 처리합니다.
         lock (_notificationRefreshSyncRoot)
         {
-            if (_isNotificationRefreshQueued)
+            if (e.Kind == AudioNotificationChangeKind.Topology)
             {
-                // 이미 예약된 작업이 있으면 더 큰 범위의 Topology 변경만 승격 저장합니다.
-                if (e.Kind == AudioNotificationChangeKind.Topology)
-                {
-                    _pendingNotificationKind = AudioNotificationChangeKind.Topology;
-                }
+                _pendingTopologyNotificationCount++;
+                _pendingNotificationKind = AudioNotificationChangeKind.Topology;
+            }
+            else
+            {
+                _pendingStateNotificationCount++;
+            }
 
+            if (_isNotificationRefreshQueued || _isNotificationRefreshProcessing)
+            {
                 return;
             }
 
             _isNotificationRefreshQueued = true;
-            _pendingNotificationKind = e.Kind;
-            shouldScheduleRefresh = true;
-        }
-
-        if (!shouldScheduleRefresh)
-        {
-            return;
         }
 
         // Core Audio 콜백은 UI 스레드가 아닐 수 있으므로 Dispatcher를 통해 화면 갱신을 예약합니다.
@@ -764,35 +774,48 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task ProcessQueuedNotificationRefreshAsync()
     {
-        AudioNotificationChangeKind firstObservedKind;
-        lock (_notificationRefreshSyncRoot)
+        while (true)
         {
-            firstObservedKind = _pendingNotificationKind;
-        }
+            AudioNotificationChangeKind firstObservedKind;
+            lock (_notificationRefreshSyncRoot)
+            {
+                firstObservedKind = _pendingNotificationKind;
+                _isNotificationRefreshQueued = false;
+                _isNotificationRefreshProcessing = true;
+            }
 
-        // 상태 변경은 매우 자주 들어오므로 잠시 모은 뒤 마지막 상태만 반영합니다.
-        if (firstObservedKind == AudioNotificationChangeKind.State)
-        {
-            await Task.Delay(StateRefreshCoalescingDelay);
-        }
+            // 상태 변경은 매우 자주 들어오므로 잠시 모은 뒤 마지막 상태만 반영합니다.
+            if (firstObservedKind == AudioNotificationChangeKind.State)
+            {
+                await Task.Delay(StateRefreshCoalescingDelay);
+            }
 
-        AudioNotificationChangeKind pendingKind;
-        lock (_notificationRefreshSyncRoot)
-        {
-            pendingKind = _pendingNotificationKind;
-            _pendingNotificationKind = AudioNotificationChangeKind.State;
-            _isNotificationRefreshQueued = false;
-        }
+            NotificationRefreshBatch batch;
+            lock (_notificationRefreshSyncRoot)
+            {
+                batch = DrainPendingNotificationBatchLocked();
+            }
 
-        if (pendingKind == AudioNotificationChangeKind.Topology)
-        {
-            AppLog.Debug("MainWindow", "토폴로지 전체 새로고침 수행");
-            await ReloadViewModelAsync("topology_event");
-            return;
-        }
+            LogNotificationBatch(batch);
 
-        AppLog.Debug("MainWindow", "상태 부분 새로고침 수행");
-        await RefreshStateViewAsync();
+            if (batch.Kind == AudioNotificationChangeKind.Topology)
+            {
+                await ReloadViewModelAsync("topology_event");
+            }
+            else
+            {
+                await RefreshStateViewAsync();
+            }
+
+            lock (_notificationRefreshSyncRoot)
+            {
+                if (!_isNotificationRefreshQueued)
+                {
+                    _isNotificationRefreshProcessing = false;
+                    return;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -813,11 +836,19 @@ public partial class MainWindow : Window
         await _viewRefreshSemaphore.WaitAsync();
         try
         {
-            AppLog.Debug("MainWindow", $"전체 새로고침 시작 reason={reason}");
+            if (!string.Equals(reason, "topology_event", StringComparison.Ordinal))
+            {
+                AppLog.Debug("MainWindow", $"전체 새로고침 시작 reason={reason}");
+            }
+
             await _viewModel.LoadAsync().WaitAsync(FullRefreshOperationTimeout);
             UpdateEmptyState();
             RefreshTrayMenu();
-            AppLog.Debug("MainWindow", $"전체 새로고침 완료 reason={reason}");
+
+            if (!string.Equals(reason, "topology_event", StringComparison.Ordinal))
+            {
+                AppLog.Debug("MainWindow", $"전체 새로고침 완료 reason={reason}");
+            }
         }
         catch (TimeoutException exception)
         {
@@ -842,10 +873,18 @@ public partial class MainWindow : Window
         await _viewRefreshSemaphore.WaitAsync();
         try
         {
-            AppLog.Debug("MainWindow", $"상태 부분 새로고침 시작 reason={reason}");
+            if (!string.Equals(reason, "state_refresh", StringComparison.Ordinal))
+            {
+                AppLog.Debug("MainWindow", $"상태 부분 새로고침 시작 reason={reason}");
+            }
+
             await _viewModel.RefreshStateOnlyAsync().WaitAsync(StateRefreshOperationTimeout);
             RefreshTrayMenu();
-            AppLog.Debug("MainWindow", $"상태 부분 새로고침 완료 reason={reason}");
+
+            if (!string.Equals(reason, "state_refresh", StringComparison.Ordinal))
+            {
+                AppLog.Debug("MainWindow", $"상태 부분 새로고침 완료 reason={reason}");
+            }
         }
         catch (TimeoutException exception)
         {
@@ -878,5 +917,38 @@ public partial class MainWindow : Window
         }
 
         RefreshTrayMenu();
+    }
+
+    private NotificationRefreshBatch DrainPendingNotificationBatchLocked()
+    {
+        var batch = new NotificationRefreshBatch(
+            _pendingNotificationKind,
+            _pendingStateNotificationCount,
+            _pendingTopologyNotificationCount);
+
+        _pendingNotificationKind = AudioNotificationChangeKind.State;
+        _pendingStateNotificationCount = 0;
+        _pendingTopologyNotificationCount = 0;
+        return batch;
+    }
+
+    private static void LogNotificationBatch(NotificationRefreshBatch batch)
+    {
+        if (batch.Kind == AudioNotificationChangeKind.Topology)
+        {
+            AppLog.Debug(
+                "MainWindow",
+                $"오디오 변경 병합 처리 kind=Topology stateEvents={batch.StateEventCount} topologyEvents={batch.TopologyEventCount}");
+            return;
+        }
+
+        if (batch.TotalEventCount <= 1)
+        {
+            return;
+        }
+
+        AppLog.Debug(
+            "MainWindow",
+            $"오디오 변경 병합 처리 kind=State stateEvents={batch.StateEventCount} topologyEvents={batch.TopologyEventCount}");
     }
 }
