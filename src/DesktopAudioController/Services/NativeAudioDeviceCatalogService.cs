@@ -128,9 +128,9 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
         try
         {
             // 일반 출력, 멀티미디어, 통신 역할을 모두 같은 기본 장치로 맞춥니다.
-            policyConfig.SetDefaultEndpoint(deviceId, Role.Console);
-            policyConfig.SetDefaultEndpoint(deviceId, Role.Multimedia);
-            policyConfig.SetDefaultEndpoint(deviceId, Role.Communications);
+            EnsurePolicyCallSucceeded(deviceId, Role.Console, policyConfig.SetDefaultEndpoint(deviceId, Role.Console));
+            EnsurePolicyCallSucceeded(deviceId, Role.Multimedia, policyConfig.SetDefaultEndpoint(deviceId, Role.Multimedia));
+            EnsurePolicyCallSucceeded(deviceId, Role.Communications, policyConfig.SetDefaultEndpoint(deviceId, Role.Communications));
             AppLog.Info("NativeAudioDeviceCatalogService", $"SetAsDefault 완료 deviceId={deviceId} elapsedMs={stopwatch.ElapsedMilliseconds}");
         }
         catch (Exception exception)
@@ -150,6 +150,21 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     public void Dispose()
     {
         _enumerator.Dispose();
+    }
+
+    /// <summary>
+    /// PolicyConfig 호출 결과 HRESULT를 검사하고, 실패면 즉시 예외로 승격합니다.
+    /// </summary>
+    private static void EnsurePolicyCallSucceeded(string deviceId, Role role, int hResult)
+    {
+        if (hResult >= 0)
+        {
+            AppLog.Info("NativeAudioDeviceCatalogService", $"SetDefaultEndpoint 성공 deviceId={deviceId} role={role} hr=0x{hResult:X8}");
+            return;
+        }
+
+        AppLog.Error("NativeAudioDeviceCatalogService", $"SetDefaultEndpoint 실패 deviceId={deviceId} role={role} hr=0x{hResult:X8}");
+        Marshal.ThrowExceptionForHR(hResult);
     }
 
     /// <summary>

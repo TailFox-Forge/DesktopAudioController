@@ -11,8 +11,8 @@ Windows에서 **사용자가 고른 출력 장치만 표시**하고,
 상태: 핵심 기능 구현, 안정화, 배포 자동화, 빌드 검증 완료
 빌드 검증: dotnet build 0 Warning / 0 Error
 배포 형태: 임시 zip 배포 우선, installer는 추후
-최신 GitHub 프리릴리즈: v0.7.3-preview6
-최신 로컬 배포 검증: v0.7.3-preview6
+최신 GitHub 프리릴리즈: v0.7.3-preview7
+최신 로컬 배포 검증: v0.7.3-preview7
 ```
 
 ## 현재 구현 범위
@@ -136,7 +136,7 @@ Build succeeded.
 배포 자동화 스크립트:
 
 ```bash
-bash scripts/publish-win-x64.sh v0.7.3-preview6-local
+bash scripts/publish-win-x64.sh v0.7.3-preview7-local
 ```
 
 스크립트가 수행하는 작업:
@@ -162,6 +162,7 @@ artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip.sha256
 
 현재 게시된 프리릴리즈:
 
+- [v0.7.3-preview7](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview7)
 - [v0.7.3-preview6](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview6)
 - [v0.7.3-preview5](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview5)
 - [v0.7.3-preview4](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview4)
