@@ -26,6 +26,12 @@ public sealed class AudioSessionInfo
     public string? ExecutablePath { get; init; }
 
     /// <summary>
+    /// 세션이 직접 제공한 아이콘 경로 또는 아이콘 추출에 사용할 경로입니다.
+    /// 실행 파일 경로와 다를 수 있으며, 리소스 인덱스가 포함될 수 있습니다.
+    /// </summary>
+    public string? IconSourcePath { get; init; }
+
+    /// <summary>
     /// 현재 세션 볼륨 값입니다.
     /// </summary>
     public int Volume { get; set; } = 100;

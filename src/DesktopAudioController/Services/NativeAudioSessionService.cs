@@ -60,6 +60,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
                     Id = session.GetSessionIdentifier,
                     DisplayName = ResolveDisplayName(session),
                     ExecutablePath = ResolveExecutablePath(session),
+                    IconSourcePath = ResolveIconSourcePath(session),
                     Volume = (int)Math.Round(session.SimpleAudioVolume.Volume * 100),
                     IsMuted = session.SimpleAudioVolume.Mute
                 });
@@ -178,6 +179,26 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     }
 
     /// <summary>
+    /// 세션이 따로 제공하는 아이콘 경로가 있으면 우선 사용하고, 없으면 실행 파일 경로를 재사용합니다.
+    /// </summary>
+    private string? ResolveIconSourcePath(AudioSessionControl session)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(session.IconPath))
+            {
+                return session.IconPath;
+            }
+        }
+        catch
+        {
+            // 일부 세션은 아이콘 경로 조회 자체가 실패할 수 있으므로 실행 파일 경로 폴백으로 진행합니다.
+        }
+
+        return ResolveExecutablePath(session);
+    }
+
+    /// <summary>
     /// 내부 COM 열거자를 정리합니다.
     /// </summary>
     public void Dispose()
@@ -215,6 +236,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             Id = current.Id,
             DisplayName = PreferDisplayName(current.DisplayName, incoming.DisplayName),
             ExecutablePath = PreferExecutablePath(current.ExecutablePath, incoming.ExecutablePath),
+            IconSourcePath = PreferIconSourcePath(current.IconSourcePath, incoming.IconSourcePath),
             Volume = incoming.Volume,
             IsMuted = incoming.IsMuted
         };
@@ -231,6 +253,11 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     }
 
     private static string? PreferExecutablePath(string? current, string? incoming)
+    {
+        return !string.IsNullOrWhiteSpace(current) ? current : incoming;
+    }
+
+    private static string? PreferIconSourcePath(string? current, string? incoming)
     {
         return !string.IsNullOrWhiteSpace(current) ? current : incoming;
     }

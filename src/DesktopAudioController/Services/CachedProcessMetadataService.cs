@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
 using DesktopAudioController.Models;
 
 namespace DesktopAudioController.Services;
@@ -29,6 +32,8 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
 
     // 캐시 정리 작업 최소 간격입니다.
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(3);
+
+    private const uint ProcessQueryLimitedInformation = 0x1000;
 
     /// <summary>
     /// PID 기준 프로세스 메타데이터를 반환합니다.
@@ -113,6 +118,11 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
                 // 일부 게임/보호 프로세스는 MainModule 접근을 막을 수 있으므로 이름만 유지합니다.
             }
 
+            if (string.IsNullOrWhiteSpace(executablePath))
+            {
+                executablePath = TryGetExecutablePathWithLimitedQuery(processId);
+            }
+
             if (string.Equals(processName, fallbackName, StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(executablePath))
             {
@@ -133,6 +143,28 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
                 ProcessName = $"PID {processId}",
                 ExecutablePath = null
             };
+        }
+    }
+
+    private static string? TryGetExecutablePathWithLimitedQuery(uint processId)
+    {
+        try
+        {
+            using var processHandle = OpenProcess(ProcessQueryLimitedInformation, false, processId);
+            if (processHandle.IsInvalid)
+            {
+                return null;
+            }
+
+            var buffer = new StringBuilder(1024);
+            uint length = (uint)buffer.Capacity;
+            return QueryFullProcessImageName(processHandle, 0, buffer, ref length)
+                ? buffer.ToString()
+                : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -205,4 +237,15 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
             return IsFailure && now >= RetryAfterUtc;
         }
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern SafeProcessHandle OpenProcess(uint processAccess, bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageName(
+        SafeProcessHandle hProcess,
+        uint dwFlags,
+        StringBuilder lpExeName,
+        ref uint lpdwSize);
 }

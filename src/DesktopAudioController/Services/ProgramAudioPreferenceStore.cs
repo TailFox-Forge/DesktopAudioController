@@ -63,6 +63,7 @@ internal static class ProgramAudioPreferenceStore
             DisplayName = session.DisplayName,
             DisambiguationText = session.DisambiguationText,
             ExecutablePath = session.ExecutablePath,
+            IconSourcePath = session.IconSourcePath,
             Volume = preference.Volume,
             IsMuted = preference.IsMuted
         };

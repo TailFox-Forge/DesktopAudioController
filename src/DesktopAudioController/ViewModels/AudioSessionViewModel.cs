@@ -22,6 +22,9 @@ public sealed class AudioSessionViewModel : ObservableObject
     // 세션 앱 실행 파일 경로입니다. 비동기 아이콘 로딩 결과가 현재 세션과 맞는지 확인할 때 사용합니다.
     private string? _executablePath;
 
+    // 실제 아이콘 적재에 사용할 경로입니다. 실행 파일 경로가 없을 때 세션 전용 아이콘 경로를 담을 수 있습니다.
+    private string? _iconSourcePath;
+
     // 세션 앱 아이콘 이미지입니다.
     private ImageSource? _iconImage;
 
@@ -52,6 +55,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         string displayName,
         string? disambiguationText,
         string? executablePath,
+        string? iconSourcePath,
         ImageSource? iconImage,
         int initialVolume,
         bool initialMuted,
@@ -63,6 +67,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         _displayName = displayName;
         _disambiguationText = disambiguationText;
         _executablePath = executablePath;
+        _iconSourcePath = iconSourcePath;
         _iconImage = iconImage;
         _volume = initialVolume;
         _isMuted = initialMuted;
@@ -110,6 +115,15 @@ public sealed class AudioSessionViewModel : ObservableObject
     {
         get => _executablePath;
         private set => SetProperty(ref _executablePath, value);
+    }
+
+    /// <summary>
+    /// 실제 아이콘 로딩에 사용할 경로입니다.
+    /// </summary>
+    public string? IconSourcePath
+    {
+        get => _iconSourcePath;
+        private set => SetProperty(ref _iconSourcePath, value);
     }
 
     /// <summary>
@@ -179,7 +193,14 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// <summary>
     /// 서비스에서 읽어온 최신 세션 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
     /// </summary>
-    public void UpdateSnapshot(string displayName, string? disambiguationText, string? executablePath, ImageSource? iconImage, int volume, bool isMuted)
+    public void UpdateSnapshot(
+        string displayName,
+        string? disambiguationText,
+        string? executablePath,
+        string? iconSourcePath,
+        ImageSource? iconImage,
+        int volume,
+        bool isMuted)
     {
         _suppressCallbacks = true;
         _hasPendingVolumeCommit = false;
@@ -189,6 +210,7 @@ public sealed class AudioSessionViewModel : ObservableObject
             DisplayName = displayName;
             DisambiguationText = disambiguationText;
             ExecutablePath = executablePath;
+            IconSourcePath = iconSourcePath;
             IconImage = iconImage;
             Volume = volume;
             IsMuted = isMuted;
@@ -202,9 +224,9 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// <summary>
     /// 비동기 아이콘 로딩이 끝난 뒤 현재 세션 경로와 일치할 때만 아이콘을 반영합니다.
     /// </summary>
-    public void TryApplyLoadedIcon(string? executablePath, ImageSource? iconImage)
+    public void TryApplyLoadedIcon(string? iconSourcePath, ImageSource? iconImage)
     {
-        if (!string.Equals(ExecutablePath, executablePath, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(IconSourcePath, iconSourcePath, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

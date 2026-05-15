@@ -8,14 +8,14 @@ using System.Windows.Media.Imaging;
 namespace DesktopAudioController.Services;
 
 /// <summary>
-/// 실행 파일 경로별로 앱 아이콘을 캐싱하고, 실패 캐시와 만료 정리를 함께 관리하는 서비스입니다.
+/// 실행 파일 경로나 세션 아이콘 경로별로 앱 아이콘을 캐싱하고, 실패 캐시와 만료 정리를 함께 관리하는 서비스입니다.
 /// </summary>
 public sealed class CachedAppIconService : IAppIconService
 {
     // 캐시 딕셔너리 읽기/쓰기와 정리 시점을 직렬화하기 위한 잠금 객체입니다.
     private readonly object _syncRoot = new();
 
-    // 실행 파일 경로를 키로 사용해 아이콘 또는 실패 상태를 저장합니다.
+    // 정규화된 아이콘 소스 경로를 키로 사용해 아이콘 또는 실패 상태를 저장합니다.
     private readonly Dictionary<string, IconCacheEntry> _iconCache = new(StringComparer.OrdinalIgnoreCase);
 
     // 현재 백그라운드에서 실제 아이콘을 읽는 중인 작업을 경로별로 합치기 위한 in-flight 캐시입니다.
@@ -37,16 +37,12 @@ public sealed class CachedAppIconService : IAppIconService
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// 실행 파일 경로의 아이콘을 조회하고, 캐시가 유효하면 재사용합니다.
+    /// 아이콘 소스 경로의 아이콘을 조회하고, 캐시가 유효하면 재사용합니다.
     /// </summary>
-    public ImageSource? TryGetCachedIcon(string? executablePath)
+    public ImageSource? TryGetCachedIcon(string? iconSourcePath)
     {
-        if (string.IsNullOrWhiteSpace(executablePath))
-        {
-            return null;
-        }
-
-        if (!File.Exists(executablePath))
+        var normalizedPath = NormalizeIconSourcePath(iconSourcePath);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
         {
             return null;
         }
@@ -55,7 +51,7 @@ public sealed class CachedAppIconService : IAppIconService
         {
             CleanupExpiredEntriesLocked(DateTimeOffset.UtcNow);
 
-            if (_iconCache.TryGetValue(executablePath, out var cachedEntry))
+            if (_iconCache.TryGetValue(normalizedPath, out var cachedEntry))
             {
                 cachedEntry.LastAccessUtc = DateTimeOffset.UtcNow;
 
@@ -73,22 +69,18 @@ public sealed class CachedAppIconService : IAppIconService
     }
 
     /// <summary>
-    /// 실행 파일 아이콘을 비동기로 읽고 캐시에 반영합니다.
+    /// 아이콘 소스 경로에서 아이콘을 비동기로 읽고 캐시에 반영합니다.
     /// </summary>
-    public async Task<ImageSource?> GetIconAsync(string? executablePath, CancellationToken cancellationToken = default)
+    public async Task<ImageSource?> GetIconAsync(string? iconSourcePath, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(executablePath))
-        {
-            return null;
-        }
-
-        if (!File.Exists(executablePath))
+        var normalizedPath = NormalizeIconSourcePath(iconSourcePath);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
         {
             return null;
         }
 
         // cachedIcon은 이미 메모리에 올라온 결과가 있으면 즉시 반환하는 빠른 경로입니다.
-        var cachedIcon = TryGetCachedIcon(executablePath);
+        var cachedIcon = TryGetCachedIcon(normalizedPath);
         if (cachedIcon is not null)
         {
             return cachedIcon;
@@ -105,7 +97,7 @@ public sealed class CachedAppIconService : IAppIconService
         {
             CleanupExpiredEntriesLocked(now);
 
-            if (_iconCache.TryGetValue(executablePath, out var cachedEntry))
+            if (_iconCache.TryGetValue(normalizedPath, out var cachedEntry))
             {
                 cachedEntry.LastAccessUtc = now;
 
@@ -116,14 +108,14 @@ public sealed class CachedAppIconService : IAppIconService
                 }
             }
 
-            if (_inflightIconLoads.TryGetValue(executablePath, out var existingLoadTask))
+            if (_inflightIconLoads.TryGetValue(normalizedPath, out var existingLoadTask))
             {
                 iconLoadTask = existingLoadTask;
             }
             else
             {
-                iconLoadTask = Task.Run(() => LoadIcon(executablePath), CancellationToken.None);
-                _inflightIconLoads[executablePath] = iconLoadTask;
+                iconLoadTask = Task.Run(() => LoadIcon(normalizedPath), CancellationToken.None);
+                _inflightIconLoads[normalizedPath] = iconLoadTask;
             }
         }
 
@@ -139,10 +131,10 @@ public sealed class CachedAppIconService : IAppIconService
         {
             lock (_syncRoot)
             {
-                if (_inflightIconLoads.TryGetValue(executablePath, out var inflightTask)
+                if (_inflightIconLoads.TryGetValue(normalizedPath, out var inflightTask)
                     && ReferenceEquals(inflightTask, iconLoadTask))
                 {
-                    _inflightIconLoads.Remove(executablePath);
+                    _inflightIconLoads.Remove(normalizedPath);
                 }
             }
 
@@ -159,16 +151,39 @@ public sealed class CachedAppIconService : IAppIconService
 
         lock (_syncRoot)
         {
-            _iconCache[executablePath] = refreshedEntry;
+            _iconCache[normalizedPath] = refreshedEntry;
 
-            if (_inflightIconLoads.TryGetValue(executablePath, out var inflightTask)
+            if (_inflightIconLoads.TryGetValue(normalizedPath, out var inflightTask)
                 && ReferenceEquals(inflightTask, iconLoadTask))
             {
-                _inflightIconLoads.Remove(executablePath);
+                _inflightIconLoads.Remove(normalizedPath);
             }
         }
 
         return iconImage;
+    }
+
+    /// <summary>
+    /// 세션 아이콘 경로나 실행 파일 경로에서 실제 파일 경로만 추출합니다.
+    /// 예: "C:\Path\App.exe,-123" -> "C:\Path\App.exe"
+    /// </summary>
+    internal static string? NormalizeIconSourcePath(string? iconSourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(iconSourcePath))
+        {
+            return null;
+        }
+
+        var expandedPath = Environment.ExpandEnvironmentVariables(iconSourcePath.Trim());
+        foreach (var candidate in EnumeratePathCandidates(expandedPath))
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -234,6 +249,30 @@ public sealed class CachedAppIconService : IAppIconService
         {
             // 권한 문제나 특수 경로 문제로 아이콘을 읽지 못하면 실패 캐시 대상이 됩니다.
             return null;
+        }
+    }
+
+    private static IEnumerable<string> EnumeratePathCandidates(string rawPath)
+    {
+        var trimmedPath = rawPath.Trim().Trim('"');
+        if (!string.IsNullOrWhiteSpace(trimmedPath))
+        {
+            if (trimmedPath.StartsWith('@'))
+            {
+                trimmedPath = trimmedPath[1..].Trim().Trim('"');
+            }
+
+            yield return trimmedPath;
+
+            var commaIndex = trimmedPath.IndexOf(',');
+            if (commaIndex > 0)
+            {
+                var beforeIndexSuffix = trimmedPath[..commaIndex].Trim().Trim('"');
+                if (!string.IsNullOrWhiteSpace(beforeIndexSuffix))
+                {
+                    yield return beforeIndexSuffix;
+                }
+            }
         }
     }
 

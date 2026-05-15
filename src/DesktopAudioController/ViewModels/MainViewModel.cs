@@ -396,12 +396,12 @@ public sealed class MainViewModel : ObservableObject
             if (existingById.TryGetValue(snapshot.Id, out var existingSession))
             {
                 // cachedIcon은 이미 메모리에 올라와 있으면 즉시 쓸 수 있는 아이콘입니다.
-                var cachedIcon = _appIconService.TryGetCachedIcon(snapshot.ExecutablePath);
+                var cachedIcon = _appIconService.TryGetCachedIcon(snapshot.IconSourcePath);
 
                 // iconImageForSnapshot은 경로가 그대로일 때 기존 아이콘을 유지해 불필요한 깜빡임을 줄이기 위한 값입니다.
                 var iconImageForSnapshot =
                     cachedIcon ??
-                    (string.Equals(existingSession.ExecutablePath, snapshot.ExecutablePath, StringComparison.OrdinalIgnoreCase)
+                    (string.Equals(existingSession.IconSourcePath, snapshot.IconSourcePath, StringComparison.OrdinalIgnoreCase)
                         ? existingSession.IconImage
                         : null);
 
@@ -409,6 +409,7 @@ public sealed class MainViewModel : ObservableObject
                     snapshot.DisplayName,
                     snapshot.DisambiguationText,
                     snapshot.ExecutablePath,
+                    snapshot.IconSourcePath,
                     iconImageForSnapshot,
                     snapshot.Volume,
                     snapshot.IsMuted);
@@ -499,6 +500,7 @@ public sealed class MainViewModel : ObservableObject
             DisplayName = session.DisplayName,
             DisambiguationText = session.DisambiguationText,
             ExecutablePath = session.ExecutablePath,
+            IconSourcePath = session.IconSourcePath,
             Volume = session.Volume,
             IsMuted = session.IsMuted
         };
@@ -549,7 +551,7 @@ public sealed class MainViewModel : ObservableObject
     private AudioSessionViewModel CreateSessionViewModel(string deviceId, AudioSessionInfo session)
     {
         // cachedIcon은 캐시에 이미 있는 경우 초기 렌더링에 바로 사용할 수 있는 값입니다.
-        var cachedIcon = _appIconService.TryGetCachedIcon(session.ExecutablePath);
+        var cachedIcon = _appIconService.TryGetCachedIcon(session.IconSourcePath);
 
         var viewModel = new AudioSessionViewModel(
             deviceId,
@@ -557,6 +559,7 @@ public sealed class MainViewModel : ObservableObject
             session.DisplayName,
             session.DisambiguationText,
             session.ExecutablePath,
+            session.IconSourcePath,
             cachedIcon,
             session.Volume,
             session.IsMuted,
@@ -741,14 +744,14 @@ public sealed class MainViewModel : ObservableObject
     private async Task LoadSessionIconAsync(AudioSessionViewModel session)
     {
         // executablePath는 비동기 작업 시작 시점의 경로 스냅샷입니다.
-        var executablePath = session.ExecutablePath;
-        if (string.IsNullOrWhiteSpace(executablePath))
+        var iconSourcePath = session.IconSourcePath;
+        if (string.IsNullOrWhiteSpace(iconSourcePath))
         {
             return;
         }
 
         // iconImage는 캐시 미스일 때만 실제 아이콘 추출을 수행한 결과입니다.
-        var iconImage = await _appIconService.GetIconAsync(executablePath);
+        var iconImage = await _appIconService.GetIconAsync(iconSourcePath);
         if (iconImage is null)
         {
             return;
@@ -756,7 +759,7 @@ public sealed class MainViewModel : ObservableObject
 
         await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            session.TryApplyLoadedIcon(executablePath, iconImage);
+            session.TryApplyLoadedIcon(iconSourcePath, iconImage);
         });
     }
 
