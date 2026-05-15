@@ -8,5 +8,8 @@ public interface IUpdateCheckService
     /// <summary>
     /// 현재 버전 기준으로 더 새로운 릴리즈가 있는지 비동기로 확인합니다.
     /// </summary>
-    Task<UpdateCheckResult> CheckForUpdateAsync(string currentVersion, CancellationToken cancellationToken = default);
+    Task<UpdateCheckResult> CheckForUpdateAsync(
+        string currentVersion,
+        bool includePreReleaseUpdates,
+        CancellationToken cancellationToken = default);
 }

@@ -40,7 +40,7 @@ public sealed class GitHubReleaseUpdateCheckServiceTests
         using var httpClient = CreateHttpClient(HttpStatusCode.OK, releasesJson);
         var service = new GitHubReleaseUpdateCheckService(httpClient);
 
-        var result = await service.CheckForUpdateAsync("0.9.0");
+        var result = await service.CheckForUpdateAsync("0.9.0", includePreReleaseUpdates: true);
 
         Assert.True(result.IsUpdateAvailable);
         Assert.Equal("0.10.0", result.LatestVersion);
@@ -71,7 +71,7 @@ public sealed class GitHubReleaseUpdateCheckServiceTests
         using var httpClient = CreateHttpClient(HttpStatusCode.OK, releasesJson);
         var service = new GitHubReleaseUpdateCheckService(httpClient);
 
-        var result = await service.CheckForUpdateAsync("1.0.0");
+        var result = await service.CheckForUpdateAsync("1.0.0", includePreReleaseUpdates: false);
 
         Assert.False(result.IsUpdateAvailable);
         Assert.Equal("1.0.0", result.LatestVersion);
@@ -100,7 +100,7 @@ public sealed class GitHubReleaseUpdateCheckServiceTests
         using var httpClient = CreateHttpClient(HttpStatusCode.OK, releasesJson);
         var service = new GitHubReleaseUpdateCheckService(httpClient);
 
-        var result = await service.CheckForUpdateAsync("0.9.0");
+        var result = await service.CheckForUpdateAsync("0.9.0", includePreReleaseUpdates: true);
 
         Assert.True(result.IsUpdateAvailable);
         Assert.Equal("0.10.0", result.LatestVersion);
@@ -129,11 +129,87 @@ public sealed class GitHubReleaseUpdateCheckServiceTests
         using var httpClient = CreateHttpClient(HttpStatusCode.OK, releasesJson);
         var service = new GitHubReleaseUpdateCheckService(httpClient);
 
-        var result = await service.CheckForUpdateAsync("1.0.0-preview2");
+        var result = await service.CheckForUpdateAsync("1.0.0-preview2", includePreReleaseUpdates: false);
 
         Assert.True(result.IsUpdateAvailable);
         Assert.Equal("1.0.0", result.LatestVersion);
         Assert.False(result.IsPreRelease);
+    }
+
+    [Fact]
+    public async Task CheckForUpdateAsync_IgnoresHigherPreRelease_WhenStableOnlyPolicyIsUsed()
+    {
+        const string releasesJson = """
+        [
+          {
+            "tag_name": "v0.10.2",
+            "draft": false,
+            "prerelease": false,
+            "html_url": "https://example/releases/v0.10.2",
+            "published_at": "2026-06-12T00:00:00Z",
+            "assets": [
+              { "name": "DesktopAudioController-v0.10.2-win-x64.zip", "browser_download_url": "https://example/download/v0.10.2/app.zip" }
+            ]
+          },
+          {
+            "tag_name": "v0.11.0-preview1",
+            "draft": false,
+            "prerelease": true,
+            "html_url": "https://example/releases/v0.11.0-preview1",
+            "published_at": "2026-06-20T00:00:00Z",
+            "assets": [
+              { "name": "DesktopAudioController-v0.11.0-preview1-win-x64.zip", "browser_download_url": "https://example/download/v0.11.0-preview1/app.zip" }
+            ]
+          }
+        ]
+        """;
+
+        using var httpClient = CreateHttpClient(HttpStatusCode.OK, releasesJson);
+        var service = new GitHubReleaseUpdateCheckService(httpClient);
+
+        var result = await service.CheckForUpdateAsync("0.10.1", includePreReleaseUpdates: false);
+
+        Assert.True(result.IsUpdateAvailable);
+        Assert.Equal("0.10.2", result.LatestVersion);
+        Assert.False(result.IsPreRelease);
+    }
+
+    [Fact]
+    public async Task CheckForUpdateAsync_CanReturnHigherPreRelease_WhenPreReleasePolicyIsEnabled()
+    {
+        const string releasesJson = """
+        [
+          {
+            "tag_name": "v0.10.2",
+            "draft": false,
+            "prerelease": false,
+            "html_url": "https://example/releases/v0.10.2",
+            "published_at": "2026-06-12T00:00:00Z",
+            "assets": [
+              { "name": "DesktopAudioController-v0.10.2-win-x64.zip", "browser_download_url": "https://example/download/v0.10.2/app.zip" }
+            ]
+          },
+          {
+            "tag_name": "v0.11.0-preview1",
+            "draft": false,
+            "prerelease": true,
+            "html_url": "https://example/releases/v0.11.0-preview1",
+            "published_at": "2026-06-20T00:00:00Z",
+            "assets": [
+              { "name": "DesktopAudioController-v0.11.0-preview1-win-x64.zip", "browser_download_url": "https://example/download/v0.11.0-preview1/app.zip" }
+            ]
+          }
+        ]
+        """;
+
+        using var httpClient = CreateHttpClient(HttpStatusCode.OK, releasesJson);
+        var service = new GitHubReleaseUpdateCheckService(httpClient);
+
+        var result = await service.CheckForUpdateAsync("0.10.1", includePreReleaseUpdates: true);
+
+        Assert.True(result.IsUpdateAvailable);
+        Assert.Equal("0.11.0-preview1", result.LatestVersion);
+        Assert.True(result.IsPreRelease);
     }
 
     private static HttpClient CreateHttpClient(HttpStatusCode statusCode, string content)

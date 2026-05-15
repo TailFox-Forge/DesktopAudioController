@@ -52,6 +52,9 @@ public partial class MainWindow : Window
     // 창 닫기/최소화 때마다 settings.json을 다시 읽지 않도록 트레이 옵션을 메모리에 유지합니다.
     private bool _minimizeToTray = true;
 
+    // 업데이트 확인 시 prerelease를 포함할지 여부도 설정 저장 직후 메모리에 반영합니다.
+    private bool _includePreReleaseUpdates;
+
     // 시스템 트레이 영역에 표시할 아이콘 인스턴스입니다.
     private readonly Forms.NotifyIcon _notifyIcon;
 
@@ -255,7 +258,9 @@ public partial class MainWindow : Window
             if (result == true)
             {
                 _minimizeToTray = settingsViewModel.MinimizeToTray;
+                _includePreReleaseUpdates = settingsViewModel.IncludePreReleaseUpdates;
                 await ReloadViewModelAsync("settings_saved");
+                await CheckForUpdateInBackgroundAsync();
             }
         }
         catch (TimeoutException exception)
@@ -287,6 +292,11 @@ public partial class MainWindow : Window
     {
         ApplyPrimaryMonitorBounds();
 
+        // 창 동작 옵션과 업데이트 채널 정책은 메인 창이 뜬 직후 한 번만 읽어 메모리에 유지합니다.
+        var settings = _settingsService.Load();
+        _minimizeToTray = settings.MinimizeToTray;
+        _includePreReleaseUpdates = settings.IncludePreReleaseUpdates;
+
         // 창 표시 이후에 백그라운드 업데이트 확인을 시작해, 오프라인 상태여도 UI가 멈추지 않게 합니다.
         _ = CheckForUpdateInBackgroundAsync();
 
@@ -295,10 +305,6 @@ public partial class MainWindow : Window
         {
             return;
         }
-
-        // settings는 사용자가 마지막으로 저장한 창 동작 옵션입니다.
-        var settings = _settingsService.Load();
-        _minimizeToTray = settings.MinimizeToTray;
         if (!settings.StartMinimized)
         {
             return;
@@ -752,16 +758,24 @@ public partial class MainWindow : Window
         // currentVersion은 현재 실행 중인 앱 버전 문자열입니다.
         var currentVersion = GetApplicationVersionText();
 
-        // updateCheckResult는 새 버전 존재 여부와 최신 버전 문자열을 담은 결과입니다.
-        var updateCheckResult = await _updateCheckService.CheckForUpdateAsync(currentVersion);
-        _latestUpdateCheckResult = updateCheckResult;
-        if (!updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
+        await Dispatcher.InvokeAsync(() =>
         {
-            return;
-        }
+            UpdateStatusText.Visibility = Visibility.Collapsed;
+            UpdateStatusText.Text = string.Empty;
+            UpdateButton.Visibility = Visibility.Collapsed;
+        });
+
+        // updateCheckResult는 새 버전 존재 여부와 최신 버전 문자열을 담은 결과입니다.
+        var updateCheckResult = await _updateCheckService.CheckForUpdateAsync(currentVersion, _includePreReleaseUpdates);
+        _latestUpdateCheckResult = updateCheckResult;
 
         await Dispatcher.InvokeAsync(() =>
         {
+            if (!updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
+            {
+                return;
+            }
+
             var publishedDateText = updateCheckResult.PublishedAtUtc.HasValue
                 ? $" · {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd} 공개"
                 : string.Empty;

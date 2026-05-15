@@ -84,6 +84,25 @@
 
                 <TextBlock FontSize="15"
                            FontWeight="SemiBold"
+                           Text="업데이트 확인" />
+                <TextBlock Margin="0,8,0,16"
+                           Foreground="#666"
+                           Text="기본값은 정식(stable) 릴리즈만 확인합니다. 필요하면 프리릴리즈도 함께 안내할 수 있습니다."
+                           TextWrapping="Wrap" />
+
+                <CheckBox Margin="0,0,0,8"
+                          IsChecked="{Binding IncludePreReleaseUpdates}">
+                    <TextBlock Text="프리릴리즈 업데이트도 함께 확인" />
+                </CheckBox>
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#666"
+                           Text="체크하면 테스트용 미리보기 버전까지 새 버전 안내에 포함합니다."
+                           TextWrapping="Wrap" />
+
+                <Separator Margin="0,8,0,16" />
+
+                <TextBlock FontSize="15"
+                           FontWeight="SemiBold"
                            Text="실행 동작" />
                 <TextBlock Margin="0,8,0,16"
                            Foreground="#666"

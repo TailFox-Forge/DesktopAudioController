@@ -904,6 +904,7 @@ public sealed class MainViewModel : ObservableObject
             MinimizeToTray = settings.MinimizeToTray,
             ShowOnlyConnectedDevices = settings.ShowOnlyConnectedDevices,
             ShowSystemSounds = settings.ShowSystemSounds,
+            IncludePreReleaseUpdates = settings.IncludePreReleaseUpdates,
             ProgramAudioPreferences = settings.ProgramAudioPreferences
                 .Select(preference => new ProgramAudioPreference
                 {

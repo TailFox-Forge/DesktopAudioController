@@ -39,7 +39,10 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
     /// <summary>
     /// 현재 버전보다 더 새로운 GitHub 릴리즈가 있는지 확인합니다.
     /// </summary>
-    public async Task<UpdateCheckResult> CheckForUpdateAsync(string currentVersion, CancellationToken cancellationToken = default)
+    public async Task<UpdateCheckResult> CheckForUpdateAsync(
+        string currentVersion,
+        bool includePreReleaseUpdates,
+        CancellationToken cancellationToken = default)
     {
         // 인터넷 연결이 없거나 GitHub API가 느릴 때 UI가 멈추지 않도록 짧은 타임아웃을 둡니다.
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -56,7 +59,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             await using var contentStream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
             using var document = await JsonDocument.ParseAsync(contentStream, cancellationToken: timeoutCts.Token);
 
-            if (!TryGetLatestRelease(document.RootElement, out var releaseCandidate))
+            if (!TryGetLatestRelease(document.RootElement, includePreReleaseUpdates, out var releaseCandidate))
             {
                 return new UpdateCheckResult();
             }
@@ -98,9 +101,12 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
     }
 
     /// <summary>
-    /// 릴리즈 배열에서 가장 먼저 쓸 수 있는 태그와 페이지 URL을 찾습니다.
+    /// 릴리즈 배열에서 채널 정책에 맞는 가장 높은 버전을 찾습니다.
     /// </summary>
-    private static bool TryGetLatestRelease(JsonElement releasesElement, out ReleaseCandidate releaseCandidate)
+    private static bool TryGetLatestRelease(
+        JsonElement releasesElement,
+        bool includePreReleaseUpdates,
+        out ReleaseCandidate releaseCandidate)
     {
         releaseCandidate = default;
 
@@ -143,6 +149,10 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             var publishedAtUtc = TryGetPublishedAtUtc(releaseElement);
             var isPreRelease = releaseElement.TryGetProperty("prerelease", out var prereleaseProperty)
                 && prereleaseProperty.GetBoolean();
+            if (isPreRelease && !includePreReleaseUpdates)
+            {
+                continue;
+            }
 
             var candidate = new ReleaseCandidate(
                 normalizedVersion,
