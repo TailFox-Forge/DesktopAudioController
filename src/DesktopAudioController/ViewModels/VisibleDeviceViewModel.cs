@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using DesktopAudioController.Infrastructure;
+using DesktopAudioController.Services;
+using System.Windows.Threading;
 
 namespace DesktopAudioController.ViewModels;
 
@@ -22,6 +24,12 @@ public sealed class VisibleDeviceViewModel : ObservableObject
 
     // 슬라이더와 바인딩되는 현재 볼륨 값입니다.
     private int _volume;
+
+    // 슬라이더 드래그 중 과도한 네이티브 호출을 줄이기 위한 지연 커밋 타이머입니다.
+    private readonly DispatcherTimer _volumeCommitTimer;
+
+    // 아직 서비스에 반영되지 않은 볼륨 변경이 남아 있는지 여부입니다.
+    private bool _hasPendingVolumeCommit;
 
     // 음소거 체크 상태와 바인딩되는 현재 값입니다.
     private bool _isMuted;
@@ -61,6 +69,11 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         _onVolumeChanged = onVolumeChanged;
         _onMutedChanged = onMutedChanged;
         _onSetAsDefault = onSetAsDefault;
+        _volumeCommitTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(80)
+        };
+        _volumeCommitTimer.Tick += VolumeCommitTimer_OnTick;
     }
 
     /// <summary>
@@ -113,14 +126,9 @@ public sealed class VisibleDeviceViewModel : ObservableObject
                 return;
             }
 
-            try
-            {
-                _onVolumeChanged(Id, value);
-            }
-            catch
-            {
-                // 장치가 갑자기 사라진 경우 다음 새로고침까지 현재 화면 값을 유지합니다.
-            }
+            _hasPendingVolumeCommit = true;
+            _volumeCommitTimer.Stop();
+            _volumeCommitTimer.Start();
         }
     }
 
@@ -144,11 +152,13 @@ public sealed class VisibleDeviceViewModel : ObservableObject
 
             try
             {
+                AppLog.Info("VisibleDeviceViewModel", $"장치 음소거 변경 요청 deviceId={Id} muted={value}");
                 _onMutedChanged(Id, value);
             }
-            catch
+            catch (Exception exception)
             {
                 // 장치가 갑자기 사라진 경우 다음 새로고침까지 현재 화면 값을 유지합니다.
+                AppLog.Warn("VisibleDeviceViewModel", $"장치 음소거 변경 실패 deviceId={Id} muted={value}", exception);
             }
         }
     }
@@ -177,6 +187,7 @@ public sealed class VisibleDeviceViewModel : ObservableObject
             return;
         }
 
+        AppLog.Info("VisibleDeviceViewModel", $"기본 장치 변경 요청 deviceId={Id}");
         _onSetAsDefault(Id);
     }
 
@@ -186,6 +197,8 @@ public sealed class VisibleDeviceViewModel : ObservableObject
     public void UpdateSnapshot(string name, bool isDefault, bool isConnected, int volume, bool isMuted)
     {
         _suppressCallbacks = true;
+        _hasPendingVolumeCommit = false;
+        _volumeCommitTimer.Stop();
         try
         {
             Name = name;
@@ -197,6 +210,30 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         finally
         {
             _suppressCallbacks = false;
+        }
+    }
+
+    /// <summary>
+    /// 사용자가 슬라이더 조작을 잠시 멈추면 마지막 값만 서비스에 반영합니다.
+    /// </summary>
+    private void VolumeCommitTimer_OnTick(object? sender, EventArgs e)
+    {
+        _volumeCommitTimer.Stop();
+        if (_suppressCallbacks || !_hasPendingVolumeCommit)
+        {
+            return;
+        }
+
+        _hasPendingVolumeCommit = false;
+
+        try
+        {
+            AppLog.Debug("VisibleDeviceViewModel", $"장치 볼륨 반영 deviceId={Id} volume={_volume}");
+            _onVolumeChanged(Id, _volume);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("VisibleDeviceViewModel", $"장치 볼륨 반영 실패 deviceId={Id} volume={_volume}", exception);
         }
     }
 }

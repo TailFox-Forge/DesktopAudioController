@@ -1,9 +1,11 @@
 using System.Windows;
+using System.Windows.Threading;
 using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 using DesktopAudioController.Views;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace DesktopAudioController;
 
@@ -42,6 +44,11 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        AppLog.Initialize();
+        AppLog.Info("App", $"OnStartup args=[{string.Join(", ", e.Args)}]");
+        DispatcherUnhandledException += App_OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
 
         // 현재 실행이 Windows 자동 실행 레지스트리를 통해 시작된 경우에만 true입니다.
         var isStartupLaunch = e.Args.Any(argument =>
@@ -49,6 +56,7 @@ public partial class App : System.Windows.Application
                 argument,
                 RegistryStartupLaunchService.StartupLaunchArgument,
                 StringComparison.OrdinalIgnoreCase));
+        AppLog.Info("App", $"startupLaunch={isStartupLaunch}");
 
         // 실제 Core Audio 서비스로 장치와 세션을 조회합니다.
         _settingsService = new SettingsService();
@@ -68,10 +76,12 @@ public partial class App : System.Windows.Application
             try
             {
                 _startupLaunchService.Apply(true);
+                AppLog.Info("App", "자동 실행 레지스트리 재동기화 완료");
             }
             catch
             {
                 // 앱 시작 자체는 막지 않고, 사용자가 설정창을 다시 저장할 때 동일 오류를 안내합니다.
+                AppLog.Warn("App", "자동 실행 레지스트리 재동기화 실패");
             }
         }
 
@@ -82,6 +92,7 @@ public partial class App : System.Windows.Application
             _audioSessionService,
             _appIconService);
         mainViewModel.Load();
+        AppLog.Info("App", $"초기 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
 
         // 메인 창은 설정 창 팩토리를 받아 필요할 때마다 새 설정 뷰모델을 생성합니다.
         var mainWindow = new MainWindow(
@@ -94,9 +105,11 @@ public partial class App : System.Windows.Application
             !mainViewModel.HasConfiguredDevices);
         MainWindow = mainWindow;
         mainWindow.Show();
+        AppLog.Info("App", "메인 창 표시 완료");
 
         if (_settingsService.TryConsumeLoadWarning(out var warningMessage))
         {
+            AppLog.Warn("App", $"설정 파일 복구 경고 표시 path={_settingsService.SettingsFilePath}");
             System.Windows.MessageBox.Show(
                 mainWindow,
                 warningMessage,
@@ -108,6 +121,7 @@ public partial class App : System.Windows.Application
         // 첫 실행처럼 표시할 장치가 아직 없으면 설정 창을 바로 띄웁니다.
         if (!mainViewModel.HasConfiguredDevices)
         {
+            AppLog.Info("App", "표시 장치 미설정 상태로 첫 실행 설정창 표시");
             mainWindow.OpenSettingsOnFirstRun();
         }
     }
@@ -117,9 +131,11 @@ public partial class App : System.Windows.Application
     /// </summary>
     protected override void OnExit(ExitEventArgs e)
     {
+        AppLog.Info("App", "OnExit 시작");
         (_audioDeviceCatalogService as IDisposable)?.Dispose();
         (_audioSessionService as IDisposable)?.Dispose();
         _audioNotificationService?.Dispose();
+        AppLog.Info("App", "OnExit 완료");
         base.OnExit(e);
     }
 
@@ -132,5 +148,29 @@ public partial class App : System.Windows.Application
             _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
             _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
             _startupLaunchService ?? throw new InvalidOperationException("Startup launch service is not initialized."));
+    }
+
+    /// <summary>
+    /// WPF UI 스레드 예외를 로그에 남깁니다.
+    /// </summary>
+    private void App_OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        AppLog.Error("App", "DispatcherUnhandledException", e.Exception);
+    }
+
+    /// <summary>
+    /// 처리되지 않은 AppDomain 예외를 로그에 남깁니다.
+    /// </summary>
+    private void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        AppLog.Error("App", $"UnhandledException isTerminating={e.IsTerminating}", e.ExceptionObject as Exception);
+    }
+
+    /// <summary>
+    /// 관찰되지 않은 Task 예외를 로그에 남깁니다.
+    /// </summary>
+    private void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        AppLog.Error("App", "UnobservedTaskException", e.Exception);
     }
 }

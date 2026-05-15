@@ -27,14 +27,17 @@ public partial class SettingsWindow : Window
     /// </summary>
     private void SaveButton_OnClick(object sender, RoutedEventArgs e)
     {
+        AppLog.Info("SettingsWindow", "설정 저장 시도");
         try
         {
             _viewModel.Save();
+            AppLog.Info("SettingsWindow", "설정 저장 성공");
             DialogResult = true;
             Close();
         }
         catch (SettingsPersistenceException exception)
         {
+            AppLog.Error("SettingsWindow", "설정 파일 저장 실패", exception);
             System.Windows.MessageBox.Show(
                 this,
                 $"설정을 저장하지 못했습니다.\n\n저장 경로: {exception.SettingsFilePath}\n원인: {exception.InnerException?.Message ?? exception.Message}",
@@ -44,6 +47,7 @@ public partial class SettingsWindow : Window
         }
         catch (StartupRegistrationException exception)
         {
+            AppLog.Error("SettingsWindow", "자동 실행 레지스트리 반영 실패", exception);
             System.Windows.MessageBox.Show(
                 this,
                 $"Windows 자동 실행 옵션을 적용하지 못했습니다.\n\n레지스트리 경로: {exception.RegistryPath}\n값 이름: {exception.ValueName}\n원인: {exception.InnerException?.Message ?? exception.Message}",
@@ -53,6 +57,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception exception)
         {
+            AppLog.Error("SettingsWindow", "설정 저장 중 예상하지 못한 오류", exception);
             System.Windows.MessageBox.Show(
                 this,
                 $"설정을 저장하는 중 예상하지 못한 오류가 발생했습니다.\n\n원인: {exception.Message}",
@@ -67,6 +72,7 @@ public partial class SettingsWindow : Window
     /// </summary>
     private void CancelButton_OnClick(object sender, RoutedEventArgs e)
     {
+        AppLog.Info("SettingsWindow", "설정 저장 취소");
         DialogResult = false;
         Close();
     }

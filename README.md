@@ -11,8 +11,8 @@ Windows에서 **사용자가 고른 출력 장치만 표시**하고,
 상태: 핵심 기능 구현, 안정화, 배포 자동화, 빌드 검증 완료
 빌드 검증: dotnet build 0 Warning / 0 Error
 배포 형태: 임시 zip 배포 우선, installer는 추후
-최신 GitHub 프리릴리즈: v0.7.3-preview4
-최신 로컬 배포 검증: v0.7.3-preview4
+최신 GitHub 프리릴리즈: v0.7.3-preview5
+최신 로컬 배포 검증: v0.7.3-preview5
 ```
 
 ## 현재 구현 범위
@@ -47,6 +47,7 @@ Windows에서 **사용자가 고른 출력 장치만 표시**하고,
 27. 설정 파일 손상 시 .bak 백업 및 1회 경고
 28. 메인 화면 현재 앱 버전 표시
 29. GitHub 릴리즈 페이지 열기 버튼
+30. 파일 기반 진단 로그 기록
 ```
 
 ## 핵심 UX
@@ -135,7 +136,7 @@ Build succeeded.
 배포 자동화 스크립트:
 
 ```bash
-bash scripts/publish-win-x64.sh v0.7.3-preview4-local
+bash scripts/publish-win-x64.sh v0.7.3-preview5-local
 ```
 
 스크립트가 수행하는 작업:
@@ -161,11 +162,20 @@ artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip.sha256
 
 현재 게시된 프리릴리즈:
 
+- [v0.7.3-preview5](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview5)
 - [v0.7.3-preview4](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview4)
 - [v0.7.3-preview3](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview3)
 - [v0.7.3-preview2](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.7.3-preview2)
 - [v0.6.0-preview2](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.6.0-preview2)
 - [v0.3.0-preview1](https://github.com/TailFox-Forge/DesktopAudioController/releases/tag/v0.3.0-preview1)
+
+## 진단 로그
+
+재현 테스트 시 아래 경로에 로그 파일이 생성됩니다.
+
+```text
+%LocalAppData%\DesktopAudioController\logs\DesktopAudioController-YYYYMMDD.log
+```
 
 ## 문서
 

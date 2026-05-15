@@ -79,6 +79,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// </summary>
     public void SetSessionVolume(string deviceId, string sessionId, int volume)
     {
+        AppLog.Debug("NativeAudioSessionService", $"SetSessionVolume 시작 deviceId={deviceId} sessionId={sessionId} volume={volume}");
         // device는 세션을 제어할 대상 출력 장치입니다.
         using var device = _enumerator.GetDevice(deviceId);
 
@@ -86,10 +87,12 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
         using var targetSession = FindSession(device.AudioSessionManager.Sessions, sessionId);
         if (targetSession is null)
         {
+            AppLog.Warn("NativeAudioSessionService", $"SetSessionVolume 대상 세션 없음 deviceId={deviceId} sessionId={sessionId}");
             return;
         }
 
         targetSession.SimpleAudioVolume.Volume = Math.Clamp(volume, 0, 100) / 100f;
+        AppLog.Debug("NativeAudioSessionService", $"SetSessionVolume 완료 deviceId={deviceId} sessionId={sessionId} volume={volume}");
     }
 
     /// <summary>
@@ -97,6 +100,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// </summary>
     public void SetSessionMuted(string deviceId, string sessionId, bool muted)
     {
+        AppLog.Info("NativeAudioSessionService", $"SetSessionMuted 시작 deviceId={deviceId} sessionId={sessionId} muted={muted}");
         // device는 세션을 제어할 대상 출력 장치입니다.
         using var device = _enumerator.GetDevice(deviceId);
 
@@ -104,10 +108,12 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
         using var targetSession = FindSession(device.AudioSessionManager.Sessions, sessionId);
         if (targetSession is null)
         {
+            AppLog.Warn("NativeAudioSessionService", $"SetSessionMuted 대상 세션 없음 deviceId={deviceId} sessionId={sessionId}");
             return;
         }
 
         targetSession.SimpleAudioVolume.Mute = muted;
+        AppLog.Info("NativeAudioSessionService", $"SetSessionMuted 완료 deviceId={deviceId} sessionId={sessionId} muted={muted}");
     }
 
     /// <summary>

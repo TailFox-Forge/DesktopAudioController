@@ -44,25 +44,30 @@ public sealed class SettingsService : ISettingsService
     /// </summary>
     public AppSettings Load()
     {
+        AppLog.Debug("SettingsService", $"Load 시작 path={SettingsFilePath}");
         try
         {
             // 아직 설정 파일이 없으면 기본값으로 시작합니다.
             if (!File.Exists(SettingsFilePath))
             {
+                AppLog.Info("SettingsService", "설정 파일이 없어 기본값 사용");
                 return new AppSettings();
             }
 
             // JSON 파일을 읽어 현재 설정 모델로 역직렬화합니다.
             // 디스크에서 읽은 원본 JSON 문자열입니다.
             var json = File.ReadAllText(SettingsFilePath);
-            return JsonSerializer.Deserialize<AppSettings>(json, SerializerOptions) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(json, SerializerOptions) ?? new AppSettings();
+            AppLog.Debug("SettingsService", $"Load 성공 visibleDevices={settings.VisibleDeviceIds.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
+            return settings;
         }
-        catch
+        catch (Exception exception)
         {
             // 파일 손상이나 읽기 오류가 나도 앱이 죽지 않도록 기본값으로 복구합니다.
             TryBackupCorruptedSettingsFile();
             _pendingLoadWarningMessage =
                 $"설정 파일을 읽지 못해 기본 설정으로 복구했습니다.\n\n원본 경로: {SettingsFilePath}\n백업 경로: {BackupSettingsFilePath}";
+            AppLog.Error("SettingsService", $"Load 실패, 기본 설정 복구 path={SettingsFilePath}", exception);
             return new AppSettings();
         }
     }
@@ -72,6 +77,7 @@ public sealed class SettingsService : ISettingsService
     /// </summary>
     public void Save(AppSettings settings)
     {
+        AppLog.Info("SettingsService", $"Save 시작 path={SettingsFilePath} visibleDevices={settings.VisibleDeviceIds.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
         try
         {
             // 상위 폴더가 없을 수 있으므로 먼저 생성합니다.
@@ -81,10 +87,12 @@ public sealed class SettingsService : ISettingsService
             // 저장 직전에 직렬화된 JSON 문자열입니다.
             var json = JsonSerializer.Serialize(settings, SerializerOptions);
             File.WriteAllText(SettingsFilePath, json);
+            AppLog.Info("SettingsService", $"Save 성공 path={SettingsFilePath}");
         }
         catch (Exception exception)
         {
             // 저장 실패는 UI에서 사용자에게 안내할 수 있도록 경로와 함께 명시적 예외로 래핑합니다.
+            AppLog.Error("SettingsService", $"Save 실패 path={SettingsFilePath}", exception);
             throw new SettingsPersistenceException(
                 "설정 파일을 저장하지 못했습니다.",
                 SettingsFilePath,
@@ -122,10 +130,12 @@ public sealed class SettingsService : ISettingsService
 
             Directory.CreateDirectory(Path.GetDirectoryName(BackupSettingsFilePath)!);
             File.Copy(SettingsFilePath, BackupSettingsFilePath, overwrite: true);
+            AppLog.Warn("SettingsService", $"손상된 설정 파일 백업 완료 backup={BackupSettingsFilePath}");
         }
-        catch
+        catch (Exception exception)
         {
             // 백업 실패는 원본 로드 실패보다 우선순위가 낮으므로 추가 예외를 만들지 않습니다.
+            AppLog.Warn("SettingsService", $"손상된 설정 파일 백업 실패 backup={BackupSettingsFilePath}", exception);
         }
     }
 }

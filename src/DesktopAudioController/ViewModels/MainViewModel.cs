@@ -293,6 +293,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void OnDeviceVolumeChanged(string deviceId, int volume)
     {
+        AppLog.Debug("MainViewModel", $"장치 볼륨 서비스 전달 deviceId={deviceId} volume={volume}");
         _audioDeviceCatalogService.SetVolume(deviceId, volume);
     }
 
@@ -301,6 +302,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void OnDeviceMutedChanged(string deviceId, bool muted)
     {
+        AppLog.Info("MainViewModel", $"장치 음소거 서비스 전달 deviceId={deviceId} muted={muted}");
         _audioDeviceCatalogService.SetMuted(deviceId, muted);
     }
 
@@ -309,6 +311,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void OnSetDefaultDevice(string deviceId)
     {
+        AppLog.Info("MainViewModel", $"기본 장치 서비스 전달 deviceId={deviceId}");
         _audioDeviceCatalogService.SetAsDefault(deviceId);
     }
 
@@ -317,6 +320,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void OnSessionVolumeChanged(string deviceId, string sessionId, int volume)
     {
+        AppLog.Debug("MainViewModel", $"세션 볼륨 서비스 전달 deviceId={deviceId} sessionId={sessionId} volume={volume}");
         _audioSessionService.SetSessionVolume(deviceId, sessionId, volume);
     }
 
@@ -325,6 +329,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void OnSessionMutedChanged(string deviceId, string sessionId, bool muted)
     {
+        AppLog.Info("MainViewModel", $"세션 음소거 서비스 전달 deviceId={deviceId} sessionId={sessionId} muted={muted}");
         _audioSessionService.SetSessionMuted(deviceId, sessionId, muted);
     }
 }

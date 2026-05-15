@@ -1,5 +1,6 @@
 using NAudio.CoreAudioApi;
 using DesktopAudioController.Models;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace DesktopAudioController.Services;
@@ -71,11 +72,23 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     /// </summary>
     public void SetVolume(string deviceId, int volume)
     {
-        // ID로 대상 장치를 다시 열어 현재 볼륨 값을 적용합니다.
-        using var device = _enumerator.GetDevice(deviceId);
+        var stopwatch = Stopwatch.StartNew();
+        AppLog.Debug("NativeAudioDeviceCatalogService", $"SetVolume 시작 deviceId={deviceId} volume={volume}");
 
-        // 슬라이더 값은 0~100이므로 Core Audio 스칼라 값 0.0~1.0으로 변환합니다.
-        device.AudioEndpointVolume.MasterVolumeLevelScalar = Math.Clamp(volume, 0, 100) / 100f;
+        try
+        {
+        // ID로 대상 장치를 다시 열어 현재 볼륨 값을 적용합니다.
+            using var device = _enumerator.GetDevice(deviceId);
+
+            // 슬라이더 값은 0~100이므로 Core Audio 스칼라 값 0.0~1.0으로 변환합니다.
+            device.AudioEndpointVolume.MasterVolumeLevelScalar = Math.Clamp(volume, 0, 100) / 100f;
+            AppLog.Debug("NativeAudioDeviceCatalogService", $"SetVolume 완료 deviceId={deviceId} volume={volume} elapsedMs={stopwatch.ElapsedMilliseconds}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("NativeAudioDeviceCatalogService", $"SetVolume 실패 deviceId={deviceId} volume={volume}", exception);
+            throw;
+        }
     }
 
     /// <summary>
@@ -83,9 +96,21 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     /// </summary>
     public void SetMuted(string deviceId, bool muted)
     {
-        // ID로 대상 장치를 다시 열어 음소거 상태를 변경합니다.
-        using var device = _enumerator.GetDevice(deviceId);
-        device.AudioEndpointVolume.Mute = muted;
+        var stopwatch = Stopwatch.StartNew();
+        AppLog.Info("NativeAudioDeviceCatalogService", $"SetMuted 시작 deviceId={deviceId} muted={muted}");
+
+        try
+        {
+            // ID로 대상 장치를 다시 열어 음소거 상태를 변경합니다.
+            using var device = _enumerator.GetDevice(deviceId);
+            device.AudioEndpointVolume.Mute = muted;
+            AppLog.Info("NativeAudioDeviceCatalogService", $"SetMuted 완료 deviceId={deviceId} muted={muted} elapsedMs={stopwatch.ElapsedMilliseconds}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("NativeAudioDeviceCatalogService", $"SetMuted 실패 deviceId={deviceId} muted={muted}", exception);
+            throw;
+        }
     }
 
     /// <summary>
@@ -93,6 +118,9 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     /// </summary>
     public void SetAsDefault(string deviceId)
     {
+        var stopwatch = Stopwatch.StartNew();
+        AppLog.Info("NativeAudioDeviceCatalogService", $"SetAsDefault 시작 deviceId={deviceId}");
+
         // Windows 내부 PolicyConfig COM 객체를 생성합니다.
         var policyConfigType = Type.GetTypeFromCLSID(PolicyConfigClientClsid, throwOnError: true);
         var policyConfig = (IPolicyConfig)Activator.CreateInstance(policyConfigType!)!;
@@ -103,6 +131,12 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
             policyConfig.SetDefaultEndpoint(deviceId, Role.Console);
             policyConfig.SetDefaultEndpoint(deviceId, Role.Multimedia);
             policyConfig.SetDefaultEndpoint(deviceId, Role.Communications);
+            AppLog.Info("NativeAudioDeviceCatalogService", $"SetAsDefault 완료 deviceId={deviceId} elapsedMs={stopwatch.ElapsedMilliseconds}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("NativeAudioDeviceCatalogService", $"SetAsDefault 실패 deviceId={deviceId}", exception);
+            throw;
         }
         finally
         {

@@ -133,6 +133,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        AppLog.Info("MainWindow", $"기본 장치 버튼 클릭 deviceId={device.Id} name={device.Name}");
+
         // 연결이 끊긴 장치는 기본 출력 장치로 승격할 수 없으므로 호출 전 바로 차단합니다.
         if (!device.IsConnected)
         {
@@ -251,6 +253,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void AudioNotificationService_OnChanged(object? sender, AudioNotificationChangedEventArgs e)
     {
+        AppLog.Debug("MainWindow", $"오디오 변경 이벤트 수신 kind={e.Kind}");
         // shouldScheduleRefresh는 이번 콜백이 Dispatcher 작업을 새로 예약해야 하는지 여부입니다.
         var shouldScheduleRefresh = false;
 
@@ -282,25 +285,34 @@ public partial class MainWindow : Window
         // Core Audio 콜백은 UI 스레드가 아닐 수 있으므로 Dispatcher를 통해 화면 갱신을 예약합니다.
         Dispatcher.InvokeAsync(() =>
         {
-            // pendingKind는 현재 큐에 누적된 새로고침 범위를 잠금 안에서 스냅샷으로 가져온 값입니다.
-            AudioNotificationChangeKind pendingKind;
-            lock (_notificationRefreshSyncRoot)
+            try
             {
-                pendingKind = _pendingNotificationKind;
-                _pendingNotificationKind = AudioNotificationChangeKind.State;
-                _isNotificationRefreshQueued = false;
-            }
+                // pendingKind는 현재 큐에 누적된 새로고침 범위를 잠금 안에서 스냅샷으로 가져온 값입니다.
+                AudioNotificationChangeKind pendingKind;
+                lock (_notificationRefreshSyncRoot)
+                {
+                    pendingKind = _pendingNotificationKind;
+                    _pendingNotificationKind = AudioNotificationChangeKind.State;
+                    _isNotificationRefreshQueued = false;
+                }
 
-            if (pendingKind == AudioNotificationChangeKind.Topology)
-            {
-                _viewModel.Load();
-                UpdateEmptyState();
+                if (pendingKind == AudioNotificationChangeKind.Topology)
+                {
+                    AppLog.Debug("MainWindow", "토폴로지 전체 새로고침 수행");
+                    _viewModel.Load();
+                    UpdateEmptyState();
+                    RefreshTrayMenu();
+                    return;
+                }
+
+                AppLog.Debug("MainWindow", "상태 부분 새로고침 수행");
+                _viewModel.RefreshStateOnly();
                 RefreshTrayMenu();
-                return;
             }
-
-            _viewModel.RefreshStateOnly();
-            RefreshTrayMenu();
+            catch (Exception exception)
+            {
+                AppLog.Error("MainWindow", "오디오 변경 이벤트 처리 중 예외", exception);
+            }
         });
     }
 
@@ -309,11 +321,13 @@ public partial class MainWindow : Window
     /// </summary>
     private void TrySetDefaultDevice(VisibleDeviceViewModel device)
     {
+        AppLog.Info("MainWindow", $"기본 장치 변경 시도 deviceId={device.Id} name={device.Name}");
         // 선택된 장치를 Windows 기본 출력 장치로 변경합니다.
         device.SetAsDefault();
         _viewModel.Load();
         UpdateEmptyState();
         RefreshTrayMenu();
+        AppLog.Info("MainWindow", $"기본 장치 변경 후 UI 재로딩 완료 deviceId={device.Id}");
     }
 
     /// <summary>

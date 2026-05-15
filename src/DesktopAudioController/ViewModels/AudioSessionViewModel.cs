@@ -1,5 +1,7 @@
 using DesktopAudioController.Infrastructure;
+using DesktopAudioController.Services;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace DesktopAudioController.ViewModels;
 
@@ -22,6 +24,12 @@ public sealed class AudioSessionViewModel : ObservableObject
 
     // 세션 볼륨 슬라이더와 연결되는 내부 값입니다.
     private int _volume;
+
+    // 세션 볼륨 변경을 짧게 모아 마지막 값만 반영하기 위한 타이머입니다.
+    private readonly DispatcherTimer _volumeCommitTimer;
+
+    // 아직 서비스에 반영되지 않은 세션 볼륨 변경이 남아 있는지 여부입니다.
+    private bool _hasPendingVolumeCommit;
 
     // 세션 음소거 체크와 연결되는 내부 값입니다.
     private bool _isMuted;
@@ -55,6 +63,11 @@ public sealed class AudioSessionViewModel : ObservableObject
         _isMuted = initialMuted;
         _onVolumeChanged = onVolumeChanged;
         _onMutedChanged = onMutedChanged;
+        _volumeCommitTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(80)
+        };
+        _volumeCommitTimer.Tick += VolumeCommitTimer_OnTick;
     }
 
     /// <summary>
@@ -112,14 +125,9 @@ public sealed class AudioSessionViewModel : ObservableObject
                 return;
             }
 
-            try
-            {
-                _onVolumeChanged(DeviceId, Id, value);
-            }
-            catch
-            {
-                // 장치 분리 등 실시간 오류는 앱 종료 대신 다음 새로고침에서 복구합니다.
-            }
+            _hasPendingVolumeCommit = true;
+            _volumeCommitTimer.Stop();
+            _volumeCommitTimer.Start();
         }
     }
 
@@ -143,11 +151,13 @@ public sealed class AudioSessionViewModel : ObservableObject
 
             try
             {
+                AppLog.Info("AudioSessionViewModel", $"세션 음소거 변경 요청 deviceId={DeviceId} sessionId={Id} muted={value}");
                 _onMutedChanged(DeviceId, Id, value);
             }
-            catch
+            catch (Exception exception)
             {
                 // 장치 분리 등 실시간 오류는 앱 종료 대신 다음 새로고침에서 복구합니다.
+                AppLog.Warn("AudioSessionViewModel", $"세션 음소거 변경 실패 deviceId={DeviceId} sessionId={Id} muted={value}", exception);
             }
         }
     }
@@ -158,6 +168,8 @@ public sealed class AudioSessionViewModel : ObservableObject
     public void UpdateSnapshot(string displayName, string? executablePath, ImageSource? iconImage, int volume, bool isMuted)
     {
         _suppressCallbacks = true;
+        _hasPendingVolumeCommit = false;
+        _volumeCommitTimer.Stop();
         try
         {
             DisplayName = displayName;
@@ -183,5 +195,29 @@ public sealed class AudioSessionViewModel : ObservableObject
         }
 
         IconImage = iconImage;
+    }
+
+    /// <summary>
+    /// 사용자가 슬라이더 조작을 잠시 멈추면 마지막 세션 볼륨만 서비스에 반영합니다.
+    /// </summary>
+    private void VolumeCommitTimer_OnTick(object? sender, EventArgs e)
+    {
+        _volumeCommitTimer.Stop();
+        if (_suppressCallbacks || !_hasPendingVolumeCommit)
+        {
+            return;
+        }
+
+        _hasPendingVolumeCommit = false;
+
+        try
+        {
+            AppLog.Debug("AudioSessionViewModel", $"세션 볼륨 반영 deviceId={DeviceId} sessionId={Id} volume={_volume}");
+            _onVolumeChanged(DeviceId, Id, _volume);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("AudioSessionViewModel", $"세션 볼륨 반영 실패 deviceId={DeviceId} sessionId={Id} volume={_volume}", exception);
+        }
     }
 }
