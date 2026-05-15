@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using DesktopAudioController.ViewModels;
 
@@ -63,9 +64,25 @@ public partial class MainWindow : Window
             return;
         }
 
-        device.SetAsDefault();
-        _viewModel.Load();
-        UpdateEmptyState();
+        try
+        {
+            // 선택된 장치를 Windows 기본 출력 장치로 변경합니다.
+            device.SetAsDefault();
+            _viewModel.Load();
+            UpdateEmptyState();
+        }
+        catch (Exception exception)
+        {
+            // 예외가 발생하면 앱을 종료하지 않고 사용자에게 원인을 알려줍니다.
+            MessageBox.Show(
+                this,
+                $"기본 출력 장치를 변경하지 못했습니다.\n\n{exception.Message}\n\nWindows 소리 설정 화면을 열어 수동으로 변경할 수 있습니다.",
+                "기본 장치 변경 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+
+            TryOpenWindowsSoundSettings();
+        }
     }
 
     /// <summary>
@@ -101,5 +118,24 @@ public partial class MainWindow : Window
         var hasDevices = _viewModel.VisibleDevices.Count > 0;
         EmptyStateText.Visibility = hasDevices ? Visibility.Collapsed : Visibility.Visible;
         DevicesItemsControl.Visibility = hasDevices ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Windows 기본 소리 설정 창을 열어 사용자가 수동으로 장치를 바꿀 수 있게 합니다.
+    /// </summary>
+    private static void TryOpenWindowsSoundSettings()
+    {
+        try
+        {
+            // ms-settings URI는 Windows 설정 앱의 사운드 페이지를 직접 엽니다.
+            Process.Start(new ProcessStartInfo("ms-settings:sound")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // 설정 앱 실행까지 실패하면 추가 예외를 만들지 않고 조용히 종료합니다.
+        }
     }
 }
