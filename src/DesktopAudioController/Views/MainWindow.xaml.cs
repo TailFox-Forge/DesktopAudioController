@@ -58,6 +58,9 @@ public partial class MainWindow : Window
     // 상태 이벤트 폭주 시 즉시 재열거하지 않도록 짧게 모아두는 지연 시간입니다.
     private static readonly TimeSpan StateRefreshCoalescingDelay = TimeSpan.FromMilliseconds(120);
 
+    // 일부 가상 장치는 기본 장치 변경 후 기본 장치 이벤트를 늦게 보내거나 보내지 않아, 짧게 기다린 뒤 상태를 한 번 더 맞춥니다.
+    private static readonly TimeSpan DefaultDeviceRefreshDelay = TimeSpan.FromMilliseconds(250);
+
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
     /// </summary>
@@ -309,6 +312,7 @@ public partial class MainWindow : Window
         // 선택된 장치를 Windows 기본 출력 장치로 변경합니다.
         device.SetAsDefault();
         AppLog.Info("MainWindow", $"기본 장치 변경 요청 완료, 토폴로지 이벤트 대기 deviceId={device.Id}");
+        _ = RefreshAfterDefaultDeviceChangeAsync(device.Id);
     }
 
     /// <summary>
@@ -699,5 +703,21 @@ public partial class MainWindow : Window
         AppLog.Debug("MainWindow", "상태 부분 새로고침 수행");
         _viewModel.RefreshStateOnly();
         RefreshTrayMenu();
+    }
+
+    /// <summary>
+    /// 기본 장치 변경 후 이벤트가 오지 않는 장치를 위해 짧은 지연 뒤 한 번 더 상태를 동기화합니다.
+    /// </summary>
+    private async Task RefreshAfterDefaultDeviceChangeAsync(string deviceId)
+    {
+        await Task.Delay(DefaultDeviceRefreshDelay);
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            AppLog.Info("MainWindow", $"기본 장치 변경 후 지연 재동기화 deviceId={deviceId}");
+            _viewModel.Load();
+            UpdateEmptyState();
+            RefreshTrayMenu();
+        });
     }
 }

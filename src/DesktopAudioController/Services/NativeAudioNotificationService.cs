@@ -56,17 +56,24 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     internal void HandleTopologyChanged()
     {
-        lock (_syncRoot)
+        try
         {
-            if (!_started)
+            lock (_syncRoot)
             {
-                return;
+                if (!_started)
+                {
+                    return;
+                }
+
+                RebuildSubscriptionsLocked();
             }
 
-            RebuildSubscriptionsLocked();
+            RaiseChanged(AudioNotificationChangeKind.Topology);
         }
-
-        RaiseChanged(AudioNotificationChangeKind.Topology);
+        catch (Exception exception)
+        {
+            AppLog.Error("NativeAudioNotificationService", "토폴로지 변경 처리 중 예외", exception);
+        }
     }
 
     /// <summary>
@@ -74,7 +81,14 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     internal void HandleStateChanged()
     {
-        RaiseChanged(AudioNotificationChangeKind.State);
+        try
+        {
+            RaiseChanged(AudioNotificationChangeKind.State);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("NativeAudioNotificationService", "상태 변경 처리 중 예외", exception);
+        }
     }
 
     /// <summary>
@@ -166,7 +180,23 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     private void RaiseChanged(AudioNotificationChangeKind kind)
     {
-        Changed?.Invoke(this, new AudioNotificationChangedEventArgs(kind));
+        if (Changed is null)
+        {
+            return;
+        }
+
+        var args = new AudioNotificationChangedEventArgs(kind);
+        foreach (EventHandler<AudioNotificationChangedEventArgs> handler in Changed.GetInvocationList())
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"변경 이벤트 전달 중 예외 kind={kind}", exception);
+            }
+        }
     }
 
     /// <summary>
@@ -247,30 +277,65 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
 
         public void OnDeviceStateChanged(string deviceId, DeviceState newState)
         {
-            _owner.HandleTopologyChanged();
+            try
+            {
+                _owner.HandleTopologyChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnDeviceStateChanged 예외 deviceId={deviceId} state={newState}", exception);
+            }
         }
 
         public void OnDeviceAdded(string pwstrDeviceId)
         {
-            _owner.HandleTopologyChanged();
+            try
+            {
+                _owner.HandleTopologyChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnDeviceAdded 예외 deviceId={pwstrDeviceId}", exception);
+            }
         }
 
         public void OnDeviceRemoved(string deviceId)
         {
-            _owner.HandleTopologyChanged();
+            try
+            {
+                _owner.HandleTopologyChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnDeviceRemoved 예외 deviceId={deviceId}", exception);
+            }
         }
 
         public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
         {
             if (flow == DataFlow.Render)
             {
-                _owner.HandleTopologyChanged();
+                try
+                {
+                    _owner.HandleTopologyChanged();
+                }
+                catch (Exception exception)
+                {
+                    AppLog.Error("NativeAudioNotificationService", $"OnDefaultDeviceChanged 예외 role={role} deviceId={defaultDeviceId}", exception);
+                }
             }
         }
 
         public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key)
         {
-            _owner.HandleTopologyChanged();
+            try
+            {
+                _owner.HandleTopologyChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnPropertyValueChanged 예외 deviceId={pwstrDeviceId}", exception);
+            }
         }
     }
 
@@ -290,37 +355,86 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
 
         public void OnVolumeChanged(float volume, bool isMuted)
         {
-            _onStateChanged();
+            try
+            {
+                _onStateChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnVolumeChanged 예외 volume={volume} muted={isMuted}", exception);
+            }
         }
 
         public void OnDisplayNameChanged(string displayName)
         {
-            _onStateChanged();
+            try
+            {
+                _onStateChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnDisplayNameChanged 예외 displayName={displayName}", exception);
+            }
         }
 
         public void OnIconPathChanged(string iconPath)
         {
-            _onStateChanged();
+            try
+            {
+                _onStateChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnIconPathChanged 예외 iconPath={iconPath}", exception);
+            }
         }
 
         public void OnChannelVolumeChanged(uint channelCount, IntPtr newVolumes, uint channelIndex)
         {
-            _onStateChanged();
+            try
+            {
+                _onStateChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnChannelVolumeChanged 예외 channelCount={channelCount} channelIndex={channelIndex}", exception);
+            }
         }
 
         public void OnGroupingParamChanged(ref Guid groupingId)
         {
-            _onStateChanged();
+            try
+            {
+                _onStateChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnGroupingParamChanged 예외 groupingId={groupingId}", exception);
+            }
         }
 
         public void OnStateChanged(AudioSessionState state)
         {
-            _onTopologyChanged();
+            try
+            {
+                _onTopologyChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnStateChanged 예외 state={state}", exception);
+            }
         }
 
         public void OnSessionDisconnected(AudioSessionDisconnectReason disconnectReason)
         {
-            _onTopologyChanged();
+            try
+            {
+                _onTopologyChanged();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("NativeAudioNotificationService", $"OnSessionDisconnected 예외 reason={disconnectReason}", exception);
+            }
         }
     }
 }
