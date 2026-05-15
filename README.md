@@ -7,11 +7,12 @@ Windows에서 **사용자가 고른 출력 장치만 표시**하고,
 ## 현재 상태
 
 ```text
-단계: Phase 5 완료
-상태: 핵심 기능 구현 및 빌드 검증 완료
+단계: Phase 6 완료 + Phase 7-1 배포 자동화 완료
+상태: 핵심 기능 구현, 안정화, 배포 자동화, 빌드 검증 완료
 빌드 검증: dotnet build 0 Warning / 0 Error
 배포 형태: 임시 zip 배포 우선, installer는 추후
-최신 프리릴리즈: v0.3.0-preview1
+최신 GitHub 프리릴리즈: v0.3.0-preview1
+최신 로컬 배포 검증: v0.6.0-preview1-local
 ```
 
 ## 현재 구현 범위
@@ -38,6 +39,11 @@ Windows에서 **사용자가 고른 출력 장치만 표시**하고,
 19. 아이콘 실패 캐시 / 만료 정리
 20. PID 기준 프로세스 메타데이터 캐시
 21. 세션 아이콘 비동기 로딩
+22. 오디오 변경 이벤트 큐 스레드 안전화
+23. 설정 저장 실패 시 사용자 안내 및 창 유지
+24. 캐시 히트 시 아이콘 비동기 로딩 중복 예약 차단
+25. 동일 exe 아이콘 로딩 in-flight dedupe
+26. 설정 파일 손상 시 .bak 백업 및 1회 경고
 ```
 
 ## 핵심 UX
@@ -122,18 +128,32 @@ Build succeeded.
 - 문제 발생 시 교체와 회수가 단순함
 ```
 
-예시:
+배포 자동화 스크립트:
 
 ```bash
-dotnet publish src/DesktopAudioController/DesktopAudioController.csproj \
-  -c Release \
-  -r win-x64 \
-  --self-contained true \
-  -p:PublishSingleFile=true \
-  -p:EnableWindowsTargeting=true
+bash scripts/publish-win-x64.sh v0.6.0-preview1-local
 ```
 
-그다음 publish 폴더 전체를 zip으로 묶어 배포합니다.
+스크립트가 수행하는 작업:
+
+```text
+1. Release publish
+2. win-x64 self-contained / single-file 산출물 생성
+3. zip 패키지 생성
+4. sha256 체크섬 생성
+```
+
+생성 경로:
+
+```text
+artifacts/release/win-x64/<version>/publish/
+artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip
+artifacts/release/packages/DesktopAudioController-<version>-win-x64.zip.sha256
+```
+
+릴리즈 노트 작성 템플릿:
+
+- [docs/release-notes-template.md](docs/release-notes-template.md)
 
 현재 게시된 프리릴리즈:
 
@@ -177,33 +197,43 @@ Phase 5-3 아이콘 비동기 로딩 완료
 - UI 첫 렌더링 시 아이콘 조회로 인한 체감 지연 감소
 ```
 
+## Phase 6 완료 내역
+
+```text
+Phase 6-1 오디오 변경 이벤트 큐 스레드 안전화 완료
+Phase 6-2 설정 저장 실패 UX 처리 완료
+Phase 6-3 아이콘 비동기 로딩 중복 예약 제거 완료
+Phase 6-4 동일 exe 아이콘 로딩 in-flight dedupe 완료
+Phase 6-5 설정 파일 손상 백업 및 1회 경고 완료
+```
+
+반영 효과:
+
+```text
+- 오디오 이벤트가 동시에 들어와도 중복 Dispatcher 예약이 줄어듦
+- 설정 저장 실패 시 원인과 경로를 사용자에게 명확히 안내
+- 캐시 히트 상황에서 불필요한 아이콘 로딩 작업 제거
+- 같은 exe 아이콘을 동시에 여러 번 읽는 낭비 제거
+- 손상된 설정 파일을 조용히 덮어쓰지 않고 복구 사실을 사용자에게 알림
+```
+
+## Phase 7 진행 내역
+
+```text
+Phase 7-1 배포 자동화 완료
+```
+
+반영 내용:
+
+```text
+- publish / zip / sha256 생성 스크립트 추가
+- 버전별 배포 산출물 경로 표준화
+- 릴리즈 노트 템플릿 추가
+```
+
 ## 남은 고도화 후보
 
 ### Phase 7 후보
-
-#### 7-1. 배포 자동화
-
-배경:
-
-```text
-현재는 수동 publish 후 zip과 sha256을 만들어 릴리즈에 올리는 방식입니다.
-```
-
-추가 목표:
-
-```text
-- Release publish 명령 표준화
-- zip / sha256 생성 절차 자동화
-- 릴리즈 노트 템플릿화
-```
-
-기대 효과:
-
-```text
-- 내부 배포 반복 작업 감소
-- 버전별 산출물 재현성 향상
-- 릴리즈 실수 감소
-```
 
 #### 7-2. 설치 체계 정리
 
