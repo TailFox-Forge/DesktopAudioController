@@ -11,6 +11,27 @@ namespace DesktopAudioController.ViewModels;
 /// </summary>
 public sealed class MainViewModel : ObservableObject
 {
+    private sealed class DeviceSnapshot
+    {
+        public required AudioDeviceInfo Device { get; init; }
+
+        public required IReadOnlyList<AudioSessionInfo> Sessions { get; init; }
+    }
+
+    private sealed class LoadSnapshot
+    {
+        public required bool ShowSystemSounds { get; init; }
+
+        public required bool HasConfiguredDevices { get; init; }
+
+        public required IReadOnlyList<DeviceSnapshot> Devices { get; init; }
+    }
+
+    private sealed class StateSnapshot
+    {
+        public required IReadOnlyDictionary<string, DeviceSnapshot> DevicesById { get; init; }
+    }
+
     // 저장된 사용자 설정을 읽기 위한 서비스입니다.
     private readonly ISettingsService _settingsService;
 
@@ -63,9 +84,52 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public void Load()
     {
+        ApplyLoadSnapshot(BuildLoadSnapshot());
+    }
+
+    /// <summary>
+    /// 장치/세션 조회는 백그라운드에서 수행하고, UI 반영만 Dispatcher에서 처리합니다.
+    /// </summary>
+    public async Task LoadAsync()
+    {
+        var snapshot = await Task.Run(BuildLoadSnapshot);
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            ApplyLoadSnapshot(snapshot);
+        });
+    }
+
+    /// <summary>
+    /// 현재 보이는 장치 카드 구조를 유지한 채 상태 값만 부분 갱신합니다.
+    /// </summary>
+    public void RefreshStateOnly()
+    {
+        ApplyStateSnapshot(BuildStateSnapshot(
+            VisibleDevices.Select(device => device.Id).ToList(),
+            _showSystemSounds));
+    }
+
+    /// <summary>
+    /// 상태 조회는 백그라운드에서 수행하고, UI에는 결과만 적용합니다.
+    /// </summary>
+    public async Task RefreshStateOnlyAsync()
+    {
+        var visibleDeviceIds = VisibleDevices.Select(device => device.Id).ToList();
+        var showSystemSounds = _showSystemSounds;
+        var snapshot = await Task.Run(() => BuildStateSnapshot(visibleDeviceIds, showSystemSounds));
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            ApplyStateSnapshot(snapshot);
+        });
+    }
+
+    /// <summary>
+    /// 백그라운드에서 전체 메인 화면 스냅샷을 만듭니다.
+    /// </summary>
+    private LoadSnapshot BuildLoadSnapshot()
+    {
         // 파일에서 읽어온 현재 사용자 설정입니다.
         var settings = _settingsService.Load();
-        _showSystemSounds = settings.ShowSystemSounds;
 
         // 현재 시스템에서 보이는 장치 상태를 조회합니다.
         var devices = _audioDeviceCatalogService.GetAvailableOutputDevices();
@@ -77,41 +141,109 @@ public sealed class MainViewModel : ObservableObject
         var visibleDevices = devices
             .Where(device => selectedIds.Contains(device.Id))
             .Where(device => !settings.ShowOnlyConnectedDevices || device.IsConnected)
-            .Select(device => CreateVisibleDeviceViewModel(device, settings.ShowSystemSounds))
+            .Select(device => BuildDeviceSnapshot(device, settings.ShowSystemSounds))
             .ToList();
 
-        // 새 결과를 화면 컬렉션에 반영합니다.
-        VisibleDevices.Clear();
-        foreach (var device in visibleDevices)
+        return new LoadSnapshot
         {
-            // 루프 안의 device는 메인 화면에 실제 표시할 장치 카드 한 개입니다.
-            VisibleDevices.Add(device);
-        }
-
-        // 선택된 장치가 하나라도 있으면 첫 실행 안내를 띄우지 않도록 상태를 갱신합니다.
-        HasConfiguredDevices = selectedIds.Count > 0;
+            ShowSystemSounds = settings.ShowSystemSounds,
+            HasConfiguredDevices = selectedIds.Count > 0,
+            Devices = visibleDevices
+        };
     }
 
     /// <summary>
-    /// 현재 보이는 장치 카드 구조를 유지한 채 상태 값만 부분 갱신합니다.
+    /// 백그라운드에서 현재 보이는 장치들의 상태 스냅샷만 만듭니다.
     /// </summary>
-    public void RefreshStateOnly()
+    private StateSnapshot BuildStateSnapshot(IReadOnlyList<string> visibleDeviceIds, bool includeSystemSounds)
     {
-        AppLog.Debug("MainViewModel", $"상태 부분 갱신 시작 visibleDevices={VisibleDevices.Count}");
+        AppLog.Debug("MainViewModel", $"상태 부분 갱신 시작 visibleDevices={visibleDeviceIds.Count}");
 
         // devicesById는 최신 장치 상태를 빠르게 찾기 위한 인덱스입니다.
         var devicesById = _audioDeviceCatalogService
             .GetAvailableOutputDevices()
+            .Where(device => visibleDeviceIds.Contains(device.Id))
             .ToDictionary(device => device.Id);
         AppLog.Debug("MainViewModel", $"상태 부분 갱신 장치 조회 완료 devices={devicesById.Count}");
 
-        foreach (var visibleDevice in VisibleDevices)
+        var snapshotsById = new Dictionary<string, DeviceSnapshot>();
+        foreach (var visibleDeviceId in visibleDeviceIds)
         {
-            if (!devicesById.TryGetValue(visibleDevice.Id, out var currentDevice))
+            if (!devicesById.TryGetValue(visibleDeviceId, out var device))
             {
                 continue;
             }
 
+            snapshotsById[visibleDeviceId] = BuildDeviceSnapshot(device, includeSystemSounds);
+        }
+
+        return new StateSnapshot
+        {
+            DevicesById = snapshotsById
+        };
+    }
+
+    /// <summary>
+    /// 장치 한 개에 대한 현재 상태와 세션 목록 스냅샷을 만듭니다.
+    /// </summary>
+    private DeviceSnapshot BuildDeviceSnapshot(AudioDeviceInfo device, bool includeSystemSounds)
+    {
+        IReadOnlyList<AudioSessionInfo> sessions = [];
+
+        if (!device.IsConnected)
+        {
+            return new DeviceSnapshot
+            {
+                Device = device,
+                Sessions = sessions
+            };
+        }
+
+        try
+        {
+            sessions = _audioSessionService.GetSessions(device.Id, includeSystemSounds).ToList();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainViewModel", $"세션 스냅샷 조회 실패 deviceId={device.Id}", exception);
+        }
+
+        return new DeviceSnapshot
+        {
+            Device = device,
+            Sessions = sessions
+        };
+    }
+
+    /// <summary>
+    /// 전체 로드 스냅샷을 현재 UI 컬렉션에 반영합니다.
+    /// </summary>
+    private void ApplyLoadSnapshot(LoadSnapshot snapshot)
+    {
+        _showSystemSounds = snapshot.ShowSystemSounds;
+
+        VisibleDevices.Clear();
+        foreach (var deviceSnapshot in snapshot.Devices)
+        {
+            VisibleDevices.Add(CreateVisibleDeviceViewModel(deviceSnapshot));
+        }
+
+        HasConfiguredDevices = snapshot.HasConfiguredDevices;
+    }
+
+    /// <summary>
+    /// 상태 변경 스냅샷을 현재 보이는 장치 카드에만 부분 반영합니다.
+    /// </summary>
+    private void ApplyStateSnapshot(StateSnapshot snapshot)
+    {
+        foreach (var visibleDevice in VisibleDevices)
+        {
+            if (!snapshot.DevicesById.TryGetValue(visibleDevice.Id, out var deviceSnapshot))
+            {
+                continue;
+            }
+
+            var currentDevice = deviceSnapshot.Device;
             visibleDevice.UpdateSnapshot(
                 currentDevice.Name,
                 currentDevice.IsDefault,
@@ -121,7 +253,7 @@ public sealed class MainViewModel : ObservableObject
 
             if (currentDevice.IsConnected)
             {
-                RefreshSessionsStateOnly(visibleDevice, _showSystemSounds);
+                ApplySessionSnapshots(visibleDevice, deviceSnapshot.Sessions);
             }
             else
             {
@@ -133,11 +265,12 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// AudioDeviceInfo를 화면용 VisibleDeviceViewModel로 변환합니다.
+    /// 장치 스냅샷을 화면용 VisibleDeviceViewModel로 변환합니다.
     /// </summary>
-    private VisibleDeviceViewModel CreateVisibleDeviceViewModel(AudioDeviceInfo device, bool includeSystemSounds)
+    private VisibleDeviceViewModel CreateVisibleDeviceViewModel(DeviceSnapshot snapshot)
     {
-        // deviceViewModel은 메인 화면 장치 카드 한 개를 표현하는 뷰모델입니다.
+        var device = snapshot.Device;
+
         var deviceViewModel = new VisibleDeviceViewModel(
             device.Id,
             device.Name,
@@ -149,97 +282,62 @@ public sealed class MainViewModel : ObservableObject
             OnDeviceMutedChanged,
             OnSetDefaultDevice);
 
-        // 연결된 장치만 현재 활성 세션 목록을 미리 읽어옵니다.
-        if (device.IsConnected)
+        foreach (var session in snapshot.Sessions)
         {
-            LoadSessions(deviceViewModel, includeSystemSounds);
+            deviceViewModel.Sessions.Add(CreateSessionViewModel(device.Id, session));
         }
 
         return deviceViewModel;
     }
 
     /// <summary>
-    /// 지정한 장치 카드에 현재 세션 목록을 채웁니다.
+    /// 세션 상태 스냅샷을 기존 장치 카드에 부분 반영합니다.
     /// </summary>
-    private void LoadSessions(VisibleDeviceViewModel device, bool includeSystemSounds)
+    private void ApplySessionSnapshots(VisibleDeviceViewModel device, IReadOnlyList<AudioSessionInfo> sessionSnapshots)
     {
-        try
-        {
-            // sessions는 지정 장치에서 현재 소리를 내는 앱 세션 목록입니다.
-            var sessions = _audioSessionService.GetSessions(device.Id, includeSystemSounds);
+        var snapshotById = sessionSnapshots.ToDictionary(session => session.Id);
+        var existingById = device.Sessions.ToDictionary(session => session.Id);
 
-            device.Sessions.Clear();
-            foreach (var session in sessions)
+        for (var index = device.Sessions.Count - 1; index >= 0; index--)
+        {
+            var session = device.Sessions[index];
+            if (!snapshotById.ContainsKey(session.Id))
             {
-                device.Sessions.Add(CreateSessionViewModel(device.Id, session));
+                device.Sessions.RemoveAt(index);
             }
         }
-        catch
+
+        foreach (var snapshot in sessionSnapshots)
         {
-            // 세션 조회 실패는 앱 종료 대신 빈 세션 목록으로 처리합니다.
-            AppLog.Warn("MainViewModel", $"세션 초기 로드 실패 deviceId={device.Id}");
-            device.Sessions.Clear();
-        }
-    }
-
-    /// <summary>
-    /// 상태 변경 알림 시 기존 세션 컬렉션을 최대한 유지하면서 값만 갱신합니다.
-    /// </summary>
-    private void RefreshSessionsStateOnly(VisibleDeviceViewModel device, bool includeSystemSounds)
-    {
-        try
-        {
-            // sessionSnapshots는 현재 장치에서 확인된 최신 세션 상태입니다.
-            var sessionSnapshots = _audioSessionService.GetSessions(device.Id, includeSystemSounds);
-            var snapshotById = sessionSnapshots.ToDictionary(session => session.Id);
-            var existingById = device.Sessions.ToDictionary(session => session.Id);
-
-            for (var index = device.Sessions.Count - 1; index >= 0; index--)
+            if (existingById.TryGetValue(snapshot.Id, out var existingSession))
             {
-                var session = device.Sessions[index];
-                if (!snapshotById.ContainsKey(session.Id))
+                // cachedIcon은 이미 메모리에 올라와 있으면 즉시 쓸 수 있는 아이콘입니다.
+                var cachedIcon = _appIconService.TryGetCachedIcon(snapshot.ExecutablePath);
+
+                // iconImageForSnapshot은 경로가 그대로일 때 기존 아이콘을 유지해 불필요한 깜빡임을 줄이기 위한 값입니다.
+                var iconImageForSnapshot =
+                    cachedIcon ??
+                    (string.Equals(existingSession.ExecutablePath, snapshot.ExecutablePath, StringComparison.OrdinalIgnoreCase)
+                        ? existingSession.IconImage
+                        : null);
+
+                existingSession.UpdateSnapshot(
+                    snapshot.DisplayName,
+                    snapshot.ExecutablePath,
+                    iconImageForSnapshot,
+                    snapshot.Volume,
+                    snapshot.IsMuted);
+
+                // 캐시에 아이콘이 없을 때만 비동기 로딩을 예약합니다.
+                if (cachedIcon is null)
                 {
-                    device.Sessions.RemoveAt(index);
-                }
-            }
-
-            foreach (var snapshot in sessionSnapshots)
-            {
-                if (existingById.TryGetValue(snapshot.Id, out var existingSession))
-                {
-                    // cachedIcon은 이미 메모리에 올라와 있으면 즉시 쓸 수 있는 아이콘입니다.
-                    var cachedIcon = _appIconService.TryGetCachedIcon(snapshot.ExecutablePath);
-
-                    // iconImageForSnapshot은 경로가 그대로일 때 기존 아이콘을 유지해 불필요한 깜빡임을 줄이기 위한 값입니다.
-                    var iconImageForSnapshot =
-                        cachedIcon ??
-                        (string.Equals(existingSession.ExecutablePath, snapshot.ExecutablePath, StringComparison.OrdinalIgnoreCase)
-                            ? existingSession.IconImage
-                            : null);
-
-                    existingSession.UpdateSnapshot(
-                        snapshot.DisplayName,
-                        snapshot.ExecutablePath,
-                        iconImageForSnapshot,
-                        snapshot.Volume,
-                        snapshot.IsMuted);
-
-                    // 캐시에 아이콘이 없을 때만 비동기 로딩을 예약합니다.
-                    if (cachedIcon is null)
-                    {
-                        _ = LoadSessionIconAsync(existingSession);
-                    }
-
-                    continue;
+                    _ = LoadSessionIconAsync(existingSession);
                 }
 
-                device.Sessions.Add(CreateSessionViewModel(device.Id, snapshot));
+                continue;
             }
-        }
-        catch
-        {
-            // 상태 부분 갱신 실패는 다음 전체 새로고침에서 복구합니다.
-            AppLog.Warn("MainViewModel", $"세션 상태 부분 갱신 실패 deviceId={device.Id}");
+
+            device.Sessions.Add(CreateSessionViewModel(device.Id, snapshot));
         }
     }
 

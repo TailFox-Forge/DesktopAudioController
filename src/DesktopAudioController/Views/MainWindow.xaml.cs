@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
+using System.Threading;
 using System.Threading.Tasks;
 using Forms = System.Windows.Forms;
 
@@ -42,6 +43,9 @@ public partial class MainWindow : Window
 
     // 오디오 콜백 스레드와 UI 스레드가 함께 접근하는 새로고침 큐 상태를 직렬화하는 잠금 객체입니다.
     private readonly object _notificationRefreshSyncRoot = new();
+
+    // 장치/세션 재조회는 한 번에 하나만 실행해 UI 반영 순서를 보장합니다.
+    private readonly SemaphoreSlim _viewRefreshSemaphore = new(1, 1);
 
     // 같은 틱에서 중복 새로고침 요청이 들어올 때 한 번으로 합치기 위한 플래그입니다.
     private bool _isNotificationRefreshQueued;
@@ -102,7 +106,7 @@ public partial class MainWindow : Window
         Show();
         WindowState = WindowState.Normal;
         Activate();
-        OpenSettingsInternal();
+        _ = OpenSettingsInternalAsync();
     }
 
     /// <summary>
@@ -110,7 +114,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void SettingsButton_OnClick(object sender, RoutedEventArgs e)
     {
-        OpenSettingsInternal();
+        _ = OpenSettingsInternalAsync();
     }
 
     /// <summary>
@@ -124,10 +128,9 @@ public partial class MainWindow : Window
     /// <summary>
     /// 상단 새로고침 버튼 클릭 시 장치 목록을 다시 읽습니다.
     /// </summary>
-    private void RefreshButton_OnClick(object sender, RoutedEventArgs e)
+    private async void RefreshButton_OnClick(object sender, RoutedEventArgs e)
     {
-        _viewModel.Load();
-        UpdateEmptyState();
+        await ReloadViewModelAsync("manual_refresh_button");
     }
 
     /// <summary>
@@ -167,7 +170,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 설정 창을 열고 저장 결과가 있으면 메인 화면을 다시 갱신합니다.
     /// </summary>
-    private void OpenSettingsInternal()
+    private async Task OpenSettingsInternalAsync()
     {
         // 설정 창에서 사용할 새 뷰모델 인스턴스입니다.
         var settingsViewModel = _settingsViewModelFactory();
@@ -183,9 +186,7 @@ public partial class MainWindow : Window
         var result = settingsWindow.ShowDialog();
         if (result == true)
         {
-            _viewModel.Load();
-            UpdateEmptyState();
-            RefreshTrayMenu();
+            await ReloadViewModelAsync("settings_saved");
         }
     }
 
@@ -530,13 +531,11 @@ public partial class MainWindow : Window
         trayMenu.Items.Add("설정", null, (_, _) => RunOnUiThread(() =>
         {
             RestoreFromTray();
-            OpenSettingsInternal();
+            _ = OpenSettingsInternalAsync();
         }));
         trayMenu.Items.Add("새로고침", null, (_, _) => RunOnUiThread(() =>
         {
-            _viewModel.Load();
-            UpdateEmptyState();
-            RefreshTrayMenu();
+            _ = ReloadViewModelAsync("tray_refresh");
         }));
 
         if (_viewModel.VisibleDevices.Count > 0)
@@ -694,15 +693,12 @@ public partial class MainWindow : Window
         if (pendingKind == AudioNotificationChangeKind.Topology)
         {
             AppLog.Debug("MainWindow", "토폴로지 전체 새로고침 수행");
-            _viewModel.Load();
-            UpdateEmptyState();
-            RefreshTrayMenu();
+            await ReloadViewModelAsync("topology_event");
             return;
         }
 
         AppLog.Debug("MainWindow", "상태 부분 새로고침 수행");
-        _viewModel.RefreshStateOnly();
-        RefreshTrayMenu();
+        await RefreshStateViewAsync();
     }
 
     /// <summary>
@@ -711,13 +707,52 @@ public partial class MainWindow : Window
     private async Task RefreshAfterDefaultDeviceChangeAsync(string deviceId)
     {
         await Task.Delay(DefaultDeviceRefreshDelay);
+        AppLog.Info("MainWindow", $"기본 장치 변경 후 지연 재동기화 deviceId={deviceId}");
+        await ReloadViewModelAsync($"default_device_resync deviceId={deviceId}");
+    }
 
-        await Dispatcher.InvokeAsync(() =>
+    /// <summary>
+    /// 전체 장치/세션 스냅샷을 백그라운드에서 다시 읽고 UI에 반영합니다.
+    /// </summary>
+    private async Task ReloadViewModelAsync(string reason)
+    {
+        await _viewRefreshSemaphore.WaitAsync();
+        try
         {
-            AppLog.Info("MainWindow", $"기본 장치 변경 후 지연 재동기화 deviceId={deviceId}");
-            _viewModel.Load();
+            AppLog.Debug("MainWindow", $"전체 새로고침 시작 reason={reason}");
+            await _viewModel.LoadAsync();
             UpdateEmptyState();
             RefreshTrayMenu();
-        });
+            AppLog.Debug("MainWindow", $"전체 새로고침 완료 reason={reason}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("MainWindow", $"전체 새로고침 실패 reason={reason}", exception);
+        }
+        finally
+        {
+            _viewRefreshSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// 현재 보이는 장치 구조는 유지하고 상태 값만 백그라운드 조회 후 반영합니다.
+    /// </summary>
+    private async Task RefreshStateViewAsync()
+    {
+        await _viewRefreshSemaphore.WaitAsync();
+        try
+        {
+            await _viewModel.RefreshStateOnlyAsync();
+            RefreshTrayMenu();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("MainWindow", "상태 부분 새로고침 실패", exception);
+        }
+        finally
+        {
+            _viewRefreshSemaphore.Release();
+        }
     }
 }
