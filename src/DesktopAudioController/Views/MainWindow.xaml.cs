@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows;
 using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
@@ -91,24 +92,25 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 연결이 끊긴 장치는 기본 출력 장치로 승격할 수 없으므로 호출 전 바로 차단합니다.
+        if (!device.IsConnected)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "현재 연결되지 않은 장치는 기본 출력 장치로 설정할 수 없습니다.\n장치를 다시 연결한 뒤 시도하세요.",
+                "장치 연결 필요",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
         try
         {
-            // 선택된 장치를 Windows 기본 출력 장치로 변경합니다.
-            device.SetAsDefault();
-            _viewModel.Load();
-            UpdateEmptyState();
+            TrySetDefaultDevice(device);
         }
         catch (Exception exception)
         {
-            // 예외가 발생하면 앱을 종료하지 않고 사용자에게 원인을 알려줍니다.
-            System.Windows.MessageBox.Show(
-                this,
-                $"기본 출력 장치를 변경하지 못했습니다.\n\n{exception.Message}\n\nWindows 소리 설정 화면을 열어 수동으로 변경할 수 있습니다.",
-                "기본 장치 변경 실패",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Warning);
-
-            TryOpenWindowsSoundSettings();
+            HandleSetDefaultFailure(device, exception);
         }
     }
 
@@ -133,6 +135,7 @@ public partial class MainWindow : Window
         {
             _viewModel.Load();
             UpdateEmptyState();
+            RefreshTrayMenu();
         }
     }
 
@@ -211,7 +214,90 @@ public partial class MainWindow : Window
             _isNotificationRefreshQueued = false;
             _viewModel.Load();
             UpdateEmptyState();
+            RefreshTrayMenu();
         });
+    }
+
+    /// <summary>
+    /// 기본 장치 변경을 실제로 수행하고 성공 시 화면을 즉시 새 상태로 다시 읽습니다.
+    /// </summary>
+    private void TrySetDefaultDevice(VisibleDeviceViewModel device)
+    {
+        // 선택된 장치를 Windows 기본 출력 장치로 변경합니다.
+        device.SetAsDefault();
+        _viewModel.Load();
+        UpdateEmptyState();
+        RefreshTrayMenu();
+    }
+
+    /// <summary>
+    /// 기본 장치 변경 실패 시 원인을 분류해 사용자에게 재시도/설정 열기 선택지를 제공합니다.
+    /// </summary>
+    private void HandleSetDefaultFailure(VisibleDeviceViewModel device, Exception exception)
+    {
+        // failureReason은 사용자에게 보여줄 실패 분류 메시지입니다.
+        var failureReason = ClassifyDefaultDeviceFailure(exception);
+
+        // 사용자는 다시 시도 / 설정 열기 / 취소 중 하나를 선택할 수 있습니다.
+        var result = System.Windows.MessageBox.Show(
+            this,
+            $"기본 출력 장치를 변경하지 못했습니다.\n\n원인 추정: {failureReason}\n대상 장치: {device.Name}\n상세 메시지: {exception.Message}\n\n예: 한 번 더 시도\n아니오: Windows 소리 설정 열기\n취소: 닫기",
+            "기본 장치 변경 실패",
+            System.Windows.MessageBoxButton.YesNoCancel,
+            System.Windows.MessageBoxImage.Warning);
+
+        if (result == System.Windows.MessageBoxResult.Yes)
+        {
+            try
+            {
+                TrySetDefaultDevice(device);
+            }
+            catch (Exception retryException)
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    $"재시도에도 실패했습니다.\n\n원인 추정: {ClassifyDefaultDeviceFailure(retryException)}\n상세 메시지: {retryException.Message}",
+                    "기본 장치 변경 재시도 실패",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Error);
+            }
+
+            return;
+        }
+
+        if (result == System.Windows.MessageBoxResult.No)
+        {
+            TryOpenWindowsSoundSettings();
+        }
+    }
+
+    /// <summary>
+    /// 예외 타입과 HRESULT를 기준으로 기본 장치 변경 실패 이유를 사람이 읽기 쉬운 문장으로 변환합니다.
+    /// </summary>
+    private static string ClassifyDefaultDeviceFailure(Exception exception)
+    {
+        if (exception is UnauthorizedAccessException)
+        {
+            return "권한 또는 보안 정책 때문에 장치 전환이 차단되었을 가능성이 있습니다.";
+        }
+
+        if (exception is COMException comException)
+        {
+            return comException.HResult switch
+            {
+                unchecked((int)0x80070490) => "대상 장치를 찾지 못했습니다. 장치가 제거되었거나 ID가 바뀌었을 수 있습니다.",
+                unchecked((int)0x80070005) => "접근이 거부되었습니다. 관리자 정책 또는 오디오 서비스 상태를 확인하세요.",
+                unchecked((int)0x88890004) => "오디오 엔드포인트 상태가 유효하지 않습니다. 장치 연결 상태를 다시 확인하세요.",
+                _ => $"COM 호출이 실패했습니다. HRESULT=0x{comException.HResult:X8}"
+            };
+        }
+
+        if (exception is InvalidOperationException)
+        {
+            return "현재 오디오 장치 상태가 변경 중이어서 요청을 처리하지 못했습니다.";
+        }
+
+        return "예상하지 못한 오류가 발생했습니다.";
     }
 
     /// <summary>
@@ -262,9 +348,16 @@ public partial class MainWindow : Window
 
         var contextMenu = new Forms.ContextMenuStrip();
         contextMenu.Items.Add("열기", null, (_, _) => RestoreFromTray());
+        contextMenu.Items.Add("새로고침", null, (_, _) =>
+        {
+            _viewModel.Load();
+            UpdateEmptyState();
+            RefreshTrayMenu();
+        });
         contextMenu.Items.Add("종료", null, (_, _) => ExitApplication());
         notifyIcon.ContextMenuStrip = contextMenu;
         notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
+        RefreshTrayMenu();
         return notifyIcon;
     }
 
@@ -305,5 +398,55 @@ public partial class MainWindow : Window
         // settings는 현재 파일에 저장된 최신 사용자 옵션입니다.
         var settings = _settingsService.Load();
         return settings.MinimizeToTray;
+    }
+
+    /// <summary>
+    /// 현재 보이는 장치 기준으로 트레이 메뉴를 다시 구성합니다.
+    /// </summary>
+    private void RefreshTrayMenu()
+    {
+        if (_notifyIcon.ContextMenuStrip is null)
+        {
+            return;
+        }
+
+        // 기존 동적 장치 항목을 제거하고, 고정 메뉴만 남긴 상태에서 다시 빌드합니다.
+        while (_notifyIcon.ContextMenuStrip.Items.Count > 3)
+        {
+            _notifyIcon.ContextMenuStrip.Items.RemoveAt(1);
+        }
+
+        if (_viewModel.VisibleDevices.Count == 0)
+        {
+            return;
+        }
+
+        var deviceMenu = new Forms.ToolStripMenuItem("기본 장치 빠른 전환");
+        foreach (var device in _viewModel.VisibleDevices)
+        {
+            // localDevice는 foreach 캡처 안전성을 위한 지역 참조입니다.
+            var localDevice = device;
+            var menuItem = new Forms.ToolStripMenuItem(localDevice.Name)
+            {
+                Checked = localDevice.IsDefault,
+                Enabled = localDevice.IsConnected
+            };
+
+            menuItem.Click += (_, _) =>
+            {
+                try
+                {
+                    TrySetDefaultDevice(localDevice);
+                }
+                catch (Exception exception)
+                {
+                    HandleSetDefaultFailure(localDevice, exception);
+                }
+            };
+
+            deviceMenu.DropDownItems.Add(menuItem);
+        }
+
+        _notifyIcon.ContextMenuStrip.Items.Insert(1, deviceMenu);
     }
 }
