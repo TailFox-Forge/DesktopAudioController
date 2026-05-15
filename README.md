@@ -124,6 +124,23 @@ dotnet publish src/DesktopAudioController/DesktopAudioController.csproj \
 
 ## 후속 고도화 항목
 
+## Phase 4 계획
+
+```text
+Phase 4-1 기본 장치 변경 실패 UX 개선
+Phase 4-2 세션 이벤트 반영 정교화
+Phase 4-3 System Sounds 필터 옵션
+Phase 4-4 트레이 메뉴 확장
+```
+
+진행 원칙:
+
+```text
+- 항목별 커밋 분리
+- 각 항목마다 빌드 검증
+- 소스 주석 동시 반영
+```
+
 ### 1. System Sounds 필터 옵션 세분화
 
 배경:
