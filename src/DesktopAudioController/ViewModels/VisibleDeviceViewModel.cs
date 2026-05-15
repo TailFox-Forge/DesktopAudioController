@@ -23,6 +23,9 @@ public sealed class VisibleDeviceViewModel : ObservableObject
     // 장치 음소거 변경을 실제 오디오 서비스로 전달하는 콜백입니다.
     private readonly Action<string, bool> _onMutedChanged;
 
+    // 장치를 기본 장치로 바꿀 때 호출하는 콜백입니다.
+    private readonly Action<string> _onSetAsDefault;
+
     /// <summary>
     /// 뷰모델 생성 시 초기 장치 상태와 변경 콜백을 함께 받습니다.
     /// </summary>
@@ -34,7 +37,8 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         int initialVolume,
         bool initialMuted,
         Action<string, int> onVolumeChanged,
-        Action<string, bool> onMutedChanged)
+        Action<string, bool> onMutedChanged,
+        Action<string> onSetAsDefault)
     {
         Id = id;
         Name = name;
@@ -44,6 +48,7 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         _isMuted = initialMuted;
         _onVolumeChanged = onVolumeChanged;
         _onMutedChanged = onMutedChanged;
+        _onSetAsDefault = onSetAsDefault;
     }
 
     /// <summary>
@@ -127,4 +132,17 @@ public sealed class VisibleDeviceViewModel : ObservableObject
     /// 이 장치에서 현재 소리를 내고 있는 애플리케이션 세션 목록입니다.
     /// </summary>
     public ObservableCollection<AudioSessionViewModel> Sessions { get; } = [];
+
+    /// <summary>
+    /// 현재 장치를 기본 출력 장치로 설정합니다.
+    /// </summary>
+    public void SetAsDefault()
+    {
+        if (IsDefault)
+        {
+            return;
+        }
+
+        _onSetAsDefault(Id);
+    }
 }

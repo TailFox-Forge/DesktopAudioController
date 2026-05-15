@@ -54,6 +54,21 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 장치 카드의 기본 장치 변경 버튼 클릭 이벤트입니다.
+    /// </summary>
+    private void SetDefaultButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: VisibleDeviceViewModel device })
+        {
+            return;
+        }
+
+        device.SetAsDefault();
+        _viewModel.Load();
+        UpdateEmptyState();
+    }
+
+    /// <summary>
     /// 설정 창을 열고 저장 결과가 있으면 메인 화면을 다시 갱신합니다.
     /// </summary>
     private void OpenSettingsInternal()

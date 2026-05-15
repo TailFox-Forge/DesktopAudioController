@@ -21,4 +21,9 @@ public interface IAudioDeviceCatalogService
     /// 지정한 장치의 음소거 상태를 설정합니다.
     /// </summary>
     void SetMuted(string deviceId, bool muted);
+
+    /// <summary>
+    /// 지정한 장치를 기본 출력 장치로 설정합니다.
+    /// </summary>
+    void SetAsDefault(string deviceId);
 }

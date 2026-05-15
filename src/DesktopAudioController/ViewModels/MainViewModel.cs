@@ -97,7 +97,8 @@ public sealed class MainViewModel : ObservableObject
             device.Volume,
             device.IsMuted,
             OnDeviceVolumeChanged,
-            OnDeviceMutedChanged);
+            OnDeviceMutedChanged,
+            OnSetDefaultDevice);
 
         // 연결된 장치만 현재 활성 세션 목록을 미리 읽어옵니다.
         if (device.IsConnected)
@@ -155,6 +156,14 @@ public sealed class MainViewModel : ObservableObject
     private void OnDeviceMutedChanged(string deviceId, bool muted)
     {
         _audioDeviceCatalogService.SetMuted(deviceId, muted);
+    }
+
+    /// <summary>
+    /// 기본 출력 장치 변경을 서비스 계층으로 전달합니다.
+    /// </summary>
+    private void OnSetDefaultDevice(string deviceId)
+    {
+        _audioDeviceCatalogService.SetAsDefault(deviceId);
     }
 
     /// <summary>

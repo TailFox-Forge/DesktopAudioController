@@ -1,5 +1,6 @@
 using NAudio.CoreAudioApi;
 using DesktopAudioController.Models;
+using System.Runtime.InteropServices;
 
 namespace DesktopAudioController.Services;
 
@@ -8,6 +9,9 @@ namespace DesktopAudioController.Services;
 /// </summary>
 public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService, IDisposable
 {
+    // undocumented PolicyConfig COM 클래스 ID입니다.
+    private static readonly Guid PolicyConfigClientClsid = new("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9");
+
     // Windows 출력 장치 열거와 조회에 사용하는 COM 래퍼입니다.
     private readonly MMDeviceEnumerator _enumerator = new();
 
@@ -85,10 +89,55 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     }
 
     /// <summary>
+    /// 지정한 장치를 기본 출력 장치로 설정합니다.
+    /// </summary>
+    public void SetAsDefault(string deviceId)
+    {
+        // Windows 내부 PolicyConfig COM 객체를 생성합니다.
+        var policyConfigType = Type.GetTypeFromCLSID(PolicyConfigClientClsid, throwOnError: true);
+        var policyConfig = (IPolicyConfig)Activator.CreateInstance(policyConfigType!)!;
+
+        try
+        {
+            // 일반 출력, 멀티미디어, 통신 역할을 모두 같은 기본 장치로 맞춥니다.
+            policyConfig.SetDefaultEndpoint(deviceId, Role.Console);
+            policyConfig.SetDefaultEndpoint(deviceId, Role.Multimedia);
+            policyConfig.SetDefaultEndpoint(deviceId, Role.Communications);
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(policyConfig);
+        }
+    }
+
+    /// <summary>
     /// 내부 COM 열거자를 정리합니다.
     /// </summary>
     public void Dispose()
     {
         _enumerator.Dispose();
+    }
+
+    /// <summary>
+    /// SetDefaultEndpoint 호출에 필요한 최소 PolicyConfig 인터페이스 정의입니다.
+    /// vtable 순서를 맞추기 위해 앞선 메서드도 함께 선언합니다.
+    /// </summary>
+    [ComImport]
+    [Guid("F8679F50-850A-41CF-9C72-430F290290C8")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPolicyConfig
+    {
+        int GetMixFormat(string deviceName, IntPtr format);
+        int GetDeviceFormat(string deviceName, int defaultFormat, IntPtr format);
+        int ResetDeviceFormat(string deviceName);
+        int SetDeviceFormat(string deviceName, IntPtr endpointFormat, IntPtr mixFormat);
+        int GetProcessingPeriod(string deviceName, int defaultPeriod, IntPtr processPeriod);
+        int SetProcessingPeriod(string deviceName, IntPtr processPeriod);
+        int GetShareMode(string deviceName, IntPtr mode);
+        int SetShareMode(string deviceName, IntPtr mode);
+        int GetPropertyValue(string deviceName, IntPtr propertyKey, IntPtr propertyValue);
+        int SetPropertyValue(string deviceName, IntPtr propertyKey, IntPtr propertyValue);
+        int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceName, Role role);
+        int SetEndpointVisibility(string deviceName, int visible);
     }
 }

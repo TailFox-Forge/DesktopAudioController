@@ -62,9 +62,16 @@
                                             <TextBlock FontSize="16"
                                                        FontWeight="SemiBold"
                                                        Text="{Binding Name}" />
-                                            <TextBlock DockPanel.Dock="Right"
-                                                       Foreground="#666"
-                                                       Text="{Binding IsDefault, StringFormat=기본 장치: {0}}" />
+                                            <StackPanel DockPanel.Dock="Right"
+                                                        Orientation="Horizontal">
+                                                <TextBlock Margin="0,0,8,0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="#666"
+                                                           Text="{Binding IsDefault, StringFormat=기본 장치: {0}}" />
+                                                <Button Padding="8,2"
+                                                        Click="SetDefaultButton_OnClick"
+                                                        Content="기본 장치로 설정" />
+                                            </StackPanel>
                                         </DockPanel>
                                         <!-- 장치 마스터 볼륨은 초기 화면에서 항상 바로 조절할 수 있게 둡니다. -->
                                         <Slider Minimum="0"
