@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 
 namespace DesktopAudioController.Views;
@@ -15,17 +16,26 @@ public partial class MainWindow : Window
     // 설정 창을 열 때마다 새 설정 뷰모델을 만들기 위한 팩토리입니다.
     private readonly Func<SettingsViewModel> _settingsViewModelFactory;
 
+    // Core Audio 이벤트를 받아 메인 화면 갱신을 트리거하는 서비스입니다.
+    private readonly IAudioNotificationService _audioNotificationService;
+
+    // 같은 틱에서 중복 새로고침 요청이 들어올 때 한 번으로 합치기 위한 플래그입니다.
+    private bool _isNotificationRefreshQueued;
+
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
     /// </summary>
     public MainWindow(
         MainViewModel viewModel,
-        Func<SettingsViewModel> settingsViewModelFactory)
+        Func<SettingsViewModel> settingsViewModelFactory,
+        IAudioNotificationService audioNotificationService)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _settingsViewModelFactory = settingsViewModelFactory;
+        _audioNotificationService = audioNotificationService;
         DataContext = _viewModel;
+        _audioNotificationService.Changed += AudioNotificationService_OnChanged;
         UpdateEmptyState();
     }
 
@@ -118,6 +128,36 @@ public partial class MainWindow : Window
         var hasDevices = _viewModel.VisibleDevices.Count > 0;
         EmptyStateText.Visibility = hasDevices ? Visibility.Collapsed : Visibility.Visible;
         DevicesItemsControl.Visibility = hasDevices ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Core Audio 콜백이 들어오면 WPF UI 스레드에서 목록 새로고침을 예약합니다.
+    /// </summary>
+    private void AudioNotificationService_OnChanged(object? sender, EventArgs e)
+    {
+        if (_isNotificationRefreshQueued)
+        {
+            return;
+        }
+
+        _isNotificationRefreshQueued = true;
+
+        // Core Audio 콜백은 UI 스레드가 아닐 수 있으므로 Dispatcher를 통해 화면 갱신을 예약합니다.
+        Dispatcher.InvokeAsync(() =>
+        {
+            _isNotificationRefreshQueued = false;
+            _viewModel.Load();
+            UpdateEmptyState();
+        });
+    }
+
+    /// <summary>
+    /// 창이 닫힐 때 오디오 이벤트 구독을 해제합니다.
+    /// </summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _audioNotificationService.Changed -= AudioNotificationService_OnChanged;
+        base.OnClosed(e);
     }
 
     /// <summary>
