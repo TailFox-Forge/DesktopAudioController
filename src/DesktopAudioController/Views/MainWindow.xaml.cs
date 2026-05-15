@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using DesktopAudioController.Services;
@@ -362,16 +363,7 @@ public partial class MainWindow : Window
             Visible = true
         };
 
-        var contextMenu = new Forms.ContextMenuStrip();
-        contextMenu.Items.Add("열기", null, (_, _) => RestoreFromTray());
-        contextMenu.Items.Add("새로고침", null, (_, _) =>
-        {
-            _viewModel.Load();
-            UpdateEmptyState();
-            RefreshTrayMenu();
-        });
-        contextMenu.Items.Add("종료", null, (_, _) => ExitApplication());
-        notifyIcon.ContextMenuStrip = contextMenu;
+        notifyIcon.ContextMenuStrip = new Forms.ContextMenuStrip();
         notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
         RefreshTrayMenu();
         return notifyIcon;
@@ -426,29 +418,55 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 기존 동적 장치 항목을 제거하고, 고정 메뉴만 남긴 상태에서 다시 빌드합니다.
-        while (_notifyIcon.ContextMenuStrip.Items.Count > 3)
-        {
-            _notifyIcon.ContextMenuStrip.Items.RemoveAt(1);
-        }
+        // trayMenu는 현재 상태 기준으로 완전히 다시 만드는 트레이 메뉴입니다.
+        var trayMenu = _notifyIcon.ContextMenuStrip;
+        trayMenu.Items.Clear();
 
-        if (_viewModel.VisibleDevices.Count == 0)
+        var defaultDevice = _viewModel.VisibleDevices.FirstOrDefault(device => device.IsDefault);
+        _notifyIcon.Text = defaultDevice is null
+            ? "DesktopAudioController"
+            : $"DesktopAudioController - 기본: {TrimNotifyText(defaultDevice.Name)}";
+
+        var statusItem = new Forms.ToolStripMenuItem(
+            defaultDevice is null
+                ? "기본 장치: 없음"
+                : $"기본 장치: {defaultDevice.Name}")
         {
-            return;
+            Enabled = false
+        };
+
+        trayMenu.Items.Add(statusItem);
+        trayMenu.Items.Add("열기", null, (_, _) => RestoreFromTray());
+        trayMenu.Items.Add("설정", null, (_, _) =>
+        {
+            RestoreFromTray();
+            OpenSettingsInternal();
+        });
+        trayMenu.Items.Add("새로고침", null, (_, _) =>
+        {
+            _viewModel.Load();
+            UpdateEmptyState();
+            RefreshTrayMenu();
+        });
+
+        if (_viewModel.VisibleDevices.Count > 0)
+        {
+            trayMenu.Items.Add(new Forms.ToolStripSeparator());
         }
 
         var deviceMenu = new Forms.ToolStripMenuItem("기본 장치 빠른 전환");
+        var muteMenu = new Forms.ToolStripMenuItem("장치 음소거 토글");
         foreach (var device in _viewModel.VisibleDevices)
         {
             // localDevice는 foreach 캡처 안전성을 위한 지역 참조입니다.
             var localDevice = device;
-            var menuItem = new Forms.ToolStripMenuItem(localDevice.Name)
+            var defaultItem = new Forms.ToolStripMenuItem(localDevice.Name)
             {
                 Checked = localDevice.IsDefault,
                 Enabled = localDevice.IsConnected
             };
 
-            menuItem.Click += (_, _) =>
+            defaultItem.Click += (_, _) =>
             {
                 try
                 {
@@ -460,9 +478,40 @@ public partial class MainWindow : Window
                 }
             };
 
-            deviceMenu.DropDownItems.Add(menuItem);
+            var muteItem = new Forms.ToolStripMenuItem(localDevice.Name)
+            {
+                Checked = localDevice.IsMuted,
+                Enabled = localDevice.IsConnected
+            };
+
+            muteItem.Click += (_, _) =>
+            {
+                try
+                {
+                    localDevice.IsMuted = !localDevice.IsMuted;
+                    RefreshTrayMenu();
+                }
+                catch
+                {
+                    // 트레이 토글 실패는 다음 새로고침에서 복구합니다.
+                }
+            };
+
+            deviceMenu.DropDownItems.Add(defaultItem);
+            muteMenu.DropDownItems.Add(muteItem);
         }
 
-        _notifyIcon.ContextMenuStrip.Items.Insert(1, deviceMenu);
+        trayMenu.Items.Add(deviceMenu);
+        trayMenu.Items.Add(muteMenu);
+        trayMenu.Items.Add(new Forms.ToolStripSeparator());
+        trayMenu.Items.Add("종료", null, (_, _) => ExitApplication());
+    }
+
+    /// <summary>
+    /// NotifyIcon 텍스트 길이 제한에 맞춰 장치 이름을 적당히 줄입니다.
+    /// </summary>
+    private static string TrimNotifyText(string text)
+    {
+        return text.Length <= 32 ? text : $"{text[..29]}...";
     }
 }
