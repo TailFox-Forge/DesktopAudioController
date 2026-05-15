@@ -65,8 +65,14 @@ public partial class MainWindow : Window
     // 일부 가상 장치는 기본 장치 변경 후 기본 장치 이벤트를 늦게 보내거나 보내지 않아, 짧게 기다린 뒤 상태를 한 번 더 맞춥니다.
     private static readonly TimeSpan DefaultDeviceRefreshDelay = TimeSpan.FromMilliseconds(250);
 
-    // Core Audio 조회가 비정상적으로 매달릴 때 전체 UI 갱신 직렬화가 영구 정지되지 않도록 타임아웃을 둡니다.
-    private static readonly TimeSpan RefreshOperationTimeout = TimeSpan.FromSeconds(2);
+    // 전체 재로딩은 VoiceMeeter 환경에서 2초를 넘길 수 있어 여유를 조금 더 둡니다.
+    private static readonly TimeSpan FullRefreshOperationTimeout = TimeSpan.FromSeconds(6);
+
+    // 상태만 다시 읽는 경로는 더 가벼우므로 상대적으로 짧은 타임아웃을 둡니다.
+    private static readonly TimeSpan StateRefreshOperationTimeout = TimeSpan.FromSeconds(4);
+
+    // 설정창 장치 로딩도 COM 조회이므로 메인 UI를 막지 않게 비동기로 열고, 실패 시 에러로 돌립니다.
+    private static readonly TimeSpan SettingsLoadTimeout = TimeSpan.FromSeconds(6);
 
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
@@ -133,7 +139,7 @@ public partial class MainWindow : Window
     /// </summary>
     private async void RefreshButton_OnClick(object sender, RoutedEventArgs e)
     {
-        await ReloadViewModelAsync("manual_refresh_button");
+        await RefreshStateViewAsync("manual_refresh_button");
     }
 
     /// <summary>
@@ -175,21 +181,41 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task OpenSettingsInternalAsync()
     {
-        // 설정 창에서 사용할 새 뷰모델 인스턴스입니다.
-        var settingsViewModel = _settingsViewModelFactory();
-        settingsViewModel.Load();
-
-        // 설정 창은 메인 창을 소유자로 두어 모달 형태로 엽니다.
-        var settingsWindow = new SettingsWindow(settingsViewModel)
+        try
         {
-            Owner = this
-        };
+            var settingsViewModel = _settingsViewModelFactory();
+            await settingsViewModel.LoadAsync().WaitAsync(SettingsLoadTimeout);
 
-        // 저장 성공 시에만 메인 화면을 다시 읽습니다.
-        var result = settingsWindow.ShowDialog();
-        if (result == true)
+            var settingsWindow = new SettingsWindow(settingsViewModel)
+            {
+                Owner = this
+            };
+
+            var result = settingsWindow.ShowDialog();
+            if (result == true)
+            {
+                await ReloadViewModelAsync("settings_saved");
+            }
+        }
+        catch (TimeoutException exception)
         {
-            await ReloadViewModelAsync("settings_saved");
+            AppLog.Error("MainWindow", "설정 창 로딩 타임아웃", exception);
+            System.Windows.MessageBox.Show(
+                this,
+                "설정 창을 여는 동안 장치 정보를 읽지 못해 시간이 초과됐습니다.\n잠시 후 다시 시도해 주세요.",
+                "설정 창 열기 실패",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("MainWindow", "설정 창 로딩 실패", exception);
+            System.Windows.MessageBox.Show(
+                this,
+                $"설정 창을 여는 중 오류가 발생했습니다.\n\n원인: {exception.Message}",
+                "설정 창 열기 실패",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
         }
     }
 
@@ -539,7 +565,7 @@ public partial class MainWindow : Window
         }));
         trayMenu.Items.Add("새로고침", null, (_, _) => RunOnUiThread(() =>
         {
-            _ = ReloadViewModelAsync("tray_refresh");
+            _ = RefreshStateViewAsync("tray_refresh");
         }));
 
         if (_viewModel.VisibleDevices.Count > 0)
@@ -712,7 +738,7 @@ public partial class MainWindow : Window
     {
         await Task.Delay(DefaultDeviceRefreshDelay);
         AppLog.Info("MainWindow", $"기본 장치 변경 후 지연 재동기화 deviceId={deviceId}");
-        await ReloadViewModelAsync($"default_device_resync deviceId={deviceId}");
+        await RefreshStateViewAsync($"default_device_resync deviceId={deviceId}");
     }
 
     /// <summary>
@@ -724,7 +750,7 @@ public partial class MainWindow : Window
         try
         {
             AppLog.Debug("MainWindow", $"전체 새로고침 시작 reason={reason}");
-            await _viewModel.LoadAsync().WaitAsync(RefreshOperationTimeout);
+            await _viewModel.LoadAsync().WaitAsync(FullRefreshOperationTimeout);
             UpdateEmptyState();
             RefreshTrayMenu();
             AppLog.Debug("MainWindow", $"전체 새로고침 완료 reason={reason}");
@@ -747,22 +773,24 @@ public partial class MainWindow : Window
     /// <summary>
     /// 현재 보이는 장치 구조는 유지하고 상태 값만 백그라운드 조회 후 반영합니다.
     /// </summary>
-    private async Task RefreshStateViewAsync()
+    private async Task RefreshStateViewAsync(string reason = "state_refresh")
     {
         await _viewRefreshSemaphore.WaitAsync();
         try
         {
-            await _viewModel.RefreshStateOnlyAsync().WaitAsync(RefreshOperationTimeout);
+            AppLog.Debug("MainWindow", $"상태 부분 새로고침 시작 reason={reason}");
+            await _viewModel.RefreshStateOnlyAsync().WaitAsync(StateRefreshOperationTimeout);
             RefreshTrayMenu();
+            AppLog.Debug("MainWindow", $"상태 부분 새로고침 완료 reason={reason}");
         }
         catch (TimeoutException exception)
         {
             _viewModel.InvalidatePendingSnapshots();
-            AppLog.Error("MainWindow", "상태 부분 새로고침 타임아웃", exception);
+            AppLog.Error("MainWindow", $"상태 부분 새로고침 타임아웃 reason={reason}", exception);
         }
         catch (Exception exception)
         {
-            AppLog.Error("MainWindow", "상태 부분 새로고침 실패", exception);
+            AppLog.Error("MainWindow", $"상태 부분 새로고침 실패 reason={reason}", exception);
         }
         finally
         {

@@ -92,6 +92,31 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     }
 
     /// <summary>
+    /// 세션 생성/만료처럼 구독 집합을 다시 짜야 하는 변화는 내부 구독만 재구성하고 UI에는 상태 갱신으로 알립니다.
+    /// </summary>
+    internal void HandleSessionCollectionChanged()
+    {
+        try
+        {
+            lock (_syncRoot)
+            {
+                if (!_started)
+                {
+                    return;
+                }
+
+                RebuildSubscriptionsLocked();
+            }
+
+            RaiseChanged(AudioNotificationChangeKind.State);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("NativeAudioNotificationService", "세션 컬렉션 변경 처리 중 예외", exception);
+        }
+    }
+
+    /// <summary>
     /// 현재 시스템 상태에 맞춰 장치/세션 콜백 구독을 다시 구성합니다.
     /// </summary>
     private void RebuildSubscriptionsLocked()
@@ -114,8 +139,8 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
             subscription.EndpointVolume = device.AudioEndpointVolume;
             subscription.EndpointVolume.OnVolumeNotification += subscription.VolumeHandler;
 
-            // 새 세션 생성 시 전체 세션 목록을 다시 만들기 위해 장치별 세션 생성 이벤트를 구독합니다.
-            subscription.SessionCreatedHandler = (_, _) => HandleTopologyChanged();
+            // 새 세션은 UI 상태 변화이면서 동시에 새 세션 콜백 재구독 대상이므로 내부 구독을 다시 짭니다.
+            subscription.SessionCreatedHandler = (_, _) => HandleSessionCollectionChanged();
             subscription.SessionManager = device.AudioSessionManager;
             subscription.SessionManager.OnSessionCreated += subscription.SessionCreatedHandler;
 
@@ -417,7 +442,7 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
         {
             try
             {
-                _onTopologyChanged();
+                _onStateChanged();
             }
             catch (Exception exception)
             {

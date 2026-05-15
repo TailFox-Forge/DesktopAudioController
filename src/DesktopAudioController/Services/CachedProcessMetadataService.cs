@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using DesktopAudioController.Models;
 
 namespace DesktopAudioController.Services;
@@ -82,14 +83,46 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
     /// </summary>
     private static ProcessMetadataInfo LoadProcessMetadata(uint processId)
     {
+        var fallbackName = $"PID {processId}";
+
         try
         {
             using var process = Process.GetProcessById((int)processId);
 
+            var processName = fallbackName;
+            string? executablePath = null;
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(process.ProcessName))
+                {
+                    processName = process.ProcessName;
+                }
+            }
+            catch
+            {
+                // 프로세스 이름 조회 실패 시 아래 다른 메타데이터로 최대한 보정합니다.
+            }
+
+            try
+            {
+                executablePath = process.MainModule?.FileName;
+            }
+            catch
+            {
+                // 일부 게임/보호 프로세스는 MainModule 접근을 막을 수 있으므로 이름만 유지합니다.
+            }
+
+            if (string.Equals(processName, fallbackName, StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(executablePath))
+            {
+                processName = Path.GetFileNameWithoutExtension(executablePath);
+            }
+
             return new ProcessMetadataInfo
             {
-                ProcessName = process.ProcessName,
-                ExecutablePath = process.MainModule?.FileName
+                ProcessName = processName,
+                ExecutablePath = executablePath
             };
         }
         catch

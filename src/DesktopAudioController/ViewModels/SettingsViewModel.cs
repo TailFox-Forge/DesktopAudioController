@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using DesktopAudioController.Infrastructure;
 using DesktopAudioController.Models;
 using DesktopAudioController.Services;
@@ -11,6 +12,13 @@ namespace DesktopAudioController.ViewModels;
 /// </summary>
 public sealed class SettingsViewModel : ObservableObject
 {
+    private sealed class SettingsSnapshot
+    {
+        public required IReadOnlyList<AudioDeviceInfo> Devices { get; init; }
+
+        public required AppSettings Settings { get; init; }
+    }
+
     // 설정 파일 입출력을 담당하는 서비스입니다.
     private readonly ISettingsService _settingsService;
 
@@ -103,34 +111,21 @@ public sealed class SettingsViewModel : ObservableObject
     /// </summary>
     public void Load()
     {
-        // 저장된 사용자 옵션을 읽습니다.
-        // 파일에서 읽어온 현재 사용자 설정입니다.
-        var settings = _settingsService.Load();
+        ApplySnapshot(BuildSnapshot());
+    }
 
-        // 현재 시스템에서 보이는 출력 장치 목록을 가져옵니다.
-        var devices = _audioDeviceCatalogService.GetAvailableOutputDevices();
+    /// <summary>
+    /// 설정 창 로딩은 백그라운드에서 수행하고 UI 반영만 Dispatcher에서 처리합니다.
+    /// </summary>
+    public async Task LoadAsync(CancellationToken cancellationToken = default)
+    {
+        var snapshot = await Task.Run(BuildSnapshot, cancellationToken);
 
-        // 설정 창을 다시 열었을 때 중복 데이터가 쌓이지 않도록 초기화합니다.
-        AvailableDevices.Clear();
-        foreach (var device in devices)
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            // 루프 안의 device는 장치 서비스가 반환한 출력 장치 한 개입니다.
-            // 저장된 VisibleDeviceIds에 포함된 장치만 선택 상태로 표시합니다.
-            AvailableDevices.Add(new AudioDeviceSelectionViewModel
-            {
-                Id = device.Id,
-                DisplayName = device.Name,
-                IsConnected = device.IsConnected,
-                IsSelected = settings.VisibleDeviceIds.Contains(device.Id)
-            });
-        }
-
-        // 토글 옵션도 저장된 값으로 복원합니다.
-        StartMinimized = settings.StartMinimized;
-        RunAtWindowsStartup = settings.RunAtWindowsStartup;
-        MinimizeToTray = settings.MinimizeToTray;
-        ShowOnlyConnectedDevices = settings.ShowOnlyConnectedDevices;
-        ShowSystemSounds = settings.ShowSystemSounds;
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplySnapshot(snapshot);
+        });
     }
 
     /// <summary>
@@ -157,5 +152,41 @@ public sealed class SettingsViewModel : ObservableObject
         // 구성된 설정 모델을 파일에 저장합니다.
         _settingsService.Save(settings);
         _startupLaunchService.Apply(RunAtWindowsStartup);
+    }
+
+    /// <summary>
+    /// 설정 파일과 장치 목록을 백그라운드에서 읽어 스냅샷으로 만듭니다.
+    /// </summary>
+    private SettingsSnapshot BuildSnapshot()
+    {
+        return new SettingsSnapshot
+        {
+            Settings = _settingsService.Load(),
+            Devices = _audioDeviceCatalogService.GetAvailableOutputDevices().ToList()
+        };
+    }
+
+    /// <summary>
+    /// 백그라운드에서 읽은 설정 스냅샷을 현재 설정 창 상태에 반영합니다.
+    /// </summary>
+    private void ApplySnapshot(SettingsSnapshot snapshot)
+    {
+        AvailableDevices.Clear();
+        foreach (var device in snapshot.Devices)
+        {
+            AvailableDevices.Add(new AudioDeviceSelectionViewModel
+            {
+                Id = device.Id,
+                DisplayName = device.Name,
+                IsConnected = device.IsConnected,
+                IsSelected = snapshot.Settings.VisibleDeviceIds.Contains(device.Id)
+            });
+        }
+
+        StartMinimized = snapshot.Settings.StartMinimized;
+        RunAtWindowsStartup = snapshot.Settings.RunAtWindowsStartup;
+        MinimizeToTray = snapshot.Settings.MinimizeToTray;
+        ShowOnlyConnectedDevices = snapshot.Settings.ShowOnlyConnectedDevices;
+        ShowSystemSounds = snapshot.Settings.ShowSystemSounds;
     }
 }
