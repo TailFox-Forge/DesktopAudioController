@@ -133,6 +133,8 @@ public sealed class SettingsViewModel : ObservableObject
     /// </summary>
     public void Save()
     {
+        var currentSettings = _settingsService.Load();
+
         // 체크된 장치와 토글 옵션을 새 설정 모델로 묶습니다.
         // 화면 상태를 파일 저장용 모델로 재구성한 결과입니다.
         var settings = new AppSettings
@@ -145,7 +147,10 @@ public sealed class SettingsViewModel : ObservableObject
             RunAtWindowsStartup = RunAtWindowsStartup,
             MinimizeToTray = MinimizeToTray,
             ShowOnlyConnectedDevices = ShowOnlyConnectedDevices,
-            ShowSystemSounds = ShowSystemSounds
+            ShowSystemSounds = ShowSystemSounds,
+            ProgramAudioPreferences = currentSettings.ProgramAudioPreferences
+                .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
+                .ToList()
         };
 
         // 설정 파일 저장과 자동 실행 레지스트리 반영은 같은 사용자 의도이므로 함께 적용합니다.

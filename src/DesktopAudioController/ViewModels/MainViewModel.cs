@@ -26,6 +26,8 @@ public sealed class MainViewModel : ObservableObject
         public required bool HasConfiguredDevices { get; init; }
 
         public required IReadOnlyList<DeviceSnapshot> Devices { get; init; }
+
+        public required IReadOnlyList<ProgramAudioPreference> ProgramAudioPreferences { get; init; }
     }
 
     private sealed class StateSnapshot
@@ -50,6 +52,12 @@ public sealed class MainViewModel : ObservableObject
 
     // 마지막 전체 로드 시점의 시스템 사운드 표시 옵션입니다.
     private bool _showSystemSounds;
+
+    // 사용자가 저장한 프로그램별 볼륨/음소거 설정입니다.
+    private Dictionary<string, ProgramAudioPreference> _programAudioPreferencesByKey = new(StringComparer.OrdinalIgnoreCase);
+
+    // 한 번 복원한 라이브 세션은 같은 프로세스 수명 동안 반복 복원하지 않도록 추적합니다.
+    private readonly HashSet<string> _restoredSessionIds = new(StringComparer.Ordinal);
 
     // 오래 걸리는 백그라운드 스냅샷 작업이 늦게 끝나도 최신 요청만 UI에 적용하기 위한 세대 번호입니다.
     private int _loadGeneration;
@@ -186,7 +194,8 @@ public sealed class MainViewModel : ObservableObject
         {
             ShowSystemSounds = settings.ShowSystemSounds,
             HasConfiguredDevices = selectedIds.Count > 0,
-            Devices = visibleDevices
+            Devices = visibleDevices,
+            ProgramAudioPreferences = settings.ProgramAudioPreferences
         };
     }
 
@@ -259,6 +268,10 @@ public sealed class MainViewModel : ObservableObject
     private void ApplyLoadSnapshot(LoadSnapshot snapshot)
     {
         _showSystemSounds = snapshot.ShowSystemSounds;
+        _programAudioPreferencesByKey = snapshot.ProgramAudioPreferences
+            .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
+            .GroupBy(preference => preference.MatchKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
 
         VisibleDevices.Clear();
         foreach (var deviceSnapshot in snapshot.Devices)
@@ -295,6 +308,11 @@ public sealed class MainViewModel : ObservableObject
             }
             else
             {
+                foreach (var session in visibleDevice.Sessions)
+                {
+                    _restoredSessionIds.Remove(session.Id);
+                }
+
                 visibleDevice.Sessions.Clear();
             }
         }
@@ -322,7 +340,7 @@ public sealed class MainViewModel : ObservableObject
 
         foreach (var session in snapshot.Sessions)
         {
-            deviceViewModel.Sessions.Add(CreateSessionViewModel(device.Id, session));
+            deviceViewModel.Sessions.Add(CreateSessionViewModel(device.Id, GetEffectiveSessionSnapshot(device.Id, session)));
         }
 
         return deviceViewModel;
@@ -341,12 +359,14 @@ public sealed class MainViewModel : ObservableObject
             var session = device.Sessions[index];
             if (!snapshotById.ContainsKey(session.Id))
             {
+                _restoredSessionIds.Remove(session.Id);
                 device.Sessions.RemoveAt(index);
             }
         }
 
-        foreach (var snapshot in snapshotById.Values)
+        foreach (var rawSnapshot in snapshotById.Values)
         {
+            var snapshot = GetEffectiveSessionSnapshot(device.Id, rawSnapshot);
             if (existingById.TryGetValue(snapshot.Id, out var existingSession))
             {
                 // cachedIcon은 이미 메모리에 올라와 있으면 즉시 쓸 수 있는 아이콘입니다.
@@ -377,6 +397,136 @@ public sealed class MainViewModel : ObservableObject
 
             device.Sessions.Add(CreateSessionViewModel(device.Id, snapshot));
         }
+    }
+
+    /// <summary>
+    /// 저장된 프로그램 설정이 있으면 세션 첫 등장 시 한 번만 복원하고, UI에도 그 값을 우선 반영합니다.
+    /// </summary>
+    private AudioSessionInfo GetEffectiveSessionSnapshot(string deviceId, AudioSessionInfo session)
+    {
+        if (!TryGetStoredSessionPreference(session, out var preference))
+        {
+            return session;
+        }
+
+        if (_restoredSessionIds.Contains(session.Id))
+        {
+            return session;
+        }
+
+        _restoredSessionIds.Add(session.Id);
+
+        if (session.Volume == preference.Volume && session.IsMuted == preference.IsMuted)
+        {
+            return session;
+        }
+
+        AppLog.Info(
+            "MainViewModel",
+            $"저장된 프로그램 설정 복원 deviceId={deviceId} sessionId={session.Id} displayName={session.DisplayName} volume={preference.Volume} muted={preference.IsMuted}");
+
+        _ = RunAudioControlAsync(
+            $"프로그램 설정 복원 deviceId={deviceId} sessionId={session.Id}",
+            () =>
+            {
+                _audioSessionService.SetSessionVolume(deviceId, session.Id, preference.Volume);
+                _audioSessionService.SetSessionMuted(deviceId, session.Id, preference.IsMuted);
+            });
+
+        return new AudioSessionInfo
+        {
+            Id = session.Id,
+            DisplayName = session.DisplayName,
+            ExecutablePath = session.ExecutablePath,
+            Volume = preference.Volume,
+            IsMuted = preference.IsMuted
+        };
+    }
+
+    /// <summary>
+    /// 저장소에서 현재 세션과 매칭되는 프로그램별 설정을 찾습니다.
+    /// </summary>
+    private bool TryGetStoredSessionPreference(AudioSessionInfo session, out ProgramAudioPreference preference)
+    {
+        var matchKey = CreateProgramPreferenceMatchKey(session.ExecutablePath, session.DisplayName);
+        if (matchKey is not null && _programAudioPreferencesByKey.TryGetValue(matchKey, out preference!))
+        {
+            return true;
+        }
+
+        preference = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// 사용자 조작으로 바뀐 프로그램별 볼륨/음소거 값을 설정 파일에 저장합니다.
+    /// </summary>
+    private void PersistSessionPreference(string deviceId, string sessionId, int? volume = null, bool? muted = null)
+    {
+        var session = VisibleDevices
+            .FirstOrDefault(visibleDevice => visibleDevice.Id == deviceId)?
+            .Sessions
+            .FirstOrDefault(currentSession => currentSession.Id == sessionId);
+        if (session is null)
+        {
+            AppLog.Debug("MainViewModel", $"프로그램 설정 저장 생략: 세션 없음 deviceId={deviceId} sessionId={sessionId}");
+            return;
+        }
+
+        var matchKey = CreateProgramPreferenceMatchKey(session.ExecutablePath, session.DisplayName);
+        if (matchKey is null)
+        {
+            AppLog.Debug("MainViewModel", $"프로그램 설정 저장 생략: 매칭 키 없음 deviceId={deviceId} sessionId={sessionId}");
+            return;
+        }
+
+        if (!_programAudioPreferencesByKey.TryGetValue(matchKey, out var preference))
+        {
+            preference = new ProgramAudioPreference
+            {
+                MatchKey = matchKey
+            };
+        }
+
+        preference.ExecutablePath = session.ExecutablePath;
+        preference.DisplayName = session.DisplayName;
+        preference.Volume = volume ?? session.Volume;
+        preference.IsMuted = muted ?? session.IsMuted;
+        _programAudioPreferencesByKey[matchKey] = preference;
+
+        try
+        {
+            var settings = _settingsService.Load();
+            settings.ProgramAudioPreferences = _programAudioPreferencesByKey.Values
+                .OrderBy(preferenceItem => preferenceItem.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _settingsService.Save(settings);
+            AppLog.Info(
+                "MainViewModel",
+                $"프로그램 설정 저장 완료 deviceId={deviceId} sessionId={sessionId} matchKey={matchKey} volume={preference.Volume} muted={preference.IsMuted}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainViewModel", $"프로그램 설정 저장 실패 deviceId={deviceId} sessionId={sessionId} matchKey={matchKey}", exception);
+        }
+    }
+
+    /// <summary>
+    /// 프로그램 재실행 뒤에도 유지될 수 있는 안정적인 저장 키를 계산합니다.
+    /// </summary>
+    private static string? CreateProgramPreferenceMatchKey(string? executablePath, string displayName)
+    {
+        if (!string.IsNullOrWhiteSpace(executablePath))
+        {
+            return $"path:{executablePath.Trim()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            return $"name:{displayName.Trim()}";
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -521,6 +671,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void OnSessionVolumeChanged(string deviceId, string sessionId, int volume)
     {
+        PersistSessionPreference(deviceId, sessionId, volume: volume);
         AppLog.Debug("MainViewModel", $"세션 볼륨 서비스 전달 deviceId={deviceId} sessionId={sessionId} volume={volume}");
         _ = RunAudioControlAsync(
             $"세션 볼륨 제어 deviceId={deviceId} sessionId={sessionId} volume={volume}",
@@ -532,6 +683,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void OnSessionMutedChanged(string deviceId, string sessionId, bool muted)
     {
+        PersistSessionPreference(deviceId, sessionId, muted: muted);
         AppLog.Info("MainViewModel", $"세션 음소거 서비스 전달 deviceId={deviceId} sessionId={sessionId} muted={muted}");
         _ = RunAudioControlAsync(
             $"세션 음소거 제어 deviceId={deviceId} sessionId={sessionId} muted={muted}",
