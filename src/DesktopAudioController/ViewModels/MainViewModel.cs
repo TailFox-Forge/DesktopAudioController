@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using DesktopAudioController.Infrastructure;
 using DesktopAudioController.Models;
 using DesktopAudioController.Services;
@@ -50,6 +51,12 @@ public sealed class MainViewModel : ObservableObject
     // 마지막 전체 로드 시점의 시스템 사운드 표시 옵션입니다.
     private bool _showSystemSounds;
 
+    // 오래 걸리는 백그라운드 스냅샷 작업이 늦게 끝나도 최신 요청만 UI에 적용하기 위한 세대 번호입니다.
+    private int _loadGeneration;
+
+    // 상태 부분 갱신 역시 마지막 요청만 반영하도록 별도 세대 번호를 둡니다.
+    private int _stateGeneration;
+
     /// <summary>
     /// 메인 화면이 사용할 서비스들을 주입받습니다.
     /// </summary>
@@ -92,9 +99,20 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public async Task LoadAsync()
     {
+        var generation = Interlocked.Increment(ref _loadGeneration);
         var snapshot = await Task.Run(BuildLoadSnapshot);
+        if (generation != Volatile.Read(ref _loadGeneration))
+        {
+            return;
+        }
+
         await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
         {
+            if (generation != Volatile.Read(ref _loadGeneration))
+            {
+                return;
+            }
+
             ApplyLoadSnapshot(snapshot);
         });
     }
@@ -116,11 +134,31 @@ public sealed class MainViewModel : ObservableObject
     {
         var visibleDeviceIds = VisibleDevices.Select(device => device.Id).ToList();
         var showSystemSounds = _showSystemSounds;
+        var generation = Interlocked.Increment(ref _stateGeneration);
         var snapshot = await Task.Run(() => BuildStateSnapshot(visibleDeviceIds, showSystemSounds));
+        if (generation != Volatile.Read(ref _stateGeneration))
+        {
+            return;
+        }
+
         await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
         {
+            if (generation != Volatile.Read(ref _stateGeneration))
+            {
+                return;
+            }
+
             ApplyStateSnapshot(snapshot);
         });
+    }
+
+    /// <summary>
+    /// 타임아웃된 백그라운드 스냅샷이 늦게 돌아와도 이후 UI를 덮어쓰지 못하게 무효화합니다.
+    /// </summary>
+    public void InvalidatePendingSnapshots()
+    {
+        Interlocked.Increment(ref _loadGeneration);
+        Interlocked.Increment(ref _stateGeneration);
     }
 
     /// <summary>
@@ -395,12 +433,33 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Core Audio 제어 호출은 UI 스레드를 막지 않도록 백그라운드에서 실행합니다.
+    /// </summary>
+    private static Task RunAudioControlAsync(string operation, Action action)
+    {
+        return Task.Run(() =>
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("MainViewModel", $"{operation} 실패", exception);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
     /// 장치 마스터 볼륨 변경을 서비스 계층으로 전달합니다.
     /// </summary>
     private void OnDeviceVolumeChanged(string deviceId, int volume)
     {
         AppLog.Debug("MainViewModel", $"장치 볼륨 서비스 전달 deviceId={deviceId} volume={volume}");
-        _audioDeviceCatalogService.SetVolume(deviceId, volume);
+        _ = RunAudioControlAsync(
+            $"장치 볼륨 제어 deviceId={deviceId} volume={volume}",
+            () => _audioDeviceCatalogService.SetVolume(deviceId, volume));
     }
 
     /// <summary>
@@ -409,7 +468,9 @@ public sealed class MainViewModel : ObservableObject
     private void OnDeviceMutedChanged(string deviceId, bool muted)
     {
         AppLog.Info("MainViewModel", $"장치 음소거 서비스 전달 deviceId={deviceId} muted={muted}");
-        _audioDeviceCatalogService.SetMuted(deviceId, muted);
+        _ = RunAudioControlAsync(
+            $"장치 음소거 제어 deviceId={deviceId} muted={muted}",
+            () => _audioDeviceCatalogService.SetMuted(deviceId, muted));
     }
 
     /// <summary>
@@ -427,7 +488,9 @@ public sealed class MainViewModel : ObservableObject
     private void OnSessionVolumeChanged(string deviceId, string sessionId, int volume)
     {
         AppLog.Debug("MainViewModel", $"세션 볼륨 서비스 전달 deviceId={deviceId} sessionId={sessionId} volume={volume}");
-        _audioSessionService.SetSessionVolume(deviceId, sessionId, volume);
+        _ = RunAudioControlAsync(
+            $"세션 볼륨 제어 deviceId={deviceId} sessionId={sessionId} volume={volume}",
+            () => _audioSessionService.SetSessionVolume(deviceId, sessionId, volume));
     }
 
     /// <summary>
@@ -436,6 +499,8 @@ public sealed class MainViewModel : ObservableObject
     private void OnSessionMutedChanged(string deviceId, string sessionId, bool muted)
     {
         AppLog.Info("MainViewModel", $"세션 음소거 서비스 전달 deviceId={deviceId} sessionId={sessionId} muted={muted}");
-        _audioSessionService.SetSessionMuted(deviceId, sessionId, muted);
+        _ = RunAudioControlAsync(
+            $"세션 음소거 제어 deviceId={deviceId} sessionId={sessionId} muted={muted}",
+            () => _audioSessionService.SetSessionMuted(deviceId, sessionId, muted));
     }
 }

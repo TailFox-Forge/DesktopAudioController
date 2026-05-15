@@ -65,6 +65,9 @@ public partial class MainWindow : Window
     // 일부 가상 장치는 기본 장치 변경 후 기본 장치 이벤트를 늦게 보내거나 보내지 않아, 짧게 기다린 뒤 상태를 한 번 더 맞춥니다.
     private static readonly TimeSpan DefaultDeviceRefreshDelay = TimeSpan.FromMilliseconds(250);
 
+    // Core Audio 조회가 비정상적으로 매달릴 때 전체 UI 갱신 직렬화가 영구 정지되지 않도록 타임아웃을 둡니다.
+    private static readonly TimeSpan RefreshOperationTimeout = TimeSpan.FromSeconds(2);
+
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
     /// </summary>
@@ -312,6 +315,7 @@ public partial class MainWindow : Window
         AppLog.Info("MainWindow", $"기본 장치 변경 시도 deviceId={device.Id} name={device.Name}");
         // 선택된 장치를 Windows 기본 출력 장치로 변경합니다.
         device.SetAsDefault();
+        PromoteDefaultDeviceLocally(device.Id);
         AppLog.Info("MainWindow", $"기본 장치 변경 요청 완료, 토폴로지 이벤트 대기 deviceId={device.Id}");
         _ = RefreshAfterDefaultDeviceChangeAsync(device.Id);
     }
@@ -720,10 +724,15 @@ public partial class MainWindow : Window
         try
         {
             AppLog.Debug("MainWindow", $"전체 새로고침 시작 reason={reason}");
-            await _viewModel.LoadAsync();
+            await _viewModel.LoadAsync().WaitAsync(RefreshOperationTimeout);
             UpdateEmptyState();
             RefreshTrayMenu();
             AppLog.Debug("MainWindow", $"전체 새로고침 완료 reason={reason}");
+        }
+        catch (TimeoutException exception)
+        {
+            _viewModel.InvalidatePendingSnapshots();
+            AppLog.Error("MainWindow", $"전체 새로고침 타임아웃 reason={reason}", exception);
         }
         catch (Exception exception)
         {
@@ -743,8 +752,13 @@ public partial class MainWindow : Window
         await _viewRefreshSemaphore.WaitAsync();
         try
         {
-            await _viewModel.RefreshStateOnlyAsync();
+            await _viewModel.RefreshStateOnlyAsync().WaitAsync(RefreshOperationTimeout);
             RefreshTrayMenu();
+        }
+        catch (TimeoutException exception)
+        {
+            _viewModel.InvalidatePendingSnapshots();
+            AppLog.Error("MainWindow", "상태 부분 새로고침 타임아웃", exception);
         }
         catch (Exception exception)
         {
@@ -754,5 +768,23 @@ public partial class MainWindow : Window
         {
             _viewRefreshSemaphore.Release();
         }
+    }
+
+    /// <summary>
+    /// 기본 장치 변경 직후 다음 새로고침이 늦더라도 버튼 상태가 반대로 굳지 않도록 UI만 먼저 맞춥니다.
+    /// </summary>
+    private void PromoteDefaultDeviceLocally(string selectedDeviceId)
+    {
+        foreach (var device in _viewModel.VisibleDevices)
+        {
+            device.UpdateSnapshot(
+                device.Name,
+                device.Id == selectedDeviceId,
+                device.IsConnected,
+                device.Volume,
+                device.IsMuted);
+        }
+
+        RefreshTrayMenu();
     }
 }
