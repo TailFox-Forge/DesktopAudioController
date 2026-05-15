@@ -29,6 +29,9 @@ public partial class MainWindow : Window
     // 시스템 트레이 영역에 표시할 아이콘 인스턴스입니다.
     private readonly Forms.NotifyIcon _notifyIcon;
 
+    // 오디오 콜백 스레드와 UI 스레드가 함께 접근하는 새로고침 큐 상태를 직렬화하는 잠금 객체입니다.
+    private readonly object _notificationRefreshSyncRoot = new();
+
     // 같은 틱에서 중복 새로고침 요청이 들어올 때 한 번으로 합치기 위한 플래그입니다.
     private bool _isNotificationRefreshQueued;
 
@@ -205,24 +208,47 @@ public partial class MainWindow : Window
     /// </summary>
     private void AudioNotificationService_OnChanged(object? sender, AudioNotificationChangedEventArgs e)
     {
-        if (_isNotificationRefreshQueued)
+        // shouldScheduleRefresh는 이번 콜백이 Dispatcher 작업을 새로 예약해야 하는지 여부입니다.
+        var shouldScheduleRefresh = false;
+
+        // 오디오 콜백은 서로 다른 스레드에서 거의 동시에 들어올 수 있으므로
+        // 읽기-수정-쓰기 전체를 lock으로 감싸 원자적으로 처리합니다.
+        lock (_notificationRefreshSyncRoot)
         {
-            if (e.Kind == AudioNotificationChangeKind.Topology)
+            if (_isNotificationRefreshQueued)
             {
-                _pendingNotificationKind = AudioNotificationChangeKind.Topology;
+                // 이미 예약된 작업이 있으면 더 큰 범위의 Topology 변경만 승격 저장합니다.
+                if (e.Kind == AudioNotificationChangeKind.Topology)
+                {
+                    _pendingNotificationKind = AudioNotificationChangeKind.Topology;
+                }
+
+                return;
             }
 
-            return;
+            _isNotificationRefreshQueued = true;
+            _pendingNotificationKind = e.Kind;
+            shouldScheduleRefresh = true;
         }
 
-        _isNotificationRefreshQueued = true;
-        _pendingNotificationKind = e.Kind;
+        if (!shouldScheduleRefresh)
+        {
+            return;
+        }
 
         // Core Audio 콜백은 UI 스레드가 아닐 수 있으므로 Dispatcher를 통해 화면 갱신을 예약합니다.
         Dispatcher.InvokeAsync(() =>
         {
-            _isNotificationRefreshQueued = false;
-            if (_pendingNotificationKind == AudioNotificationChangeKind.Topology)
+            // pendingKind는 현재 큐에 누적된 새로고침 범위를 잠금 안에서 스냅샷으로 가져온 값입니다.
+            AudioNotificationChangeKind pendingKind;
+            lock (_notificationRefreshSyncRoot)
+            {
+                pendingKind = _pendingNotificationKind;
+                _pendingNotificationKind = AudioNotificationChangeKind.State;
+                _isNotificationRefreshQueued = false;
+            }
+
+            if (pendingKind == AudioNotificationChangeKind.Topology)
             {
                 _viewModel.Load();
                 UpdateEmptyState();
