@@ -264,12 +264,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 메인 창 높이가 주 모니터 작업 영역을 넘지 않게 제한합니다.
+    /// 메인 창을 처음 열 때 목표 높이 1080을 기준으로 잡되, 주 모니터 작업 영역을 넘지 않게 제한합니다.
     /// </summary>
     private void ApplyPrimaryMonitorHeightLimit()
     {
         var primaryWorkAreaHeight = SystemParameters.WorkArea.Height;
-        MaxHeight = Math.Max(MinHeight, primaryWorkAreaHeight);
+        var targetHeight = Math.Min(1080d, primaryWorkAreaHeight);
+        MinHeight = targetHeight;
+        MaxHeight = primaryWorkAreaHeight;
     }
 
     /// <summary>
