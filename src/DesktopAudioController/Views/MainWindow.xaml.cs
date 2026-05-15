@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using DesktopAudioController.Services;
@@ -41,6 +42,9 @@ public partial class MainWindow : Window
     // 사용자 의도로 종료하는 중인지 여부입니다. false면 닫기를 트레이 최소화로 전환합니다.
     private bool _isExitRequested;
 
+    // 사용자를 GitHub 릴리즈 목록으로 보내는 고정 URL입니다.
+    private static readonly string ReleasesPageUrl = "https://github.com/TailFox-Forge/desktop-audio-controller/releases";
+
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
     /// </summary>
@@ -61,6 +65,7 @@ public partial class MainWindow : Window
         Loaded += MainWindow_OnLoaded;
         StateChanged += MainWindow_OnStateChanged;
         Closing += MainWindow_OnClosing;
+        VersionText.Text = $"버전 {GetApplicationVersionText()}";
         UpdateEmptyState();
     }
 
@@ -78,6 +83,14 @@ public partial class MainWindow : Window
     private void SettingsButton_OnClick(object sender, RoutedEventArgs e)
     {
         OpenSettingsInternal();
+    }
+
+    /// <summary>
+    /// 상단 릴리즈 버튼 클릭 시 GitHub 릴리즈 페이지를 기본 브라우저로 엽니다.
+    /// </summary>
+    private void OpenReleasePageButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        TryOpenReleasePage();
     }
 
     /// <summary>
@@ -377,6 +390,24 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// GitHub 릴리즈 페이지를 기본 브라우저로 엽니다.
+    /// </summary>
+    private static void TryOpenReleasePage()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(ReleasesPageUrl)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // 브라우저 실행 실패는 치명 오류가 아니므로 조용히 무시합니다.
+        }
+    }
+
+    /// <summary>
     /// 시스템 트레이 아이콘과 컨텍스트 메뉴를 생성합니다.
     /// </summary>
     private Forms.NotifyIcon CreateNotifyIcon()
@@ -539,5 +570,30 @@ public partial class MainWindow : Window
     private static string TrimNotifyText(string text)
     {
         return text.Length <= 32 ? text : $"{text[..29]}...";
+    }
+
+    /// <summary>
+    /// 현재 실행 중인 어셈블리에서 사용자에게 보여줄 버전 문자열을 계산합니다.
+    /// </summary>
+    private static string GetApplicationVersionText()
+    {
+        // assembly는 현재 실행 중인 WPF 앱의 진입 어셈블리입니다.
+        var assembly = Assembly.GetExecutingAssembly();
+
+        // informationalVersion은 prerelease 접미사를 포함한 사람이 읽기 좋은 버전 문자열입니다.
+        var informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            // SourceLink 등이 붙여준 build metadata는 화면에 불필요하므로 '+' 뒤는 잘라냅니다.
+            var metadataSeparatorIndex = informationalVersion.IndexOf('+');
+            return metadataSeparatorIndex >= 0
+                ? informationalVersion[..metadataSeparatorIndex]
+                : informationalVersion;
+        }
+
+        return assembly.GetName().Version?.ToString() ?? "알 수 없음";
     }
 }

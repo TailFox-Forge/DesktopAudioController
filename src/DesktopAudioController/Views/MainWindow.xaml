@@ -10,24 +10,41 @@
         WindowStartupLocation="CenterScreen">
     <DockPanel Margin="16">
         <!-- 상단 헤더와 공통 액션 버튼 영역입니다. -->
-        <StackPanel DockPanel.Dock="Top"
-                    Orientation="Horizontal"
-                    Margin="0,0,0,16">
-            <TextBlock VerticalAlignment="Center"
-                       FontSize="24"
-                       FontWeight="SemiBold"
-                       Text="DesktopAudioController" />
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Right">
+        <Grid DockPanel.Dock="Top"
+              Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock VerticalAlignment="Center"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Text="DesktopAudioController" />
+                <TextBlock x:Name="VersionText"
+                           Margin="0,4,0,0"
+                           Foreground="#666"
+                           Text="버전 확인 중..." />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top">
                 <Button Width="88"
-                        Margin="16,0,8,0"
+                        Margin="0,0,8,0"
+                        Click="OpenReleasePageButton_OnClick"
+                        Content="릴리즈" />
+                <Button Width="88"
+                        Margin="0,0,8,0"
                         Click="RefreshButton_OnClick"
                         Content="새로고침" />
                 <Button Width="88"
                         Click="SettingsButton_OnClick"
                         Content="설정" />
             </StackPanel>
-        </StackPanel>
+        </Grid>
 
         <!-- 본문 영역은 빈 상태 안내와 장치 카드 목록을 같은 영역에서 전환합니다. -->
         <Border Padding="12"
