@@ -75,6 +75,7 @@ public partial class MainWindow : Window
         _isStartupLaunch = isStartupLaunch;
         _forceVisibleOnStartup = forceVisibleOnStartup;
         _notifyIcon = CreateNotifyIcon();
+        RefreshTrayMenu();
         DataContext = _viewModel;
         _audioNotificationService.Changed += AudioNotificationService_OnChanged;
         Loaded += MainWindow_OnLoaded;
@@ -451,7 +452,6 @@ public partial class MainWindow : Window
 
         notifyIcon.ContextMenuStrip = new Forms.ContextMenuStrip();
         notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
-        RefreshTrayMenu();
         return notifyIcon;
     }
 
