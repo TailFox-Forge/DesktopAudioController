@@ -200,13 +200,29 @@ public sealed class MainViewModel : ObservableObject
             {
                 if (existingById.TryGetValue(snapshot.Id, out var existingSession))
                 {
+                    // cachedIcon은 이미 메모리에 올라와 있으면 즉시 쓸 수 있는 아이콘입니다.
+                    var cachedIcon = _appIconService.TryGetCachedIcon(snapshot.ExecutablePath);
+
+                    // iconImageForSnapshot은 경로가 그대로일 때 기존 아이콘을 유지해 불필요한 깜빡임을 줄이기 위한 값입니다.
+                    var iconImageForSnapshot =
+                        cachedIcon ??
+                        (string.Equals(existingSession.ExecutablePath, snapshot.ExecutablePath, StringComparison.OrdinalIgnoreCase)
+                            ? existingSession.IconImage
+                            : null);
+
                     existingSession.UpdateSnapshot(
                         snapshot.DisplayName,
                         snapshot.ExecutablePath,
-                        _appIconService.TryGetCachedIcon(snapshot.ExecutablePath),
+                        iconImageForSnapshot,
                         snapshot.Volume,
                         snapshot.IsMuted);
-                    _ = LoadSessionIconAsync(existingSession);
+
+                    // 캐시에 아이콘이 없을 때만 비동기 로딩을 예약합니다.
+                    if (cachedIcon is null)
+                    {
+                        _ = LoadSessionIconAsync(existingSession);
+                    }
+
                     continue;
                 }
 
@@ -224,18 +240,26 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private AudioSessionViewModel CreateSessionViewModel(string deviceId, AudioSessionInfo session)
     {
+        // cachedIcon은 캐시에 이미 있는 경우 초기 렌더링에 바로 사용할 수 있는 값입니다.
+        var cachedIcon = _appIconService.TryGetCachedIcon(session.ExecutablePath);
+
         var viewModel = new AudioSessionViewModel(
             deviceId,
             session.Id,
             session.DisplayName,
             session.ExecutablePath,
-            _appIconService.TryGetCachedIcon(session.ExecutablePath),
+            cachedIcon,
             session.Volume,
             session.IsMuted,
             OnSessionVolumeChanged,
             OnSessionMutedChanged);
 
-        _ = LoadSessionIconAsync(viewModel);
+        // 캐시에 없을 때만 백그라운드 아이콘 적재를 시작합니다.
+        if (cachedIcon is null)
+        {
+            _ = LoadSessionIconAsync(viewModel);
+        }
+
         return viewModel;
     }
 
