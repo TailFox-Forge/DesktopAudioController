@@ -73,7 +73,7 @@
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            Foreground="#666"
-                           Text="메인 화면에 표시할 출력 장치가 없습니다. 설정에서 장치를 고르세요."
+                           Text="메인 화면에 표시할 출력 장치가 없습니다. 상단 설정에서 장치를 고른 뒤 다시 돌아오세요."
                            TextAlignment="Center"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />

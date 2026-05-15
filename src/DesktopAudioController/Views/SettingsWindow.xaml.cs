@@ -40,7 +40,7 @@ public partial class SettingsWindow : Window
             AppLog.Error("SettingsWindow", "설정 파일 저장 실패", exception);
             System.Windows.MessageBox.Show(
                 this,
-                $"설정을 저장하지 못했습니다.\n\n저장 경로: {exception.SettingsFilePath}\n원인: {exception.InnerException?.Message ?? exception.Message}",
+                $"설정을 파일에 저장하지 못했습니다.\n\n저장 경로: {exception.SettingsFilePath}\n원인: {exception.InnerException?.Message ?? exception.Message}\n\n경로 접근 권한과 디스크 상태를 확인한 뒤 다시 시도하세요.",
                 "설정 저장 실패",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -50,7 +50,7 @@ public partial class SettingsWindow : Window
             AppLog.Error("SettingsWindow", "자동 실행 레지스트리 반영 실패", exception);
             System.Windows.MessageBox.Show(
                 this,
-                $"Windows 자동 실행 옵션을 적용하지 못했습니다.\n\n레지스트리 경로: {exception.RegistryPath}\n값 이름: {exception.ValueName}\n원인: {exception.InnerException?.Message ?? exception.Message}",
+                $"Windows 자동 실행 옵션을 적용하지 못했습니다.\n\n레지스트리 경로: {exception.RegistryPath}\n값 이름: {exception.ValueName}\n원인: {exception.InnerException?.Message ?? exception.Message}\n\n자동 실행을 끈 상태로 먼저 사용한 뒤 나중에 다시 시도해도 됩니다.",
                 "자동 실행 설정 실패",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -60,7 +60,7 @@ public partial class SettingsWindow : Window
             AppLog.Error("SettingsWindow", "설정 저장 중 예상하지 못한 오류", exception);
             System.Windows.MessageBox.Show(
                 this,
-                $"설정을 저장하는 중 예상하지 못한 오류가 발생했습니다.\n\n원인: {exception.Message}",
+                $"설정을 저장하는 중 예상하지 못한 오류가 발생했습니다.\n\n원인: {exception.Message}\n\n같은 문제가 반복되면 settings.json 경로와 로그를 함께 확인하세요.",
                 "설정 저장 실패",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);

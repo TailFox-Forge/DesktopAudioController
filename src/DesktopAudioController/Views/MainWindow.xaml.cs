@@ -180,7 +180,7 @@ public partial class MainWindow : Window
 
         var result = System.Windows.MessageBox.Show(
             this,
-            $"현재 버전: {currentVersion}\n새 버전: {updateCheckResult.LatestVersion}\n\n이 앱은 자동 설치 대신 zip 덮어쓰기 방식으로 업데이트합니다.\n1. 새 zip 다운로드\n2. 실행 중인 앱 종료\n3. 압축 해제 후 기존 실행 폴더에 덮어쓰기\n4. DesktopAudioController.exe 다시 실행\n\n지금 다운로드 페이지를 열까요?",
+            $"현재 버전: {currentVersion}\n새 버전: {updateCheckResult.LatestVersion}\n\n이 앱은 설치 프로그램 대신 zip 덮어쓰기 방식으로 업데이트합니다.\n1. 새 zip 다운로드\n2. 실행 중인 앱 종료\n3. 압축 해제 후 기존 실행 폴더에 덮어쓰기\n4. DesktopAudioController.exe 다시 실행\n\n지금 다운로드 페이지를 열까요?",
             "업데이트 안내",
             System.Windows.MessageBoxButton.OKCancel,
             System.Windows.MessageBoxImage.Information);
@@ -427,7 +427,7 @@ public partial class MainWindow : Window
         // 사용자는 다시 시도 / 설정 열기 / 취소 중 하나를 선택할 수 있습니다.
         var result = System.Windows.MessageBox.Show(
             this,
-            $"기본 출력 장치를 변경하지 못했습니다.\n\n원인 추정: {failureReason}\n대상 장치: {device.Name}\n상세 메시지: {exception.Message}\n\n예: 한 번 더 시도\n아니오: Windows 소리 설정 열기\n취소: 닫기",
+            $"기본 출력 장치를 바꾸지 못했습니다.\n\n대상 장치: {device.Name}\n원인 추정: {failureReason}\n상세 메시지: {exception.Message}\n\n예: 다시 시도\n아니오: Windows 소리 설정 열기\n취소: 이 창 닫기",
             "기본 장치 변경 실패",
             System.Windows.MessageBoxButton.YesNoCancel,
             System.Windows.MessageBoxImage.Warning);
@@ -442,7 +442,7 @@ public partial class MainWindow : Window
             {
                 System.Windows.MessageBox.Show(
                     this,
-                    $"재시도에도 실패했습니다.\n\n원인 추정: {ClassifyDefaultDeviceFailure(retryException)}\n상세 메시지: {retryException.Message}",
+                    $"재시도에도 실패했습니다.\n\n원인 추정: {ClassifyDefaultDeviceFailure(retryException)}\n상세 메시지: {retryException.Message}\n\nWindows 소리 설정에서 직접 변경할 수 있습니다.",
                     "기본 장치 변경 재시도 실패",
                     System.Windows.MessageBoxButton.OK,
                     System.Windows.MessageBoxImage.Error);
@@ -632,20 +632,28 @@ public partial class MainWindow : Window
 
         var statusItem = new Forms.ToolStripMenuItem(
             defaultDevice is null
-                ? "기본 장치: 없음"
-                : $"기본 장치: {defaultDevice.Name}")
+                ? "현재 기본 장치: 없음"
+                : $"현재 기본 장치: {defaultDevice.Name}")
         {
             Enabled = false
         };
 
         trayMenu.Items.Add(statusItem);
-        trayMenu.Items.Add("열기", null, (_, _) => RunOnUiThread(RestoreFromTray));
-        trayMenu.Items.Add("설정", null, (_, _) => RunOnUiThread(() =>
+        if (_minimizeToTray)
+        {
+            trayMenu.Items.Add(new Forms.ToolStripMenuItem("닫기 버튼 -> 트레이 최소화")
+            {
+                Enabled = false
+            });
+        }
+
+        trayMenu.Items.Add("창 열기", null, (_, _) => RunOnUiThread(RestoreFromTray));
+        trayMenu.Items.Add("설정 열기", null, (_, _) => RunOnUiThread(() =>
         {
             RestoreFromTray();
             _ = OpenSettingsInternalAsync();
         }));
-        trayMenu.Items.Add("새로고침", null, (_, _) => RunOnUiThread(() =>
+        trayMenu.Items.Add("장치 다시 읽기", null, (_, _) => RunOnUiThread(() =>
         {
             _ = RefreshStateViewAsync("tray_refresh");
         }));
@@ -655,13 +663,14 @@ public partial class MainWindow : Window
             trayMenu.Items.Add(new Forms.ToolStripSeparator());
         }
 
-        var deviceMenu = new Forms.ToolStripMenuItem("기본 장치 빠른 전환");
-        var muteMenu = new Forms.ToolStripMenuItem("장치 음소거 토글");
+        var deviceMenu = new Forms.ToolStripMenuItem("기본 출력 바꾸기");
+        var muteMenu = new Forms.ToolStripMenuItem("장치 음소거");
         foreach (var device in _viewModel.VisibleDevices)
         {
             // localDevice는 foreach 캡처 안전성을 위한 지역 참조입니다.
             var localDevice = device;
-            var defaultItem = new Forms.ToolStripMenuItem(localDevice.Name)
+            var menuLabel = BuildTrayDeviceMenuLabel(localDevice.Name, localDevice.IsConnected);
+            var defaultItem = new Forms.ToolStripMenuItem(menuLabel)
             {
                 Checked = localDevice.IsDefault,
                 Enabled = localDevice.IsConnected
@@ -679,7 +688,7 @@ public partial class MainWindow : Window
                 }
             });
 
-            var muteItem = new Forms.ToolStripMenuItem(localDevice.Name)
+            var muteItem = new Forms.ToolStripMenuItem(menuLabel)
             {
                 Checked = localDevice.IsMuted,
                 Enabled = localDevice.IsConnected
@@ -705,7 +714,7 @@ public partial class MainWindow : Window
         trayMenu.Items.Add(deviceMenu);
         trayMenu.Items.Add(muteMenu);
         trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        trayMenu.Items.Add("종료", null, (_, _) => ExitApplication());
+        trayMenu.Items.Add("앱 종료", null, (_, _) => ExitApplication());
     }
 
     /// <summary>
@@ -714,6 +723,11 @@ public partial class MainWindow : Window
     private static string TrimNotifyText(string text)
     {
         return text.Length <= 32 ? text : $"{text[..29]}...";
+    }
+
+    private static string BuildTrayDeviceMenuLabel(string deviceName, bool isConnected)
+    {
+        return isConnected ? deviceName : $"{deviceName} (연결 안 됨)";
     }
 
     /// <summary>

@@ -150,6 +150,11 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// </summary>
     private string ResolveDisplayName(AudioSessionControl session)
     {
+        if (session.IsSystemSoundsSession)
+        {
+            return "Windows 시스템 사운드";
+        }
+
         // displayName은 앱이 직접 제공한 표시 이름입니다.
         var displayName = session.DisplayName;
         if (!string.IsNullOrWhiteSpace(displayName))
