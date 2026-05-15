@@ -31,6 +31,9 @@ public partial class App : System.Windows.Application
     // Windows 자동 실행 레지스트리 등록을 제어하는 서비스입니다.
     private IStartupLaunchService? _startupLaunchService;
 
+    // GitHub 릴리즈 기준 새 버전 여부를 확인하는 서비스입니다.
+    private IUpdateCheckService? _updateCheckService;
+
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
     /// </summary>
@@ -46,6 +49,7 @@ public partial class App : System.Windows.Application
         _audioNotificationService = new NativeAudioNotificationService();
         _appIconService = new CachedAppIconService();
         _startupLaunchService = new RegistryStartupLaunchService();
+        _updateCheckService = new GitHubReleaseUpdateCheckService();
         _audioNotificationService.Start();
 
         // zip 배포 특성상 실행 경로가 바뀔 수 있으므로, 자동 실행이 켜져 있으면 현재 exe 경로로 재동기화합니다.
@@ -75,7 +79,8 @@ public partial class App : System.Windows.Application
             mainViewModel,
             CreateSettingsViewModel,
             _audioNotificationService,
-            _settingsService);
+            _settingsService,
+            _updateCheckService);
         MainWindow = mainWindow;
         mainWindow.Show();
 

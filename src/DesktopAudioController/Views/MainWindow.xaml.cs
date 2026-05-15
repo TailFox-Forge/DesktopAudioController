@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     // 시작 최소화, 트레이 최소화 같은 창 동작 옵션을 읽는 설정 서비스입니다.
     private readonly ISettingsService _settingsService;
 
+    // GitHub 릴리즈 기준 새 버전 존재 여부를 확인하는 서비스입니다.
+    private readonly IUpdateCheckService _updateCheckService;
+
     // 시스템 트레이 영역에 표시할 아이콘 인스턴스입니다.
     private readonly Forms.NotifyIcon _notifyIcon;
 
@@ -52,13 +55,15 @@ public partial class MainWindow : Window
         MainViewModel viewModel,
         Func<SettingsViewModel> settingsViewModelFactory,
         IAudioNotificationService audioNotificationService,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        IUpdateCheckService updateCheckService)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _settingsViewModelFactory = settingsViewModelFactory;
         _audioNotificationService = audioNotificationService;
         _settingsService = settingsService;
+        _updateCheckService = updateCheckService;
         _notifyIcon = CreateNotifyIcon();
         DataContext = _viewModel;
         _audioNotificationService.Changed += AudioNotificationService_OnChanged;
@@ -164,6 +169,9 @@ public partial class MainWindow : Window
     /// </summary>
     private void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
+        // 창 표시 이후에 백그라운드 업데이트 확인을 시작해, 오프라인 상태여도 UI가 멈추지 않게 합니다.
+        _ = CheckForUpdateInBackgroundAsync();
+
         // settings는 사용자가 마지막으로 저장한 창 동작 옵션입니다.
         var settings = _settingsService.Load();
         if (!settings.StartMinimized)
@@ -570,6 +578,28 @@ public partial class MainWindow : Window
     private static string TrimNotifyText(string text)
     {
         return text.Length <= 32 ? text : $"{text[..29]}...";
+    }
+
+    /// <summary>
+    /// GitHub 릴리즈 기준 새 버전이 있는지 백그라운드에서 확인하고, 있을 때만 안내 문구를 표시합니다.
+    /// </summary>
+    private async Task CheckForUpdateInBackgroundAsync()
+    {
+        // currentVersion은 현재 실행 중인 앱 버전 문자열입니다.
+        var currentVersion = GetApplicationVersionText();
+
+        // updateCheckResult는 새 버전 존재 여부와 최신 버전 문자열을 담은 결과입니다.
+        var updateCheckResult = await _updateCheckService.CheckForUpdateAsync(currentVersion);
+        if (!updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
+        {
+            return;
+        }
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion} 사용 가능";
+            UpdateStatusText.Visibility = Visibility.Visible;
+        });
     }
 
     /// <summary>

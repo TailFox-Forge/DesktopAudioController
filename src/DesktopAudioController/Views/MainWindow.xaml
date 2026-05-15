@@ -26,6 +26,10 @@
                            Margin="0,4,0,0"
                            Foreground="#666"
                            Text="버전 확인 중..." />
+                <TextBlock x:Name="UpdateStatusText"
+                           Margin="0,4,0,0"
+                           Foreground="#0A6"
+                           Visibility="Collapsed" />
             </StackPanel>
 
             <StackPanel Grid.Column="1"
