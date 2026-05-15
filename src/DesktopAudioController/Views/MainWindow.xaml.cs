@@ -529,10 +529,16 @@ public partial class MainWindow : Window
     {
         RunOnUiThread(() =>
         {
+            if (_isExitRequested)
+            {
+                return;
+            }
+
             AppLog.Info("MainWindow", "트레이 종료 요청 처리");
             _isExitRequested = true;
+            _viewModel.FlushPendingProgramPreferenceSave();
             _notifyIcon.Visible = false;
-            System.Windows.Application.Current.Shutdown();
+            Close();
         });
     }
 
