@@ -14,6 +14,9 @@ public sealed class AudioSessionViewModel : ObservableObject
     // UI에 표시할 세션 이름입니다.
     private string _displayName;
 
+    // 세션 앱 실행 파일 경로입니다. 비동기 아이콘 로딩 결과가 현재 세션과 맞는지 확인할 때 사용합니다.
+    private string? _executablePath;
+
     // 세션 앱 아이콘 이미지입니다.
     private ImageSource? _iconImage;
 
@@ -36,6 +39,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         string deviceId,
         string id,
         string displayName,
+        string? executablePath,
         ImageSource? iconImage,
         int initialVolume,
         bool initialMuted,
@@ -45,6 +49,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         DeviceId = deviceId;
         Id = id;
         _displayName = displayName;
+        _executablePath = executablePath;
         _iconImage = iconImage;
         _volume = initialVolume;
         _isMuted = initialMuted;
@@ -69,6 +74,15 @@ public sealed class AudioSessionViewModel : ObservableObject
     {
         get => _displayName;
         private set => SetProperty(ref _displayName, value);
+    }
+
+    /// <summary>
+    /// 세션 앱 실행 파일 경로입니다.
+    /// </summary>
+    public string? ExecutablePath
+    {
+        get => _executablePath;
+        private set => SetProperty(ref _executablePath, value);
     }
 
     /// <summary>
@@ -141,12 +155,13 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// <summary>
     /// 서비스에서 읽어온 최신 세션 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
     /// </summary>
-    public void UpdateSnapshot(string displayName, ImageSource? iconImage, int volume, bool isMuted)
+    public void UpdateSnapshot(string displayName, string? executablePath, ImageSource? iconImage, int volume, bool isMuted)
     {
         _suppressCallbacks = true;
         try
         {
             DisplayName = displayName;
+            ExecutablePath = executablePath;
             IconImage = iconImage;
             Volume = volume;
             IsMuted = isMuted;
@@ -155,5 +170,18 @@ public sealed class AudioSessionViewModel : ObservableObject
         {
             _suppressCallbacks = false;
         }
+    }
+
+    /// <summary>
+    /// 비동기 아이콘 로딩이 끝난 뒤 현재 세션 경로와 일치할 때만 아이콘을 반영합니다.
+    /// </summary>
+    public void TryApplyLoadedIcon(string? executablePath, ImageSource? iconImage)
+    {
+        if (!string.Equals(ExecutablePath, executablePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        IconImage = iconImage;
     }
 }

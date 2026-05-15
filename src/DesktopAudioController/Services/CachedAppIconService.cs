@@ -36,7 +36,7 @@ public sealed class CachedAppIconService : IAppIconService
     /// <summary>
     /// 실행 파일 경로의 아이콘을 조회하고, 캐시가 유효하면 재사용합니다.
     /// </summary>
-    public ImageSource? GetIcon(string? executablePath)
+    public ImageSource? TryGetCachedIcon(string? executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath))
         {
@@ -46,6 +46,49 @@ public sealed class CachedAppIconService : IAppIconService
         if (!File.Exists(executablePath))
         {
             return null;
+        }
+
+        lock (_syncRoot)
+        {
+            CleanupExpiredEntriesLocked(DateTimeOffset.UtcNow);
+
+            if (_iconCache.TryGetValue(executablePath, out var cachedEntry))
+            {
+                cachedEntry.LastAccessUtc = DateTimeOffset.UtcNow;
+
+                // 실패 캐시는 즉시 null을 돌려주고 실제 재시도는 비동기 경로에서만 수행합니다.
+                if (cachedEntry.IsFailure)
+                {
+                    return null;
+                }
+
+                return cachedEntry.IconImage;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 실행 파일 아이콘을 비동기로 읽고 캐시에 반영합니다.
+    /// </summary>
+    public async Task<ImageSource?> GetIconAsync(string? executablePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            return null;
+        }
+
+        if (!File.Exists(executablePath))
+        {
+            return null;
+        }
+
+        // cachedIcon은 이미 메모리에 올라온 결과가 있으면 즉시 반환하는 빠른 경로입니다.
+        var cachedIcon = TryGetCachedIcon(executablePath);
+        if (cachedIcon is not null)
+        {
+            return cachedIcon;
         }
 
         // now는 캐시 만료와 실패 재시도 시점을 계산하는 기준 시각입니다.
@@ -59,21 +102,16 @@ public sealed class CachedAppIconService : IAppIconService
             {
                 cachedEntry.LastAccessUtc = now;
 
-                // 최근 실패한 경로는 실패 캐시가 살아 있는 동안 재시도를 건너뜁니다.
+                // 최근 실패한 경로는 실패 캐시가 살아 있는 동안 백그라운드 재시도도 건너뜁니다.
                 if (cachedEntry.IsFailure && now < cachedEntry.RetryAfterUtc)
                 {
                     return null;
-                }
-
-                if (!cachedEntry.IsFailure)
-                {
-                    return cachedEntry.IconImage;
                 }
             }
         }
 
         // iconImage는 캐시 미스이거나 실패 캐시 재시도 시점이 지난 경우 실제 파일에서 다시 읽은 결과입니다.
-        var iconImage = LoadIcon(executablePath);
+        var iconImage = await Task.Run(() => LoadIcon(executablePath), cancellationToken);
         var refreshedEntry = new IconCacheEntry
         {
             IconImage = iconImage,

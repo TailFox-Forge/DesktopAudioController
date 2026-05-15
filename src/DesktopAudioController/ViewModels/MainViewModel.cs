@@ -202,9 +202,11 @@ public sealed class MainViewModel : ObservableObject
                 {
                     existingSession.UpdateSnapshot(
                         snapshot.DisplayName,
-                        _appIconService.GetIcon(snapshot.ExecutablePath),
+                        snapshot.ExecutablePath,
+                        _appIconService.TryGetCachedIcon(snapshot.ExecutablePath),
                         snapshot.Volume,
                         snapshot.IsMuted);
+                    _ = LoadSessionIconAsync(existingSession);
                     continue;
                 }
 
@@ -222,15 +224,44 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private AudioSessionViewModel CreateSessionViewModel(string deviceId, AudioSessionInfo session)
     {
-        return new AudioSessionViewModel(
+        var viewModel = new AudioSessionViewModel(
             deviceId,
             session.Id,
             session.DisplayName,
-            _appIconService.GetIcon(session.ExecutablePath),
+            session.ExecutablePath,
+            _appIconService.TryGetCachedIcon(session.ExecutablePath),
             session.Volume,
             session.IsMuted,
             OnSessionVolumeChanged,
             OnSessionMutedChanged);
+
+        _ = LoadSessionIconAsync(viewModel);
+        return viewModel;
+    }
+
+    /// <summary>
+    /// 세션 아이콘을 백그라운드에서 읽고 완료되면 현재 세션 상태와 경로가 맞을 때만 UI에 반영합니다.
+    /// </summary>
+    private async Task LoadSessionIconAsync(AudioSessionViewModel session)
+    {
+        // executablePath는 비동기 작업 시작 시점의 경로 스냅샷입니다.
+        var executablePath = session.ExecutablePath;
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            return;
+        }
+
+        // iconImage는 캐시 미스일 때만 실제 아이콘 추출을 수행한 결과입니다.
+        var iconImage = await _appIconService.GetIconAsync(executablePath);
+        if (iconImage is null)
+        {
+            return;
+        }
+
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            session.TryApplyLoadedIcon(executablePath, iconImage);
+        });
     }
 
     /// <summary>
