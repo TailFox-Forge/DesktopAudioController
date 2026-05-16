@@ -59,16 +59,23 @@
                                     CornerRadius="6"
                                     BorderBrush="#DDD"
                                     BorderThickness="1">
-                                <DockPanel>
-                                    <CheckBox VerticalAlignment="Center"
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox Grid.Column="0"
+                                              VerticalAlignment="Center"
                                               IsChecked="{Binding IsSelected}">
                                         <TextBlock Text="{Binding DisplayName}" />
                                     </CheckBox>
-                                    <TextBlock DockPanel.Dock="Right"
+                                    <TextBlock Grid.Column="1"
+                                               Margin="12,0,0,0"
+                                               HorizontalAlignment="Right"
                                                VerticalAlignment="Center"
                                                Foreground="#666"
                                                Text="{Binding IsConnected, StringFormat=연결됨: {0}}" />
-                                </DockPanel>
+                                </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -147,11 +154,12 @@
                            Foreground="#666"
                            Text="현재 사용자 계정에만 적용되며, 앱은 백그라운드에서 자동으로 시작됩니다."
                            TextWrapping="Wrap" />
-                <CheckBox IsChecked="{Binding StartMinimized}"
+                <CheckBox Margin="0,0,0,8"
+                          IsChecked="{Binding StartMinimized}"
                           IsEnabled="{Binding RunAtWindowsStartup}">
                     <TextBlock Text="자동 실행 시 시작하자마자 최소화" />
                 </CheckBox>
-                <TextBlock Margin="24,-4,0,0"
+                <TextBlock Margin="24,-4,0,12"
                            Foreground="#666"
                            Text="자동 실행이 켜져 있을 때만 적용됩니다."
                            TextWrapping="Wrap" />
