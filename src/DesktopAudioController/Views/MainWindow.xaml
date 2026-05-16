@@ -199,12 +199,16 @@
                                                                         </StackPanel>
                                                                         <StackPanel DockPanel.Dock="Right"
                                                                                     Margin="0,0,6,0"
-                                                                                    Orientation="Horizontal">
+                                                                                    Orientation="Horizontal"
+                                                                                    VerticalAlignment="Center">
                                                                             <Button Margin="0,0,8,0"
                                                                                     Padding="8,2"
+                                                                                    VerticalAlignment="Center"
                                                                                     Click="RenameSessionButton_OnClick"
                                                                                     Content="이름 변경" />
                                                                             <CheckBox Margin="8,0,0,0"
+                                                                                      VerticalAlignment="Center"
+                                                                                      VerticalContentAlignment="Center"
                                                                                       IsChecked="{Binding IsMuted}"
                                                                                       Content="음소거" />
                                                                         </StackPanel>
