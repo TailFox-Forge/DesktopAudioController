@@ -158,7 +158,8 @@
                                                                     BorderBrush="#DDD"
                                                                     BorderThickness="1">
                                                                 <StackPanel>
-                                                                    <DockPanel Margin="0,0,0,6">
+                                                                    <DockPanel Margin="0,0,0,6"
+                                                                               LastChildFill="False">
                                                                         <StackPanel Orientation="Horizontal">
                                                                             <Image Width="16"
                                                                                    Height="16"
