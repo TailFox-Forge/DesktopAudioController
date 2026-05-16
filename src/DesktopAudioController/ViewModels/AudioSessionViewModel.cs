@@ -43,6 +43,9 @@ public sealed class AudioSessionViewModel : ObservableObject
     // 세션 음소거 체크와 연결되는 내부 값입니다.
     private bool _isMuted;
 
+    // 현재 이 세션이 실제로 오디오를 재생 중인지 여부입니다.
+    private bool _isActive;
+
     // 세션 볼륨이 바뀌었을 때 실제 오디오 서비스에 전달하는 콜백입니다.
     private readonly Action<string, string, int> _onVolumeChanged;
 
@@ -63,6 +66,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         ImageSource? iconImage,
         int initialVolume,
         bool initialMuted,
+        bool initialIsActive,
         Action<string, string, int> onVolumeChanged,
         Action<string, string, bool> onMutedChanged)
     {
@@ -76,6 +80,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         _iconImage = iconImage;
         _volume = initialVolume;
         _isMuted = initialMuted;
+        _isActive = initialIsActive;
         _onVolumeChanged = onVolumeChanged;
         _onMutedChanged = onMutedChanged;
         _volumeCommitTimer = new DispatcherTimer
@@ -205,6 +210,15 @@ public sealed class AudioSessionViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 현재 세션이 실제로 오디오를 재생 중인지 여부입니다.
+    /// </summary>
+    public bool IsActive
+    {
+        get => _isActive;
+        private set => SetProperty(ref _isActive, value);
+    }
+
+    /// <summary>
     /// 서비스에서 읽어온 최신 세션 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
     /// </summary>
     public void UpdateSnapshot(
@@ -215,7 +229,8 @@ public sealed class AudioSessionViewModel : ObservableObject
         string? iconSourcePath,
         ImageSource? iconImage,
         int volume,
-        bool isMuted)
+        bool isMuted,
+        bool isActive)
     {
         _suppressCallbacks = true;
         _hasPendingVolumeCommit = false;
@@ -230,6 +245,7 @@ public sealed class AudioSessionViewModel : ObservableObject
             IconImage = iconImage;
             Volume = volume;
             IsMuted = isMuted;
+            IsActive = isActive;
         }
         finally
         {

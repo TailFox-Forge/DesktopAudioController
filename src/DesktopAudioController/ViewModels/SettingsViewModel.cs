@@ -43,6 +43,9 @@ public sealed class SettingsViewModel : ObservableObject
     // 시스템 사운드 세션까지 표시할지 여부의 내부 필드입니다.
     private bool _showSystemSounds;
 
+    // 현재 소리를 재생 중인 앱만 표시할지 여부의 내부 필드입니다.
+    private bool _showOnlyActiveSessions;
+
     // prerelease 릴리즈까지 업데이트 대상으로 포함할지 여부의 내부 필드입니다.
     private bool _includePreReleaseUpdates;
 
@@ -110,6 +113,15 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 현재 재생 중인 앱 세션만 메인 화면에 표시할지 여부입니다.
+    /// </summary>
+    public bool ShowOnlyActiveSessions
+    {
+        get => _showOnlyActiveSessions;
+        set => SetProperty(ref _showOnlyActiveSessions, value);
+    }
+
+    /// <summary>
     /// 앱 내 업데이트 확인 시 prerelease 릴리즈까지 함께 안내할지 여부입니다.
     /// </summary>
     public bool IncludePreReleaseUpdates
@@ -160,6 +172,7 @@ public sealed class SettingsViewModel : ObservableObject
             MinimizeToTray = MinimizeToTray,
             ShowOnlyConnectedDevices = ShowOnlyConnectedDevices,
             ShowSystemSounds = ShowSystemSounds,
+            ShowOnlyActiveSessions = ShowOnlyActiveSessions,
             IncludePreReleaseUpdates = IncludePreReleaseUpdates,
             ProgramAudioPreferences = currentSettings.ProgramAudioPreferences
                 .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
@@ -206,6 +219,7 @@ public sealed class SettingsViewModel : ObservableObject
         MinimizeToTray = snapshot.Settings.MinimizeToTray;
         ShowOnlyConnectedDevices = snapshot.Settings.ShowOnlyConnectedDevices;
         ShowSystemSounds = snapshot.Settings.ShowSystemSounds;
+        ShowOnlyActiveSessions = snapshot.Settings.ShowOnlyActiveSessions;
         IncludePreReleaseUpdates = snapshot.Settings.IncludePreReleaseUpdates;
     }
 }

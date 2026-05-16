@@ -1,7 +1,7 @@
 namespace DesktopAudioController.Models;
 
 /// <summary>
-/// 출력 장치에서 현재 소리를 내고 있는 애플리케이션 세션 한 개의 상태를 담는 모델입니다.
+/// 출력 장치에 연결된 애플리케이션 세션 한 개의 상태를 담는 모델입니다.
 /// </summary>
 public sealed class AudioSessionInfo
 {
@@ -45,4 +45,9 @@ public sealed class AudioSessionInfo
     /// 현재 세션 음소거 상태입니다.
     /// </summary>
     public bool IsMuted { get; set; }
+
+    /// <summary>
+    /// 현재 이 세션이 실제로 오디오를 재생 중인지 여부입니다.
+    /// </summary>
+    public bool IsActive { get; init; }
 }

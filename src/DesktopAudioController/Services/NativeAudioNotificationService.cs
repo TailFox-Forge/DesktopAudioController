@@ -229,18 +229,53 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     public void Dispose()
     {
+        List<DeviceSubscription> subscriptionsToDispose;
+        var shouldUnregister = false;
+
         lock (_syncRoot)
         {
             if (_started)
             {
-                _enumerator.UnregisterEndpointNotificationCallback(_endpointNotificationClient);
+                shouldUnregister = true;
                 _started = false;
             }
 
-            ClearSubscriptionsLocked();
+            subscriptionsToDispose = _deviceSubscriptions.Values.ToList();
+            _deviceSubscriptions.Clear();
         }
 
-        _enumerator.Dispose();
+        if (shouldUnregister)
+        {
+            try
+            {
+                _enumerator.UnregisterEndpointNotificationCallback(_endpointNotificationClient);
+            }
+            catch (Exception exception)
+            {
+                AppLog.Warn("NativeAudioNotificationService", "Dispose 중 endpoint notification callback 해제 실패", exception);
+            }
+        }
+
+        foreach (var subscription in subscriptionsToDispose)
+        {
+            try
+            {
+                subscription.Dispose();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Warn("NativeAudioNotificationService", "Dispose 중 장치 구독 정리 실패", exception);
+            }
+        }
+
+        try
+        {
+            _enumerator.Dispose();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("NativeAudioNotificationService", "Dispose 중 enumerator 정리 실패", exception);
+        }
     }
 
     /// <summary>

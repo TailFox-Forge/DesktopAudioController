@@ -21,6 +21,7 @@ public sealed class SettingsServiceTests
             MinimizeToTray = false,
             ShowOnlyConnectedDevices = false,
             ShowSystemSounds = true,
+            ShowOnlyActiveSessions = true,
             ProgramAudioPreferences =
             [
                 new ProgramAudioPreference
@@ -43,6 +44,7 @@ public sealed class SettingsServiceTests
         Assert.Equal(settings.MinimizeToTray, loaded.MinimizeToTray);
         Assert.Equal(settings.ShowOnlyConnectedDevices, loaded.ShowOnlyConnectedDevices);
         Assert.Equal(settings.ShowSystemSounds, loaded.ShowSystemSounds);
+        Assert.Equal(settings.ShowOnlyActiveSessions, loaded.ShowOnlyActiveSessions);
 
         var preference = Assert.Single(loaded.ProgramAudioPreferences);
         Assert.Equal("path:C:\\Apps\\game.exe", preference.MatchKey);
@@ -69,6 +71,7 @@ public sealed class SettingsServiceTests
         Assert.True(loaded.MinimizeToTray);
         Assert.True(loaded.ShowOnlyConnectedDevices);
         Assert.False(loaded.ShowSystemSounds);
+        Assert.False(loaded.ShowOnlyActiveSessions);
         Assert.Empty(loaded.ProgramAudioPreferences);
         Assert.False(File.Exists(settingsFilePath));
         Assert.False(service.TryConsumeLoadWarning(out _));
@@ -92,6 +95,7 @@ public sealed class SettingsServiceTests
         Assert.True(loaded.MinimizeToTray);
         Assert.True(loaded.ShowOnlyConnectedDevices);
         Assert.False(loaded.ShowSystemSounds);
+        Assert.False(loaded.ShowOnlyActiveSessions);
         Assert.Empty(loaded.ProgramAudioPreferences);
 
         Assert.True(File.Exists(service.BackupSettingsFilePath));

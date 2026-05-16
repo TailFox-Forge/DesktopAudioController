@@ -24,6 +24,8 @@ public sealed class MainViewModel : ObservableObject
     {
         public required bool ShowSystemSounds { get; init; }
 
+        public required bool ShowOnlyActiveSessions { get; init; }
+
         public required bool HasConfiguredDevices { get; init; }
 
         public required IReadOnlyList<DeviceSnapshot> Devices { get; init; }
@@ -53,6 +55,9 @@ public sealed class MainViewModel : ObservableObject
 
     // 마지막 전체 로드 시점의 시스템 사운드 표시 옵션입니다.
     private bool _showSystemSounds;
+
+    // 마지막 전체 로드 시점의 재생 중 세션만 표시 옵션입니다.
+    private bool _showOnlyActiveSessions;
 
     // 사용자가 저장한 프로그램별 볼륨/음소거 설정입니다.
     private Dictionary<string, ProgramAudioPreference> _programAudioPreferencesByKey = new(StringComparer.OrdinalIgnoreCase);
@@ -150,7 +155,8 @@ public sealed class MainViewModel : ObservableObject
     {
         ApplyStateSnapshot(BuildStateSnapshot(
             VisibleDevices.Select(device => device.Id).ToList(),
-            _showSystemSounds));
+            _showSystemSounds,
+            _showOnlyActiveSessions));
     }
 
     /// <summary>
@@ -160,8 +166,9 @@ public sealed class MainViewModel : ObservableObject
     {
         var visibleDeviceIds = VisibleDevices.Select(device => device.Id).ToList();
         var showSystemSounds = _showSystemSounds;
+        var showOnlyActiveSessions = _showOnlyActiveSessions;
         var generation = Interlocked.Increment(ref _stateGeneration);
-        var snapshot = await Task.Run(() => BuildStateSnapshot(visibleDeviceIds, showSystemSounds));
+        var snapshot = await Task.Run(() => BuildStateSnapshot(visibleDeviceIds, showSystemSounds, showOnlyActiveSessions));
         if (generation != Volatile.Read(ref _stateGeneration))
         {
             return;
@@ -211,12 +218,13 @@ public sealed class MainViewModel : ObservableObject
         var visibleDevices = devices
             .Where(device => selectedIds.Contains(device.Id))
             .Where(device => !settings.ShowOnlyConnectedDevices || device.IsConnected)
-            .Select(device => BuildDeviceSnapshot(device, settings.ShowSystemSounds, loadedProgramAudioPreferencesByKey))
+            .Select(device => BuildDeviceSnapshot(device, settings.ShowSystemSounds, settings.ShowOnlyActiveSessions, loadedProgramAudioPreferencesByKey))
             .ToList();
 
         return new LoadSnapshot
         {
             ShowSystemSounds = settings.ShowSystemSounds,
+            ShowOnlyActiveSessions = settings.ShowOnlyActiveSessions,
             HasConfiguredDevices = selectedIds.Count > 0,
             Devices = visibleDevices,
             ProgramAudioPreferences = settings.ProgramAudioPreferences
@@ -226,7 +234,7 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>
     /// 백그라운드에서 현재 보이는 장치들의 상태 스냅샷만 만듭니다.
     /// </summary>
-    private StateSnapshot BuildStateSnapshot(IReadOnlyList<string> visibleDeviceIds, bool includeSystemSounds)
+    private StateSnapshot BuildStateSnapshot(IReadOnlyList<string> visibleDeviceIds, bool includeSystemSounds, bool showOnlyActiveSessions)
     {
         // devicesById는 최신 장치 상태를 빠르게 찾기 위한 인덱스입니다.
         var devicesById = _audioDeviceCatalogService
@@ -242,7 +250,7 @@ public sealed class MainViewModel : ObservableObject
                 continue;
             }
 
-            snapshotsById[visibleDeviceId] = BuildDeviceSnapshot(device, includeSystemSounds, _programAudioPreferencesByKey);
+            snapshotsById[visibleDeviceId] = BuildDeviceSnapshot(device, includeSystemSounds, showOnlyActiveSessions, _programAudioPreferencesByKey);
         }
 
         return new StateSnapshot
@@ -257,6 +265,7 @@ public sealed class MainViewModel : ObservableObject
     private DeviceSnapshot BuildDeviceSnapshot(
         AudioDeviceInfo device,
         bool includeSystemSounds,
+        bool showOnlyActiveSessions,
         IReadOnlyDictionary<string, ProgramAudioPreference> preferencesByKey)
     {
         IReadOnlyList<AudioSessionInfo> sessions = [];
@@ -274,7 +283,9 @@ public sealed class MainViewModel : ObservableObject
         {
             sessions = _audioSessionService.GetSessions(device.Id, includeSystemSounds).ToList();
             sessions = ApplyStoredSessionPresentations(sessions, preferencesByKey).ToList();
+            sessions = FilterSessionsByPlaybackState(sessions, showOnlyActiveSessions).ToList();
             sessions = DisambiguateSessionDisplayNames(sessions).ToList();
+            sessions = AnnotateSessionPlaybackState(sessions).ToList();
         }
         catch (Exception exception)
         {
@@ -294,6 +305,7 @@ public sealed class MainViewModel : ObservableObject
     private void ApplyLoadSnapshot(LoadSnapshot snapshot)
     {
         _showSystemSounds = snapshot.ShowSystemSounds;
+        _showOnlyActiveSessions = snapshot.ShowOnlyActiveSessions;
         var loadedProgramAudioPreferencesByKey = snapshot.ProgramAudioPreferences
             .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
             .GroupBy(preference => preference.MatchKey, StringComparer.OrdinalIgnoreCase)
@@ -422,7 +434,8 @@ public sealed class MainViewModel : ObservableObject
                     snapshot.IconSourcePath,
                     iconImageForSnapshot,
                     snapshot.Volume,
-                    snapshot.IsMuted);
+                    snapshot.IsMuted,
+                    snapshot.IsActive);
 
                 // 캐시에 아이콘이 없을 때만 비동기 로딩을 예약합니다.
                 if (cachedIcon is null)
@@ -508,7 +521,8 @@ public sealed class MainViewModel : ObservableObject
             ExecutablePath = session.ExecutablePath,
             IconSourcePath = session.IconSourcePath,
             Volume = session.Volume,
-            IsMuted = session.IsMuted
+            IsMuted = session.IsMuted,
+            IsActive = session.IsActive
         };
 
         var matchKey = ProgramAudioPreferenceStore.ResolveMatchKey(sessionSnapshot);
@@ -577,6 +591,7 @@ public sealed class MainViewModel : ObservableObject
             cachedIcon,
             session.Volume,
             session.IsMuted,
+            session.IsActive,
             OnSessionVolumeChanged,
             OnSessionMutedChanged);
 
@@ -626,10 +641,72 @@ public sealed class MainViewModel : ObservableObject
                     ExecutablePath = session.ExecutablePath,
                     IconSourcePath = session.IconSourcePath,
                     Volume = session.Volume,
-                    IsMuted = session.IsMuted
+                    IsMuted = session.IsMuted,
+                    IsActive = session.IsActive
                 }
                 : session)
             .ToList();
+    }
+
+    /// <summary>
+    /// 설정에 따라 현재 재생 중이 아닌 세션을 숨깁니다.
+    /// </summary>
+    private static IReadOnlyList<AudioSessionInfo> FilterSessionsByPlaybackState(
+        IReadOnlyList<AudioSessionInfo> sessions,
+        bool showOnlyActiveSessions)
+    {
+        if (!showOnlyActiveSessions)
+        {
+            return sessions;
+        }
+
+        return sessions
+            .Where(session => session.IsActive)
+            .ToList();
+    }
+
+    /// <summary>
+    /// 목록에 유지하는 Inactive 세션에는 현재 재생 중이 아님을 보조 문구로 붙입니다.
+    /// </summary>
+    private static IReadOnlyList<AudioSessionInfo> AnnotateSessionPlaybackState(IReadOnlyList<AudioSessionInfo> sessions)
+    {
+        return sessions
+            .Select(session =>
+            {
+                if (session.IsActive)
+                {
+                    return session;
+                }
+
+                var statusLabel = BuildPlaybackStateLabel(session.DisambiguationText);
+                return new AudioSessionInfo
+                {
+                    MatchKey = session.MatchKey,
+                    Id = session.Id,
+                    DisplayName = session.DisplayName,
+                    DisambiguationText = statusLabel,
+                    ExecutablePath = session.ExecutablePath,
+                    IconSourcePath = session.IconSourcePath,
+                    Volume = session.Volume,
+                    IsMuted = session.IsMuted,
+                    IsActive = false
+                };
+            })
+            .ToList();
+    }
+
+    private static string BuildPlaybackStateLabel(string? currentLabel)
+    {
+        const string inactiveLabel = "현재 재생 중 아님";
+
+        if (string.IsNullOrWhiteSpace(currentLabel))
+        {
+            return inactiveLabel;
+        }
+
+        return currentLabel.Contains(inactiveLabel, StringComparison.Ordinal)
+            ? currentLabel
+            : $"{currentLabel} · {inactiveLabel}";
     }
 
     /// <summary>
@@ -937,6 +1014,7 @@ public sealed class MainViewModel : ObservableObject
             MinimizeToTray = settings.MinimizeToTray,
             ShowOnlyConnectedDevices = settings.ShowOnlyConnectedDevices,
             ShowSystemSounds = settings.ShowSystemSounds,
+            ShowOnlyActiveSessions = settings.ShowOnlyActiveSessions,
             IncludePreReleaseUpdates = settings.IncludePreReleaseUpdates,
             ProgramAudioPreferences = settings.ProgramAudioPreferences
                 .Select(preference => new ProgramAudioPreference

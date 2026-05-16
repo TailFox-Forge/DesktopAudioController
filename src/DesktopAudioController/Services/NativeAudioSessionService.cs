@@ -77,7 +77,8 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
                     ExecutablePath = executablePath,
                     IconSourcePath = iconSourcePath,
                     Volume = (int)Math.Round(session.SimpleAudioVolume.Volume * 100),
-                    IsMuted = session.SimpleAudioVolume.Mute
+                    IsMuted = session.SimpleAudioVolume.Mute,
+                    IsActive = session.State == AudioSessionState.AudioSessionStateActive
                 });
             }
             catch
@@ -255,7 +256,8 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             ExecutablePath = PreferExecutablePath(current.ExecutablePath, incoming.ExecutablePath),
             IconSourcePath = PreferIconSourcePath(current.IconSourcePath, incoming.IconSourcePath),
             Volume = incoming.Volume,
-            IsMuted = incoming.IsMuted
+            IsMuted = incoming.IsMuted,
+            IsActive = current.IsActive || incoming.IsActive
         };
     }
 

@@ -79,6 +79,14 @@
                            Foreground="#666"
                            Text="Windows 알림음과 시스템 소리도 프로그램 목록에 함께 표시합니다."
                            TextWrapping="Wrap" />
+                <CheckBox Margin="0,0,0,8"
+                          IsChecked="{Binding ShowOnlyActiveSessions}">
+                    <TextBlock Text="재생 중인 앱만 보기" />
+                </CheckBox>
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#666"
+                           Text="체크하지 않으면 현재 조용한 앱도 목록에 유지하고, 상태 문구로만 구분합니다."
+                           TextWrapping="Wrap" />
 
                 <Separator Margin="0,8,0,16" />
 

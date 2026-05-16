@@ -132,9 +132,17 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         AppLog.Info("App", "OnExit 시작");
+        AppLog.Info("App", "OnExit 장치 서비스 Dispose 시작");
         (_audioDeviceCatalogService as IDisposable)?.Dispose();
+        AppLog.Info("App", "OnExit 장치 서비스 Dispose 완료");
+
+        AppLog.Info("App", "OnExit 세션 서비스 Dispose 시작");
         (_audioSessionService as IDisposable)?.Dispose();
+        AppLog.Info("App", "OnExit 세션 서비스 Dispose 완료");
+
+        AppLog.Info("App", "OnExit 알림 서비스 Dispose 시작");
         _audioNotificationService?.Dispose();
+        AppLog.Info("App", "OnExit 알림 서비스 Dispose 완료");
         AppLog.Info("App", "OnExit 완료");
         base.OnExit(e);
     }

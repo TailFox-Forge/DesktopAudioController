@@ -36,6 +36,11 @@ public sealed class AppSettings
     public bool ShowSystemSounds { get; set; }
 
     /// <summary>
+    /// 현재 소리를 재생 중인 앱 세션만 메인 화면에 표시할지 여부입니다.
+    /// </summary>
+    public bool ShowOnlyActiveSessions { get; set; }
+
+    /// <summary>
     /// 앱 내 업데이트 확인 시 prerelease 릴리즈도 함께 안내할지 여부입니다.
     /// 기본값은 stable 릴리즈만 확인하는 것입니다.
     /// </summary>

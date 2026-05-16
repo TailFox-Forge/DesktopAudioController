@@ -70,7 +70,8 @@ internal static class ProgramAudioPreferenceStore
             ExecutablePath = session.ExecutablePath,
             IconSourcePath = session.IconSourcePath,
             Volume = preference.Volume,
-            IsMuted = preference.IsMuted
+            IsMuted = preference.IsMuted,
+            IsActive = session.IsActive
         };
     }
 
@@ -90,7 +91,8 @@ internal static class ProgramAudioPreferenceStore
             ExecutablePath = session.ExecutablePath,
             IconSourcePath = session.IconSourcePath,
             Volume = session.Volume,
-            IsMuted = session.IsMuted
+            IsMuted = session.IsMuted,
+            IsActive = session.IsActive
         };
     }
 
