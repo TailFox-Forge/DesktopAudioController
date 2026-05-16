@@ -63,6 +63,9 @@ public partial class MainWindow : Window
     // 오디오 콜백 스레드와 UI 스레드가 함께 접근하는 새로고침 큐 상태를 직렬화하는 잠금 객체입니다.
     private readonly object _notificationRefreshSyncRoot = new();
 
+    // 설정 창 중복 열기와 재활성화를 직렬화하는 잠금 객체입니다.
+    private readonly object _settingsWindowSyncRoot = new();
+
     // 장치/세션 재조회는 한 번에 하나만 실행해 UI 반영 순서를 보장합니다.
     private readonly SemaphoreSlim _viewRefreshSemaphore = new(1, 1);
 
@@ -113,6 +116,12 @@ public partial class MainWindow : Window
 
     // 외부에서 앱을 다시 실행했을 때 기존 인스턴스를 보여줘야 하는 요청 플래그입니다.
     private bool _externalActivationRequested;
+
+    // 설정 창 로딩이 진행 중인지 여부입니다.
+    private bool _isSettingsWindowOpening;
+
+    // 현재 떠 있는 설정 창 인스턴스입니다.
+    private SettingsWindow? _activeSettingsWindow;
 
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
@@ -297,16 +306,45 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task OpenSettingsInternalAsync()
     {
+        if (TryActivateExistingSettingsWindow())
+        {
+            return;
+        }
+
+        lock (_settingsWindowSyncRoot)
+        {
+            if (_isSettingsWindowOpening)
+            {
+                AppLog.Debug("MainWindow", "설정 창 열기 요청 무시: 이미 로딩 중");
+                return;
+            }
+
+            _isSettingsWindowOpening = true;
+        }
+
+        SettingsWindow? settingsWindow = null;
+        var semaphoreAcquired = false;
         try
         {
             _viewModel.FlushPendingProgramPreferenceSave();
+            using var loadCancellationTokenSource = new CancellationTokenSource(SettingsLoadTimeout);
+            await _viewRefreshSemaphore.WaitAsync(loadCancellationTokenSource.Token);
+            semaphoreAcquired = true;
             var settingsViewModel = _settingsViewModelFactory();
-            await settingsViewModel.LoadAsync().WaitAsync(SettingsLoadTimeout);
+            await settingsViewModel.LoadAsync(loadCancellationTokenSource.Token).WaitAsync(loadCancellationTokenSource.Token);
 
-            var settingsWindow = new SettingsWindow(settingsViewModel)
+            settingsWindow = new SettingsWindow(settingsViewModel)
             {
                 Owner = this
             };
+
+            lock (_settingsWindowSyncRoot)
+            {
+                _activeSettingsWindow = settingsWindow;
+            }
+
+            _viewRefreshSemaphore.Release();
+            semaphoreAcquired = false;
 
             var result = settingsWindow.ShowDialog();
             if (result == true)
@@ -316,6 +354,16 @@ public partial class MainWindow : Window
                 await ReloadViewModelAsync("settings_saved");
                 await CheckForUpdateInBackgroundAsync();
             }
+        }
+        catch (OperationCanceledException exception)
+        {
+            AppLog.Error("MainWindow", "설정 창 로딩 타임아웃", new TimeoutException("The operation has timed out.", exception));
+            System.Windows.MessageBox.Show(
+                this,
+                "설정 창을 여는 동안 장치 정보를 읽지 못해 시간이 초과됐습니다.\n잠시 후 다시 시도해 주세요.",
+                "설정 창 열기 실패",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
         }
         catch (TimeoutException exception)
         {
@@ -337,6 +385,47 @@ public partial class MainWindow : Window
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
         }
+        finally
+        {
+            if (semaphoreAcquired)
+            {
+                _viewRefreshSemaphore.Release();
+            }
+
+            lock (_settingsWindowSyncRoot)
+            {
+                if (ReferenceEquals(_activeSettingsWindow, settingsWindow))
+                {
+                    _activeSettingsWindow = null;
+                }
+
+                _isSettingsWindowOpening = false;
+            }
+        }
+    }
+
+    private bool TryActivateExistingSettingsWindow()
+    {
+        SettingsWindow? activeSettingsWindow;
+        lock (_settingsWindowSyncRoot)
+        {
+            activeSettingsWindow = _activeSettingsWindow;
+        }
+
+        if (activeSettingsWindow is null)
+        {
+            return false;
+        }
+
+        AppLog.Debug("MainWindow", "기존 설정 창 재활성화");
+        if (activeSettingsWindow.WindowState == WindowState.Minimized)
+        {
+            activeSettingsWindow.WindowState = WindowState.Normal;
+        }
+
+        activeSettingsWindow.Activate();
+        activeSettingsWindow.Focus();
+        return true;
     }
 
     /// <summary>

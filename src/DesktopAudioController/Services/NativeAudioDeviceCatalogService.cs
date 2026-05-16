@@ -13,11 +13,15 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     // undocumented PolicyConfig COM 클래스 ID입니다.
     private static readonly Guid PolicyConfigClientClsid = new("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9");
 
+    // 장치 열거가 체감 지연으로 이어질 수 있는 기준 시간입니다.
+    private static readonly long SlowEnumerationThresholdMs = 500;
+
     /// <summary>
     /// 현재 시스템에 등록된 렌더 장치 목록을 반환합니다.
     /// </summary>
     public IReadOnlyList<AudioDeviceInfo> GetAvailableOutputDevices()
     {
+        var stopwatch = Stopwatch.StartNew();
         using var enumerator = new MMDeviceEnumerator();
 
         // 현재 연결된 장치와 최근 분리된 장치를 함께 보여주기 위해 두 상태를 같이 조회합니다.
@@ -61,6 +65,17 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
             {
                 // 열거 도중 장치가 사라지거나 접근 오류가 나면 해당 장치만 건너뜁니다.
             }
+        }
+
+        stopwatch.Stop();
+        var message = $"GetAvailableOutputDevices 완료 count={results.Count} elapsedMs={stopwatch.ElapsedMilliseconds}";
+        if (stopwatch.ElapsedMilliseconds >= SlowEnumerationThresholdMs)
+        {
+            AppLog.Warn("NativeAudioDeviceCatalogService", message);
+        }
+        else
+        {
+            AppLog.Debug("NativeAudioDeviceCatalogService", message);
         }
 
         return results;

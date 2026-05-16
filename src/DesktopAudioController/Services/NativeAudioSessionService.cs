@@ -1,6 +1,7 @@
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 using DesktopAudioController.Models;
+using System.Diagnostics;
 
 namespace DesktopAudioController.Services;
 
@@ -11,6 +12,9 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
 {
     // 프로세스 이름과 실행 파일 경로를 PID 기준으로 재사용하는 메타데이터 캐시 서비스입니다.
     private readonly IProcessMetadataCacheService _processMetadataCacheService;
+
+    // 세션 열거가 UI 지연으로 이어질 수 있는 기준 시간입니다.
+    private static readonly long SlowEnumerationThresholdMs = 500;
 
     /// <summary>
     /// 세션 서비스와 메타데이터 캐시 서비스를 함께 초기화합니다.
@@ -25,6 +29,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     /// </summary>
     public IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId, bool includeSystemSounds = false)
     {
+        var stopwatch = Stopwatch.StartNew();
         using var enumerator = new MMDeviceEnumerator();
 
         // device는 세션을 읽어올 대상 출력 장치입니다.
@@ -87,7 +92,19 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             }
         }
 
-        return CoalesceSessions(results);
+        var coalescedSessions = CoalesceSessions(results);
+        stopwatch.Stop();
+        var message = $"GetSessions 완료 deviceId={deviceId} includeSystemSounds={includeSystemSounds} count={coalescedSessions.Count} elapsedMs={stopwatch.ElapsedMilliseconds}";
+        if (stopwatch.ElapsedMilliseconds >= SlowEnumerationThresholdMs)
+        {
+            AppLog.Warn("NativeAudioSessionService", message);
+        }
+        else
+        {
+            AppLog.Debug("NativeAudioSessionService", message);
+        }
+
+        return coalescedSessions;
     }
 
     /// <summary>
