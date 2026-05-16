@@ -35,6 +35,12 @@
                            MaxWidth="420"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
+                <TextBlock x:Name="StartupStatusText"
+                           Margin="0,4,0,0"
+                           Foreground="#B35A00"
+                           MaxWidth="420"
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed" />
             </StackPanel>
 
             <StackPanel Grid.Column="1"

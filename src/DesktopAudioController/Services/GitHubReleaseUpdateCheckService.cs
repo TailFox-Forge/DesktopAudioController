@@ -53,7 +53,12 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             using var response = await _httpClient.GetAsync(ReleasesApiUri, timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
-                return new UpdateCheckResult();
+                AppLog.Warn("UpdateCheck", $"GitHub 릴리즈 조회 실패 statusCode={(int)response.StatusCode}");
+                return new UpdateCheckResult
+                {
+                    HadError = true,
+                    StatusMessage = "업데이트 확인에 실패했습니다."
+                };
             }
 
             await using var contentStream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
@@ -93,10 +98,14 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
                 IsPreRelease = releaseCandidate.IsPreRelease
             };
         }
-        catch
+        catch (Exception exception)
         {
-            // 오프라인, DNS 실패, GitHub 지연 등은 조용히 무시합니다.
-            return new UpdateCheckResult();
+            AppLog.Warn("UpdateCheck", "업데이트 확인 실패", exception);
+            return new UpdateCheckResult
+            {
+                HadError = true,
+                StatusMessage = "업데이트 확인에 실패했습니다."
+            };
         }
     }
 

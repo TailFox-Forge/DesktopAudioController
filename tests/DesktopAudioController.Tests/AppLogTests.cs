@@ -8,34 +8,22 @@ public sealed class AppLogTests
     [Fact]
     public void Info_RedactsSensitiveIdentifiersAndPaths()
     {
-        using var tempDirectory = new TemporaryDirectory();
-        var logFilePath = Path.Combine(tempDirectory.DirectoryPath, "DesktopAudioController-test.log");
-        var field = typeof(AppLog).GetField("_logFilePath", BindingFlags.Static | BindingFlags.NonPublic);
+        var method = typeof(AppLog).GetMethod("Sanitize", BindingFlags.Static | BindingFlags.NonPublic);
 
-        Assert.NotNull(field);
-        var originalValue = (string?)field!.GetValue(null);
+        Assert.NotNull(method);
+        var content = (string?)method!.Invoke(
+            null,
+            [
+                "deviceId={0.0.0.00000000}.{abc} sessionId={0.0.0.00000000}.{abc}|\\Device\\HarddiskVolume3\\Program Files\\Test App\\test.exe%b{00000000-0000-0000-0000-000000000000} path=C:\\Users\\tester\\AppData\\Local\\DesktopAudioController\\settings.json iconPath=C:\\Users\\tester\\AppData\\Local\\Programs\\DesktopAudioController\\DesktopAudioController.exe"
+            ]);
 
-        try
-        {
-            field.SetValue(null, logFilePath);
-
-            AppLog.Info(
-                "AppLogTests",
-                "deviceId={0.0.0.00000000}.{abc} sessionId={0.0.0.00000000}.{abc}|\\Device\\HarddiskVolume3\\Program Files\\Test App\\test.exe%b{00000000-0000-0000-0000-000000000000} path=C:\\Users\\tester\\AppData\\Local\\DesktopAudioController\\settings.json iconPath=C:\\Users\\tester\\AppData\\Local\\Programs\\DesktopAudioController\\DesktopAudioController.exe");
-
-            var content = File.ReadAllText(logFilePath);
-
-            Assert.Contains("deviceId=[id:", content, StringComparison.Ordinal);
-            Assert.Contains("sessionId=[id:", content, StringComparison.Ordinal);
-            Assert.Contains("path=[path:settings.json]", content, StringComparison.Ordinal);
-            Assert.Contains("iconPath=[path:DesktopAudioController.exe]", content, StringComparison.Ordinal);
-            Assert.DoesNotContain("C:\\Users\\tester", content, StringComparison.Ordinal);
-            Assert.DoesNotContain("\\Device\\HarddiskVolume3\\Program Files\\Test App\\test.exe", content, StringComparison.Ordinal);
-        }
-        finally
-        {
-            field.SetValue(null, originalValue);
-        }
+        Assert.NotNull(content);
+        Assert.Contains("deviceId=[id:", content, StringComparison.Ordinal);
+        Assert.Contains("sessionId=[id:", content, StringComparison.Ordinal);
+        Assert.Contains("path=[path:settings.json]", content, StringComparison.Ordinal);
+        Assert.Contains("iconPath=[path:DesktopAudioController.exe]", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("C:\\Users\\tester", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\Device\\HarddiskVolume3\\Program Files\\Test App\\test.exe", content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -75,6 +63,34 @@ public sealed class AppLogTests
             Assert.Contains(remainingLogs, file => file.FullName == currentLogPath);
             Assert.True(remainingLogs.Count <= 30);
             Assert.True(remainingLogs.Sum(file => file.Length) <= 100L * 1024 * 1024);
+        }
+        finally
+        {
+            field.SetValue(null, originalValue);
+        }
+    }
+
+    [Fact]
+    public void Info_WhenCurrentLogWouldExceedSizeLimit_RollsOverToNextFile()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var currentDateStamp = DateTime.Now.ToString("yyyyMMdd");
+        var baseLogPath = Path.Combine(tempDirectory.DirectoryPath, $"DesktopAudioController-{currentDateStamp}.log");
+        var rolledLogPath = Path.Combine(tempDirectory.DirectoryPath, $"DesktopAudioController-{currentDateStamp}.1.log");
+        var field = typeof(AppLog).GetField("_logFilePath", BindingFlags.Static | BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        var originalValue = (string?)field!.GetValue(null);
+
+        try
+        {
+            field.SetValue(null, baseLogPath);
+            CreateLogFile(baseLogPath, 5L * 1024 * 1024, DateTime.UtcNow);
+
+            AppLog.Info("AppLogTests", "rollover-entry");
+
+            Assert.True(File.Exists(rolledLogPath));
+            Assert.Contains("rollover-entry", File.ReadAllText(rolledLogPath), StringComparison.Ordinal);
         }
         finally
         {

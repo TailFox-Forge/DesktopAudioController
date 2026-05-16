@@ -38,6 +38,9 @@ public partial class App : System.Windows.Application
     // GitHub 릴리즈 기준 새 버전 여부를 확인하는 서비스입니다.
     private IUpdateCheckService? _updateCheckService;
 
+    // 이전 실행의 정상 종료 여부를 기록하는 상태 서비스입니다.
+    private AppRunStateService? _appRunStateService;
+
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
     /// </summary>
@@ -49,6 +52,7 @@ public partial class App : System.Windows.Application
         DispatcherUnhandledException += App_OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
+        _appRunStateService = new AppRunStateService();
 
         // 현재 실행이 Windows 자동 실행 레지스트리를 통해 시작된 경우에만 true입니다.
         var isStartupLaunch = e.Args.Any(argument =>
@@ -57,17 +61,14 @@ public partial class App : System.Windows.Application
                 RegistryStartupLaunchService.StartupLaunchArgument,
                 StringComparison.OrdinalIgnoreCase));
         AppLog.Info("App", $"startupLaunch={isStartupLaunch}");
+        var previousRunIncident = BeginRunStateTracking();
 
-        // 실제 Core Audio 서비스로 장치와 세션을 조회합니다.
         _settingsService = new SettingsService();
-        _audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
-        _processMetadataCacheService = new CachedProcessMetadataService();
-        _audioSessionService = new NativeAudioSessionService(_processMetadataCacheService);
-        _audioNotificationService = new NativeAudioNotificationService();
-        _appIconService = new CachedAppIconService();
         _startupLaunchService = new RegistryStartupLaunchService();
         _updateCheckService = new GitHubReleaseUpdateCheckService();
-        _audioNotificationService.Start();
+        _appIconService = new CachedAppIconService();
+
+        var startupWarningMessage = TryInitializeAudioServices();
 
         // zip 배포 특성상 실행 경로가 바뀔 수 있으므로, 자동 실행이 켜져 있으면 현재 exe 경로로 재동기화합니다.
         var startupSettings = _settingsService.Load();
@@ -88,21 +89,39 @@ public partial class App : System.Windows.Application
         // 메인 화면에서 사용할 뷰모델을 만들고 저장된 설정 기준으로 데이터를 채웁니다.
         var mainViewModel = new MainViewModel(
             _settingsService,
-            _audioDeviceCatalogService,
-            _audioSessionService,
+            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
+            _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
             _appIconService);
-        mainViewModel.Load();
-        AppLog.Info("App", $"초기 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
+
+        try
+        {
+            mainViewModel.Load();
+            AppLog.Info("App", $"초기 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("App", "초기 장치 로드 실패, 제한 모드로 전환", exception);
+            startupWarningMessage = EnterDegradedMode("오디오 장치 초기화에 실패해 제한 모드로 시작했습니다. 로그를 확인한 뒤 앱을 다시 실행해 주세요.");
+            mainViewModel = new MainViewModel(
+                _settingsService,
+                _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
+                _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
+                _appIconService);
+            mainViewModel.Load();
+            AppLog.Info("App", $"제한 모드 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
+        }
 
         // 메인 창은 설정 창 팩토리를 받아 필요할 때마다 새 설정 뷰모델을 생성합니다.
         var mainWindow = new MainWindow(
             mainViewModel,
             CreateSettingsViewModel,
-            _audioNotificationService,
+            _audioNotificationService ?? throw new InvalidOperationException("Audio notification service is not initialized."),
             _settingsService,
             _updateCheckService,
             isStartupLaunch,
-            !mainViewModel.HasConfiguredDevices);
+            !mainViewModel.HasConfiguredDevices || !string.IsNullOrWhiteSpace(startupWarningMessage) || previousRunIncident.Detected,
+            startupWarningMessage,
+            previousRunIncident);
         MainWindow = mainWindow;
         mainWindow.Show();
         AppLog.Info("App", "메인 창 표시 완료");
@@ -119,7 +138,7 @@ public partial class App : System.Windows.Application
         }
 
         // 첫 실행처럼 표시할 장치가 아직 없으면 설정 창을 바로 띄웁니다.
-        if (!mainViewModel.HasConfiguredDevices)
+        if (!mainViewModel.HasConfiguredDevices && string.IsNullOrWhiteSpace(startupWarningMessage))
         {
             AppLog.Info("App", "표시 장치 미설정 상태로 첫 실행 설정창 표시");
             mainWindow.OpenSettingsOnFirstRun();
@@ -144,6 +163,7 @@ public partial class App : System.Windows.Application
         _audioNotificationService?.Dispose();
         AppLog.Info("App", "OnExit 알림 서비스 Dispose 완료");
         AppLog.Info("App", "OnExit 완료");
+        TryMarkCleanShutdown();
         base.OnExit(e);
     }
 
@@ -158,11 +178,116 @@ public partial class App : System.Windows.Application
             _startupLaunchService ?? throw new InvalidOperationException("Startup launch service is not initialized."));
     }
 
+    private string? TryInitializeAudioServices()
+    {
+        try
+        {
+            _audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
+            _processMetadataCacheService = new CachedProcessMetadataService();
+            _audioSessionService = new NativeAudioSessionService(_processMetadataCacheService);
+            _audioNotificationService = new NativeAudioNotificationService();
+            _audioNotificationService.Start();
+            return null;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("App", "오디오 서비스 초기화 실패, 제한 모드로 전환", exception);
+            return EnterDegradedMode("오디오 초기화에 실패해 제한 모드로 시작했습니다. 일부 오디오 제어 기능은 비활성화됩니다.");
+        }
+    }
+
+    private string EnterDegradedMode(string warningMessage)
+    {
+        DisposeAudioServicesForRecovery();
+        _audioDeviceCatalogService = UnavailableAudioServices.CreateDeviceCatalogService();
+        _audioSessionService = UnavailableAudioServices.CreateSessionService();
+        _audioNotificationService = UnavailableAudioServices.CreateNotificationService();
+        AppLog.Warn("App", $"제한 모드 진입 reason={warningMessage}");
+        return warningMessage;
+    }
+
+    private PreviousRunIncident BeginRunStateTracking()
+    {
+        if (_appRunStateService is null)
+        {
+            return PreviousRunIncident.None;
+        }
+
+        try
+        {
+            return _appRunStateService.BeginRun();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("App", "실행 상태 추적 시작 실패", exception);
+            return PreviousRunIncident.None;
+        }
+    }
+
+    private void TryMarkCleanShutdown()
+    {
+        if (_appRunStateService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _appRunStateService.MarkCleanShutdown();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("App", "정상 종료 상태 기록 실패", exception);
+        }
+    }
+
+    private void TryMarkUnexpectedTermination()
+    {
+        if (_appRunStateService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _appRunStateService.MarkUnexpectedTermination();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("App", "비정상 종료 상태 기록 실패", exception);
+        }
+    }
+
+    private void DisposeAudioServicesForRecovery()
+    {
+        TryDispose(_audioNotificationService);
+        TryDispose(_audioSessionService as IDisposable);
+        TryDispose(_audioDeviceCatalogService as IDisposable);
+    }
+
+    private static void TryDispose(IDisposable? disposable)
+    {
+        if (disposable is null)
+        {
+            return;
+        }
+
+        try
+        {
+            disposable.Dispose();
+        }
+        catch
+        {
+            // 제한 모드 복구 과정의 dispose 실패는 이후 fallback 경로를 막지 않습니다.
+        }
+    }
+
     /// <summary>
     /// WPF UI 스레드 예외를 로그에 남깁니다.
     /// </summary>
     private void App_OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        TryMarkUnexpectedTermination();
         AppLog.Error("App", "DispatcherUnhandledException", e.Exception);
     }
 
@@ -171,6 +296,11 @@ public partial class App : System.Windows.Application
     /// </summary>
     private void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
+        if (e.IsTerminating)
+        {
+            TryMarkUnexpectedTermination();
+        }
+
         AppLog.Error("App", $"UnhandledException isTerminating={e.IsTerminating}", e.ExceptionObject as Exception);
     }
 

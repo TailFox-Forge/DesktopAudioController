@@ -35,4 +35,14 @@ public sealed class UpdateCheckResult
     /// 감지된 최신 릴리즈가 prerelease인지 여부입니다.
     /// </summary>
     public bool IsPreRelease { get; init; }
+
+    /// <summary>
+    /// 업데이트 확인 시도 자체가 오류로 끝났는지 여부입니다.
+    /// </summary>
+    public bool HadError { get; init; }
+
+    /// <summary>
+    /// 업데이트 확인 실패 시 사용자에게 보여줄 상태 문구입니다.
+    /// </summary>
+    public string? StatusMessage { get; init; }
 }

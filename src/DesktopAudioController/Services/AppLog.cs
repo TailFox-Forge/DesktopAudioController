@@ -15,6 +15,7 @@ public static class AppLog
     private const int RetentionDays = 7;
     private const int MaxLogFiles = 30;
     private const long MaxTotalLogBytes = 100L * 1024 * 1024;
+    private const long MaxSingleLogBytes = 5L * 1024 * 1024;
     private const long StartupWriteReserveBytes = 1L * 1024 * 1024;
     private static readonly Regex SensitiveKeyPattern = new(
         @"(?<key>\b(?:deviceId|sessionId|defaultDeviceId|groupingId|path|backup|iconPath)=)(?<value>.*?)(?=\s+\w+=|$)",
@@ -24,6 +25,9 @@ public static class AppLog
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex GenericUnixPathPattern = new(
         @"\/home\/[^\/\s]+(?:\/[^\s:]+)+",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ManagedLogFileNamePattern = new(
+        @"^DesktopAudioController-\d{8}(?:\.\d+)?\.log$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // 현재 실행에서 사용할 로그 파일 경로입니다.
@@ -132,15 +136,98 @@ public static class AppLog
                 builder.Append(Sanitize(exception.ToString()));
             }
 
+            var logEntry = builder.ToString() + Environment.NewLine;
+            var logEntryBytes = Encoding.UTF8.GetByteCount(logEntry);
+
             lock (SyncRoot)
             {
-                File.AppendAllText(LogFilePath, builder.ToString() + Environment.NewLine, Encoding.UTF8);
+                PrepareWritableLogFile(logEntryBytes);
+                File.AppendAllText(LogFilePath, logEntry, Encoding.UTF8);
             }
         }
         catch
         {
             // 로그 기록 실패는 앱 동작을 막지 않습니다.
         }
+    }
+
+    private static void PrepareWritableLogFile(int upcomingWriteBytes)
+    {
+        if (!string.IsNullOrWhiteSpace(_logFilePath)
+            && !ManagedLogFileNamePattern.IsMatch(Path.GetFileName(_logFilePath)))
+        {
+            EnsureCurrentLogFileExists();
+            return;
+        }
+
+        var dateStamp = DateTime.Now.ToString("yyyyMMdd");
+        var writablePath = ResolveWritableLogFilePath(dateStamp, upcomingWriteBytes);
+        if (!PathsEqual(LogFilePath, writablePath))
+        {
+            _logFilePath = writablePath;
+            EnsureCurrentLogFileExists();
+        }
+    }
+
+    private static string ResolveWritableLogFilePath(string dateStamp, int upcomingWriteBytes)
+    {
+        var directoryPath = !string.IsNullOrWhiteSpace(_logFilePath)
+            ? Path.GetDirectoryName(_logFilePath) ?? BuildLogDirectoryPath()
+            : BuildLogDirectoryPath();
+        var baseFileName = $"DesktopAudioController-{dateStamp}";
+        var baseLogPath = BuildIndexedLogFilePath(directoryPath, baseFileName, index: 0);
+        var existingLogFiles = Directory
+            .EnumerateFiles(directoryPath, $"{baseFileName}*.log", SearchOption.TopDirectoryOnly)
+            .Select(path => new FileInfo(path))
+            .Select(file => new
+            {
+                File = file,
+                HasIndex = TryParseLogFileIndex(file.Name, baseFileName, out var parsedIndex),
+                Index = parsedIndex
+            })
+            .Where(item => item.HasIndex)
+            .OrderBy(item => item.Index)
+            .ToList();
+
+        if (existingLogFiles.Count == 0)
+        {
+            return baseLogPath;
+        }
+
+        var lastFile = existingLogFiles[^1];
+        if (lastFile.File.Exists && lastFile.File.Length + upcomingWriteBytes <= MaxSingleLogBytes)
+        {
+            return lastFile.File.FullName;
+        }
+
+        return BuildIndexedLogFilePath(directoryPath, baseFileName, lastFile.Index + 1);
+    }
+
+    private static string BuildIndexedLogFilePath(string directoryPath, string baseFileName, int index)
+    {
+        return index <= 0
+            ? Path.Combine(directoryPath, $"{baseFileName}.log")
+            : Path.Combine(directoryPath, $"{baseFileName}.{index}.log");
+    }
+
+    private static bool TryParseLogFileIndex(string fileName, string baseFileName, out int index)
+    {
+        if (string.Equals(fileName, $"{baseFileName}.log", StringComparison.OrdinalIgnoreCase))
+        {
+            index = 0;
+            return true;
+        }
+
+        var prefix = $"{baseFileName}.";
+        if (!fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            || !fileName.EndsWith(".log", StringComparison.OrdinalIgnoreCase))
+        {
+            index = -1;
+            return false;
+        }
+
+        var numberText = fileName[prefix.Length..^4];
+        return int.TryParse(numberText, out index);
     }
 
     private static void EnsureCurrentLogFileExists()

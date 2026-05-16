@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Media;
 using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 using System.Threading;
@@ -103,6 +105,12 @@ public partial class MainWindow : Window
     // 트레이 메뉴는 실제 표시 내용이 바뀔 때만 다시 구성합니다.
     private string? _lastTrayMenuSignature;
 
+    // 시작 시 제한 모드로 전환됐을 때 상단에 표시할 경고 문구입니다.
+    private readonly string? _startupWarningMessage;
+
+    // 이전 실행이 정상 종료되지 않았을 때 시작 직후 안내에 사용할 정보입니다.
+    private readonly PreviousRunIncident _previousRunIncident;
+
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
     /// </summary>
@@ -113,7 +121,9 @@ public partial class MainWindow : Window
         ISettingsService settingsService,
         IUpdateCheckService updateCheckService,
         bool isStartupLaunch,
-        bool forceVisibleOnStartup)
+        bool forceVisibleOnStartup,
+        string? startupWarningMessage = null,
+        PreviousRunIncident previousRunIncident = default)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -123,6 +133,8 @@ public partial class MainWindow : Window
         _updateCheckService = updateCheckService;
         _isStartupLaunch = isStartupLaunch;
         _forceVisibleOnStartup = forceVisibleOnStartup;
+        _startupWarningMessage = startupWarningMessage;
+        _previousRunIncident = previousRunIncident;
         _notifyIcon = CreateNotifyIcon();
         RefreshTrayMenu(force: true);
         DataContext = _viewModel;
@@ -132,6 +144,7 @@ public partial class MainWindow : Window
         StateChanged += MainWindow_OnStateChanged;
         Closing += MainWindow_OnClosing;
         VersionText.Text = $"버전 {GetApplicationVersionText()}";
+        ApplyStartupStatus();
         UpdateEmptyState();
     }
 
@@ -161,7 +174,15 @@ public partial class MainWindow : Window
     /// </summary>
     private void OpenReleasePageButton_OnClick(object sender, RoutedEventArgs e)
     {
-        TryOpenReleasePage(_latestUpdateCheckResult?.ReleasePageUrl);
+        if (!TryOpenReleasePage(_latestUpdateCheckResult?.ReleasePageUrl))
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "브라우저에서 릴리즈 페이지를 열지 못했습니다.",
+                "릴리즈 페이지 열기 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     /// <summary>
@@ -172,7 +193,15 @@ public partial class MainWindow : Window
         var updateCheckResult = _latestUpdateCheckResult;
         if (updateCheckResult is null || !updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
         {
-            TryOpenReleasePage();
+            if (!TryOpenReleasePage())
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    "브라우저에서 릴리즈 페이지를 열지 못했습니다.",
+                    "릴리즈 페이지 열기 실패",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
             return;
         }
 
@@ -193,7 +222,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        TryOpenReleasePage(targetUrl);
+        if (!TryOpenReleasePage(targetUrl))
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "브라우저에서 다운로드 페이지를 열지 못했습니다.",
+                "다운로드 페이지 열기 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     /// <summary>
@@ -338,20 +375,24 @@ public partial class MainWindow : Window
         // 수동 실행 또는 첫 실행 설정이 필요한 경우에는 시작 최소화를 적용하지 않습니다.
         if (!_isStartupLaunch || _forceVisibleOnStartup)
         {
+            ShowPreviousRunIncidentIfNeeded();
             return;
         }
         if (!settings.StartMinimized)
         {
+            ShowPreviousRunIncidentIfNeeded();
             return;
         }
 
         if (settings.MinimizeToTray)
         {
             HideToTray();
+            ShowPreviousRunIncidentIfNeeded();
             return;
         }
 
         WindowState = WindowState.Minimized;
+        ShowPreviousRunIncidentIfNeeded();
     }
 
     /// <summary>
@@ -494,7 +535,15 @@ public partial class MainWindow : Window
 
         if (result == System.Windows.MessageBoxResult.No)
         {
-            TryOpenWindowsSoundSettings();
+            if (!TryOpenWindowsSoundSettings())
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    "Windows 소리 설정을 열지 못했습니다.",
+                    "소리 설정 열기 실패",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
         }
     }
 
@@ -544,7 +593,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// Windows 기본 소리 설정 창을 열어 사용자가 수동으로 장치를 바꿀 수 있게 합니다.
     /// </summary>
-    private static void TryOpenWindowsSoundSettings()
+    private static bool TryOpenWindowsSoundSettings()
     {
         try
         {
@@ -553,17 +602,19 @@ public partial class MainWindow : Window
             {
                 UseShellExecute = true
             });
+            return true;
         }
-        catch
+        catch (Exception exception)
         {
-            // 설정 앱 실행까지 실패하면 추가 예외를 만들지 않고 조용히 종료합니다.
+            AppLog.Warn("MainWindow", "Windows 소리 설정 열기 실패", exception);
+            return false;
         }
     }
 
     /// <summary>
     /// GitHub 릴리즈 페이지를 기본 브라우저로 엽니다.
     /// </summary>
-    private static void TryOpenReleasePage(string? releasePageUrl = null)
+    private static bool TryOpenReleasePage(string? releasePageUrl = null)
     {
         try
         {
@@ -571,11 +622,40 @@ public partial class MainWindow : Window
             {
                 UseShellExecute = true
             });
+            return true;
         }
-        catch
+        catch (Exception exception)
         {
-            // 브라우저 실행 실패는 치명 오류가 아니므로 조용히 무시합니다.
+            AppLog.Warn("MainWindow", $"릴리즈 페이지 열기 실패 url={releasePageUrl ?? ReleasesPageUrl}", exception);
+            return false;
         }
+    }
+
+    private static bool TryOpenLogFolder()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(AppLog.LogDirectoryPath)
+            {
+                UseShellExecute = true
+            });
+            return true;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainWindow", "로그 폴더 열기 실패", exception);
+            return false;
+        }
+    }
+
+    private static bool TryOpenIssueCreationPage()
+    {
+        var currentVersion = GetApplicationVersionText();
+        var title = Uri.EscapeDataString("[Bug] 비정상 종료 보고");
+        var body = Uri.EscapeDataString(
+            $"## 요약\n이전 실행이 정상 종료되지 않았습니다.\n\n## 환경\n- 버전: {currentVersion}\n- 로그 위치: {AppLog.LogDirectoryPath}\n\n## 확인 사항\n- 앱 실행 중 강제 종료/재부팅/블루스크린/크래시 가능성\n- 로그 파일을 첨부해 주세요.\n");
+
+        return TryOpenReleasePage($"https://github.com/TailFox-Forge/DesktopAudioController/issues/new?labels=bug&title={title}&body={body}");
     }
 
     /// <summary>
@@ -587,13 +667,93 @@ public partial class MainWindow : Window
         var notifyIcon = new Forms.NotifyIcon
         {
             Text = "DesktopAudioController",
-            Icon = SystemIcons.Application,
+            Icon = TryLoadTrayIcon() ?? SystemIcons.Application,
             Visible = true
         };
 
         notifyIcon.ContextMenuStrip = new Forms.ContextMenuStrip();
         notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
         return notifyIcon;
+    }
+
+    private void ApplyStartupStatus()
+    {
+        if (string.IsNullOrWhiteSpace(_startupWarningMessage))
+        {
+            StartupStatusText.Visibility = Visibility.Collapsed;
+            StartupStatusText.Text = string.Empty;
+            return;
+        }
+
+        StartupStatusText.Text = _startupWarningMessage;
+        StartupStatusText.Visibility = Visibility.Visible;
+    }
+
+    private void ShowPreviousRunIncidentIfNeeded()
+    {
+        if (!_previousRunIncident.Detected)
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var startedAtText = _previousRunIncident.StartedAtUtc == default
+                ? string.Empty
+                : $"\n이전 시작 시각: {_previousRunIncident.StartedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}";
+
+            var result = System.Windows.MessageBox.Show(
+                this,
+                $"{_previousRunIncident.Message}{startedAtText}\n\n예: 로그 폴더 열기\n아니오: GitHub 이슈 작성\n취소: 닫기",
+                "비정상 종료 감지",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                if (!TryOpenLogFolder())
+                {
+                    System.Windows.MessageBox.Show(
+                        this,
+                        "로그 폴더를 열지 못했습니다.",
+                        "로그 폴더 열기 실패",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+
+                return;
+            }
+
+            if (result == MessageBoxResult.No && !TryOpenIssueCreationPage())
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    "브라우저에서 GitHub 이슈 페이지를 열지 못했습니다.",
+                    "이슈 페이지 열기 실패",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }));
+    }
+
+    private static Icon? TryLoadTrayIcon()
+    {
+        try
+        {
+            var executablePath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+            {
+                return null;
+            }
+
+            using var extractedIcon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
+            return extractedIcon?.Clone() as Icon;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainWindow", "트레이 아이콘 로드 실패", exception);
+            return null;
+        }
     }
 
     /// <summary>
@@ -800,17 +960,42 @@ public partial class MainWindow : Window
             UpdateButton.Visibility = Visibility.Collapsed;
         });
 
-        // updateCheckResult는 새 버전 존재 여부와 최신 버전 문자열을 담은 결과입니다.
-        var updateCheckResult = await _updateCheckService.CheckForUpdateAsync(currentVersion, _includePreReleaseUpdates);
-        _latestUpdateCheckResult = updateCheckResult;
+        UpdateCheckResult updateCheckResult;
+        try
+        {
+            // updateCheckResult는 새 버전 존재 여부와 최신 버전 문자열을 담은 결과입니다.
+            updateCheckResult = await _updateCheckService.CheckForUpdateAsync(currentVersion, _includePreReleaseUpdates);
+            _latestUpdateCheckResult = updateCheckResult;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainWindow", "업데이트 확인 실패", exception);
+            updateCheckResult = new UpdateCheckResult
+            {
+                HadError = true,
+                StatusMessage = "업데이트 확인에 실패했습니다."
+            };
+        }
 
         await Dispatcher.InvokeAsync(() =>
         {
-            if (!updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
+            if (updateCheckResult.HadError)
             {
+                UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB3, 0x5A, 0x00));
+                UpdateStatusText.Text = updateCheckResult.StatusMessage ?? "업데이트 확인에 실패했습니다.";
+                UpdateStatusText.Visibility = Visibility.Visible;
                 return;
             }
 
+            if (!updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
+            {
+                UpdateStatusText.Visibility = Visibility.Collapsed;
+                UpdateStatusText.Text = string.Empty;
+                UpdateButton.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0xAA, 0x66));
             var publishedDateText = updateCheckResult.PublishedAtUtc.HasValue
                 ? $" · {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd} 공개"
                 : string.Empty;

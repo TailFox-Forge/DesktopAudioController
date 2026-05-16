@@ -86,6 +86,7 @@ public sealed class SettingsService : ISettingsService
     public void Save(AppSettings settings)
     {
         AppLog.Info("SettingsService", $"Save 시작 path={SettingsFilePath} visibleDevices={settings.VisibleDeviceIds.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
+        var tempFilePath = $"{SettingsFilePath}.{Guid.NewGuid():N}.tmp";
         try
         {
             // 상위 폴더가 없을 수 있으므로 먼저 생성합니다.
@@ -94,11 +95,21 @@ public sealed class SettingsService : ISettingsService
             // 사람이 읽기 쉬운 들여쓰기 형태로 저장합니다.
             // 저장 직전에 직렬화된 JSON 문자열입니다.
             var json = JsonSerializer.Serialize(settings, SerializerOptions);
-            File.WriteAllText(SettingsFilePath, json);
+            File.WriteAllText(tempFilePath, json);
+            if (File.Exists(SettingsFilePath))
+            {
+                File.Replace(tempFilePath, SettingsFilePath, destinationBackupFileName: null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(tempFilePath, SettingsFilePath);
+            }
+
             AppLog.Info("SettingsService", $"Save 성공 path={SettingsFilePath}");
         }
         catch (Exception exception)
         {
+            TryDeleteTemporarySettingsFile(tempFilePath);
             // 저장 실패는 UI에서 사용자에게 안내할 수 있도록 경로와 함께 명시적 예외로 래핑합니다.
             AppLog.Error("SettingsService", $"Save 실패 path={SettingsFilePath}", exception);
             throw new SettingsPersistenceException(
@@ -144,6 +155,21 @@ public sealed class SettingsService : ISettingsService
         {
             // 백업 실패는 원본 로드 실패보다 우선순위가 낮으므로 추가 예외를 만들지 않습니다.
             AppLog.Warn("SettingsService", $"손상된 설정 파일 백업 실패 backup={BackupSettingsFilePath}", exception);
+        }
+    }
+
+    private static void TryDeleteTemporarySettingsFile(string tempFilePath)
+    {
+        try
+        {
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+        }
+        catch
+        {
+            // 임시 파일 삭제 실패는 저장 실패보다 우선순위가 낮으므로 추가 예외를 만들지 않습니다.
         }
     }
 }

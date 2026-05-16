@@ -135,6 +135,35 @@ public sealed class SettingsServiceTests
         Assert.Equal("name:Music", root.GetProperty("ProgramAudioPreferences")[0].GetProperty("MatchKey").GetString());
     }
 
+    [Fact]
+    public void Save_ReplacesExistingFileWithoutLeavingTemporaryFiles()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var settingsFilePath = Path.Combine(tempDirectory.Path, "config", "settings.json");
+        var service = new SettingsService(settingsFilePath);
+
+        service.Save(new AppSettings
+        {
+            VisibleDeviceIds = ["device-before"],
+            StartMinimized = true
+        });
+
+        service.Save(new AppSettings
+        {
+            VisibleDeviceIds = ["device-after"],
+            StartMinimized = false
+        });
+
+        var loaded = service.Load();
+        Assert.Equal(["device-after"], loaded.VisibleDeviceIds);
+        Assert.False(loaded.StartMinimized);
+
+        var tempFiles = Directory
+            .EnumerateFiles(Path.GetDirectoryName(settingsFilePath)!, "*.tmp", SearchOption.TopDirectoryOnly)
+            .ToList();
+        Assert.Empty(tempFiles);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()
