@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 이 스크립트는 Windows x64 self-contained single-file 배포 산출물을 표준 방식으로 생성합니다.
+# 이 스크립트는 Windows x64 self-contained single-file exe 배포 산출물을 표준 방식으로 생성합니다.
 # 인자가 없으면 현재 커밋 해시를 포함한 로컬 검증용 버전 문자열을 사용합니다.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csproj"
 
 # 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.10.2-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+VERSION="${1:-v0.12.0-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 
 # 우선순위:
 # 1. DOTNET_BIN 환경 변수
@@ -71,6 +71,9 @@ echo "  - RID restore 수행: ${RUNTIME_ID}"
     --self-contained true \
     --no-restore \
     -p:PublishSingleFile=true \
+    -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:DebugType=None \
+    -p:DebugSymbols=false \
     -p:EnableWindowsTargeting=true \
     -o "${PUBLISH_DIR}"
 
