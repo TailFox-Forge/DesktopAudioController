@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="설정"
+        Icon="Assets/AppIcon.ico"
         Width="750"
         MinHeight="420"
         FontSize="13"
