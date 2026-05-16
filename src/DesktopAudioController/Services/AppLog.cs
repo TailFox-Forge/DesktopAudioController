@@ -12,6 +12,10 @@ public static class AppLog
 {
     // 여러 스레드에서 동시에 로그 파일을 쓸 수 있으므로 파일 쓰기는 직렬화합니다.
     private static readonly object SyncRoot = new();
+    private const int RetentionDays = 7;
+    private const int MaxLogFiles = 30;
+    private const long MaxTotalLogBytes = 100L * 1024 * 1024;
+    private const long StartupWriteReserveBytes = 1L * 1024 * 1024;
     private static readonly Regex SensitiveKeyPattern = new(
         @"(?<key>\b(?:deviceId|sessionId|defaultDeviceId|groupingId|path|backup|iconPath)=)(?<value>.*?)(?=\s+\w+=|$)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -41,6 +45,15 @@ public static class AppLog
     public static void Initialize()
     {
         _ = LogFilePath;
+        EnsureCurrentLogFileExists();
+        var cleanupSummary = CleanupLogFiles();
+        if (cleanupSummary.DeletedFiles > 0)
+        {
+            Info(
+                "AppLog",
+                $"로그 정리 완료 deletedFiles={cleanupSummary.DeletedFiles} freedBytes={cleanupSummary.FreedBytes} remainingFiles={cleanupSummary.RemainingFiles} totalBytes={cleanupSummary.RemainingBytes}");
+        }
+
         Info("AppLog", $"로그 초기화 path={LogFilePath}");
     }
 
@@ -130,6 +143,121 @@ public static class AppLog
         }
     }
 
+    private static void EnsureCurrentLogFileExists()
+    {
+        try
+        {
+            using var stream = new FileStream(LogFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        }
+        catch
+        {
+            // 현재 로그 파일 선생성 실패는 나중 로그 기록 시도에 맡기고 앱 시작은 계속 진행합니다.
+        }
+    }
+
+    /// <summary>
+    /// 앱 시작 시 오래된 로그를 정리해 보관 기간, 개수, 총 용량 상한을 유지합니다.
+    /// </summary>
+    private static LogCleanupSummary CleanupLogFiles()
+    {
+        try
+        {
+            var currentLogFullPath = Path.GetFullPath(LogFilePath);
+            var directoryInfo = new DirectoryInfo(LogDirectoryPath);
+            if (!directoryInfo.Exists)
+            {
+                return LogCleanupSummary.Empty;
+            }
+
+            var deletedFiles = 0;
+            long freedBytes = 0;
+            var cutoffUtc = DateTime.UtcNow.AddDays(-RetentionDays);
+
+            var logFiles = directoryInfo
+                .EnumerateFiles("DesktopAudioController-*.log", SearchOption.TopDirectoryOnly)
+                .OrderBy(file => file.LastWriteTimeUtc)
+                .ThenBy(file => file.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            DeleteMatchingLogs(
+                logFiles,
+                static (file, state) => !PathsEqual(file.FullName, state.CurrentLogFullPath) && file.LastWriteTimeUtc < state.CutoffUtc,
+                new CleanupState(currentLogFullPath, cutoffUtc),
+                ref deletedFiles,
+                ref freedBytes);
+
+            while (logFiles.Count > MaxLogFiles)
+            {
+                var candidate = logFiles.FirstOrDefault(file => !PathsEqual(file.FullName, currentLogFullPath));
+                if (candidate is null)
+                {
+                    break;
+                }
+
+                DeleteFile(candidate, logFiles, ref deletedFiles, ref freedBytes);
+            }
+
+            var cleanupTargetBytes = Math.Max(0, MaxTotalLogBytes - StartupWriteReserveBytes);
+            while (logFiles.Sum(static file => file.Length) > cleanupTargetBytes)
+            {
+                var candidate = logFiles.FirstOrDefault(file => !PathsEqual(file.FullName, currentLogFullPath));
+                if (candidate is null)
+                {
+                    break;
+                }
+
+                DeleteFile(candidate, logFiles, ref deletedFiles, ref freedBytes);
+            }
+
+            return new LogCleanupSummary(
+                deletedFiles,
+                freedBytes,
+                logFiles.Count,
+                logFiles.Sum(static file => file.Length));
+        }
+        catch
+        {
+            return LogCleanupSummary.Empty;
+        }
+    }
+
+    private static void DeleteMatchingLogs<TState>(
+        List<FileInfo> logFiles,
+        Func<FileInfo, TState, bool> predicate,
+        TState state,
+        ref int deletedFiles,
+        ref long freedBytes)
+    {
+        foreach (var candidate in logFiles.Where(file => predicate(file, state)).ToList())
+        {
+            DeleteFile(candidate, logFiles, ref deletedFiles, ref freedBytes);
+        }
+    }
+
+    private static void DeleteFile(FileInfo file, List<FileInfo> logFiles, ref int deletedFiles, ref long freedBytes)
+    {
+        try
+        {
+            var length = file.Length;
+            file.Delete();
+            logFiles.Remove(file);
+            deletedFiles++;
+            freedBytes += length;
+        }
+        catch
+        {
+            // 정리 실패는 앱 실행을 막지 않습니다.
+        }
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        return string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// 공개 이슈에 첨부할 수 있도록 장치/세션 식별자와 로컬 경로를 요약 형태로 바꿉니다.
     /// </summary>
@@ -195,5 +323,12 @@ public static class AppLog
         }
 
         return $"[path:{fileName}]";
+    }
+
+    private readonly record struct CleanupState(string CurrentLogFullPath, DateTime CutoffUtc);
+
+    private readonly record struct LogCleanupSummary(int DeletedFiles, long FreedBytes, int RemainingFiles, long RemainingBytes)
+    {
+        public static LogCleanupSummary Empty => new(0, 0, 0, 0);
     }
 }

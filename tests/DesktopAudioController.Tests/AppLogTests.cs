@@ -38,6 +38,57 @@ public sealed class AppLogTests
         }
     }
 
+    [Fact]
+    public void Initialize_CleansUpLogsByAgeCountAndTotalSize()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var currentLogPath = Path.Combine(tempDirectory.DirectoryPath, "DesktopAudioController-20990101.log");
+        var field = typeof(AppLog).GetField("_logFilePath", BindingFlags.Static | BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        var originalValue = (string?)field!.GetValue(null);
+
+        try
+        {
+            field.SetValue(null, currentLogPath);
+            CreateLogFile(
+                Path.Combine(tempDirectory.DirectoryPath, "DesktopAudioController-20000101.log"),
+                1024,
+                DateTime.UtcNow.AddDays(-8));
+
+            for (var index = 0; index < 31; index++)
+            {
+                CreateLogFile(
+                    Path.Combine(tempDirectory.DirectoryPath, $"DesktopAudioController-202605{index + 1:00}.log"),
+                    4L * 1024 * 1024,
+                    DateTime.UtcNow.AddMinutes(-(31 - index)));
+            }
+
+            AppLog.Initialize();
+
+            var remainingLogs = Directory
+                .EnumerateFiles(tempDirectory.DirectoryPath, "DesktopAudioController-*.log")
+                .Select(path => new FileInfo(path))
+                .ToList();
+
+            Assert.DoesNotContain(remainingLogs, file => file.Name == "DesktopAudioController-20000101.log");
+            Assert.Contains(remainingLogs, file => file.FullName == currentLogPath);
+            Assert.True(remainingLogs.Count <= 30);
+            Assert.True(remainingLogs.Sum(file => file.Length) <= 100L * 1024 * 1024);
+        }
+        finally
+        {
+            field.SetValue(null, originalValue);
+        }
+    }
+
+    private static void CreateLogFile(string filePath, long length, DateTime lastWriteTimeUtc)
+    {
+        using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+        stream.SetLength(length);
+        File.SetLastWriteTimeUtc(filePath, lastWriteTimeUtc);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()
