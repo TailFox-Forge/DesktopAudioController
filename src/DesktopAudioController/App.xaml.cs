@@ -14,6 +14,9 @@ namespace DesktopAudioController;
 /// </summary>
 public partial class App : System.Windows.Application
 {
+    // 부팅 직후 Core Audio 열거가 멎는 경우 UI가 영원히 안 뜨지 않도록 초기 로드 시간 제한을 둡니다.
+    private static readonly TimeSpan InitialDeviceLoadTimeout = TimeSpan.FromSeconds(6);
+
     // 설정 파일 입출력을 담당하는 서비스입니다.
     private ISettingsService? _settingsService;
 
@@ -50,7 +53,7 @@ public partial class App : System.Windows.Application
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
     /// </summary>
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         AppLog.Initialize();
@@ -98,30 +101,8 @@ public partial class App : System.Windows.Application
             }
         }
 
-        // 메인 화면에서 사용할 뷰모델을 만들고 저장된 설정 기준으로 데이터를 채웁니다.
-        var mainViewModel = new MainViewModel(
-            _settingsService,
-            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
-            _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
-            _appIconService);
-
-        try
-        {
-            mainViewModel.Load();
-            AppLog.Info("App", $"초기 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
-        }
-        catch (Exception exception)
-        {
-            AppLog.Error("App", "초기 장치 로드 실패, 제한 모드로 전환", exception);
-            startupWarningMessage = EnterDegradedMode("오디오 장치 초기화에 실패해 제한 모드로 시작했습니다. 로그를 확인한 뒤 앱을 다시 실행해 주세요.");
-            mainViewModel = new MainViewModel(
-                _settingsService,
-                _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
-                _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
-                _appIconService);
-            mainViewModel.Load();
-            AppLog.Info("App", $"제한 모드 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
-        }
+        var (mainViewModel, effectiveStartupWarningMessage) = await CreateMainViewModelAsync(startupWarningMessage);
+        startupWarningMessage = effectiveStartupWarningMessage;
 
         // 메인 창은 설정 창 팩토리를 받아 필요할 때마다 새 설정 뷰모델을 생성합니다.
         var mainWindow = new MainWindow(
@@ -161,6 +142,43 @@ public partial class App : System.Windows.Application
             AppLog.Info("App", "표시 장치 미설정 상태로 첫 실행 설정창 표시");
             mainWindow.OpenSettingsOnFirstRun();
         }
+    }
+
+    private async Task<(MainViewModel ViewModel, string? WarningMessage)> CreateMainViewModelAsync(string? startupWarningMessage)
+    {
+        var mainViewModel = new MainViewModel(
+            _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
+            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
+            _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
+            _appIconService ?? throw new InvalidOperationException("App icon service is not initialized."));
+
+        try
+        {
+            AppLog.Info("App", "초기 장치 로드 시작");
+            await mainViewModel.LoadAsync().WaitAsync(InitialDeviceLoadTimeout);
+            AppLog.Info("App", $"초기 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
+            return (mainViewModel, startupWarningMessage);
+        }
+        catch (TimeoutException exception)
+        {
+            mainViewModel.InvalidatePendingSnapshots();
+            AppLog.Error("App", "초기 장치 로드 타임아웃, 제한 모드로 전환", exception);
+            startupWarningMessage = EnterDegradedMode("부팅 직후 오디오 장치 초기화가 지연되어 제한 모드로 시작했습니다. 잠시 후 다시 실행해 주세요.");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("App", "초기 장치 로드 실패, 제한 모드로 전환", exception);
+            startupWarningMessage = EnterDegradedMode("오디오 장치 초기화에 실패해 제한 모드로 시작했습니다. 로그를 확인한 뒤 앱을 다시 실행해 주세요.");
+        }
+
+        var degradedMainViewModel = new MainViewModel(
+            _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
+            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
+            _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
+            _appIconService ?? throw new InvalidOperationException("App icon service is not initialized."));
+        degradedMainViewModel.Load();
+        AppLog.Info("App", $"제한 모드 장치 로드 완료 visibleDevices={degradedMainViewModel.VisibleDevices.Count} hasConfiguredDevices={degradedMainViewModel.HasConfiguredDevices}");
+        return (degradedMainViewModel, startupWarningMessage);
     }
 
     /// <summary>
