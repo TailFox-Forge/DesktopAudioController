@@ -6,6 +6,11 @@ namespace DesktopAudioController.Models;
 public sealed class ProcessMetadataInfo
 {
     /// <summary>
+    /// 세션 DisplayName이 없을 때 UI 표시용으로 우선 사용할 친화적 이름입니다.
+    /// </summary>
+    public required string PreferredDisplayName { get; init; }
+
+    /// <summary>
     /// 프로세스 이름입니다. 세션 DisplayName이 없을 때 UI 이름 폴백으로 사용합니다.
     /// </summary>
     public required string ProcessName { get; init; }

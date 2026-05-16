@@ -196,10 +196,16 @@
                                                                                 </TextBlock>
                                                                             </StackPanel>
                                                                         </StackPanel>
-                                                                        <CheckBox DockPanel.Dock="Right"
-                                                                                  Margin="16,0,0,0"
-                                                                                  IsChecked="{Binding IsMuted}"
-                                                                                  Content="음소거" />
+                                                                        <StackPanel DockPanel.Dock="Right"
+                                                                                    Orientation="Horizontal">
+                                                                            <Button Margin="0,0,8,0"
+                                                                                    Padding="8,2"
+                                                                                    Click="RenameSessionButton_OnClick"
+                                                                                    Content="이름 변경" />
+                                                                            <CheckBox Margin="8,0,0,0"
+                                                                                      IsChecked="{Binding IsMuted}"
+                                                                                      Content="음소거" />
+                                                                        </StackPanel>
                                                                     </DockPanel>
                                                                     <Slider Minimum="0"
                                                                             Maximum="100"

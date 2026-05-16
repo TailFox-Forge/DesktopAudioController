@@ -26,6 +26,7 @@ public sealed class ProgramAudioPreferenceStoreTests
     {
         var session = new AudioSessionInfo
         {
+            MatchKey = "path:C:\\Apps\\Discord.exe",
             Id = "session-id",
             DisplayName = "Discord",
             ExecutablePath = "C:\\Apps\\Discord.exe",
@@ -47,6 +48,7 @@ public sealed class ProgramAudioPreferenceStoreTests
     {
         var session = new AudioSessionInfo
         {
+            MatchKey = "path:C:\\Apps\\msedge.exe",
             Id = "session-id",
             DisplayName = "Edge",
             ExecutablePath = "C:\\Apps\\msedge.exe",
@@ -77,6 +79,7 @@ public sealed class ProgramAudioPreferenceStoreTests
     {
         var session = new AudioSessionInfo
         {
+            MatchKey = "session-path:\\Device\\HarddiskVolume3\\Program Files\\App\\game.exe",
             Id = "{0.0.0}.0|\\Device\\HarddiskVolume3\\Program Files\\App\\game.exe%b{00000000-0000-0000-0000-000000000000}",
             DisplayName = "Game",
             DisambiguationText = "App\\game.exe",
@@ -106,6 +109,31 @@ public sealed class ProgramAudioPreferenceStoreTests
         Assert.Equal(session.DisambiguationText, restoredSession.DisambiguationText);
         Assert.Equal(27, restoredSession.Volume);
         Assert.True(restoredSession.IsMuted);
+    }
+
+    [Fact]
+    public void ApplyStoredPresentation_UsesCustomDisplayName_WhenPresent()
+    {
+        var session = new AudioSessionInfo
+        {
+            MatchKey = "path:C:\\Apps\\game.exe",
+            Id = "session-id",
+            DisplayName = "HTGame",
+            ExecutablePath = "C:\\Apps\\game.exe",
+            Volume = 50,
+            IsMuted = false
+        };
+        var preference = new ProgramAudioPreference
+        {
+            MatchKey = "path:C:\\Apps\\game.exe",
+            DisplayName = "HTGame",
+            CustomDisplayName = "이환"
+        };
+
+        var resolved = ProgramAudioPreferenceStore.ApplyStoredPresentation(session, preference);
+
+        Assert.Equal("이환", resolved.DisplayName);
+        Assert.Equal(session.MatchKey, resolved.MatchKey);
     }
 
     [Fact]

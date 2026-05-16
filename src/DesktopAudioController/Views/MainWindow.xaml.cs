@@ -286,6 +286,41 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 세션 표시 이름을 사용자가 직접 덮어쓸 수 있는 작은 입력 창을 엽니다.
+    /// </summary>
+    private async void RenameSessionButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: AudioSessionViewModel session })
+        {
+            return;
+        }
+
+        var renameWindow = new RenameProgramWindow(session.DisplayName, session.ExecutablePath)
+        {
+            Owner = this
+        };
+
+        var result = renameWindow.ShowDialog();
+        if (result != true)
+        {
+            return;
+        }
+
+        if (!_viewModel.SetCustomSessionDisplayName(session.DeviceId, session.Id, renameWindow.CustomDisplayName))
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "현재 세션의 이름 변경 설정을 저장하지 못했습니다.\n잠시 후 다시 시도해 주세요.",
+                "이름 변경 실패",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        await ReloadViewModelAsync("custom_session_name_saved");
+    }
+
+    /// <summary>
     /// 창 로드가 끝난 시점에 시작 최소화 옵션을 적용합니다.
     /// </summary>
     private void MainWindow_OnLoaded(object sender, RoutedEventArgs e)

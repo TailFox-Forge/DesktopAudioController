@@ -62,12 +62,20 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
                     continue;
                 }
 
+                var displayName = ResolveDisplayName(session);
+                var executablePath = ResolveExecutablePath(session);
+                var iconSourcePath = ResolveIconSourcePath(session);
+
                 results.Add(new AudioSessionInfo
                 {
+                    MatchKey = ProgramAudioPreferenceStore.CreateMatchKey(
+                        session.GetSessionIdentifier,
+                        executablePath,
+                        displayName),
                     Id = session.GetSessionIdentifier,
-                    DisplayName = ResolveDisplayName(session),
-                    ExecutablePath = ResolveExecutablePath(session),
-                    IconSourcePath = ResolveIconSourcePath(session),
+                    DisplayName = displayName,
+                    ExecutablePath = executablePath,
+                    IconSourcePath = iconSourcePath,
                     Volume = (int)Math.Round(session.SimpleAudioVolume.Volume * 100),
                     IsMuted = session.SimpleAudioVolume.Mute
                 });
@@ -172,7 +180,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
 
         // 메타데이터 캐시는 PID 기준으로 프로세스 이름을 재사용해 세션 재로딩 비용을 줄입니다.
         var metadata = _processMetadataCacheService.GetProcessMetadata(session.GetProcessID);
-        return metadata.ProcessName;
+        return metadata.PreferredDisplayName;
     }
 
     /// <summary>
@@ -241,6 +249,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     {
         return new AudioSessionInfo
         {
+            MatchKey = current.MatchKey ?? incoming.MatchKey,
             Id = current.Id,
             DisplayName = PreferDisplayName(current.DisplayName, incoming.DisplayName),
             ExecutablePath = PreferExecutablePath(current.ExecutablePath, incoming.ExecutablePath),

@@ -18,6 +18,9 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
     // PID를 키로 사용해 프로세스 이름/실행 경로 또는 실패 상태를 보관합니다.
     private readonly Dictionary<uint, ProcessMetadataCacheEntry> _metadataCache = [];
 
+    // 실행 파일 경로 기준으로 ProductName/FileDescription을 재사용해 반복 디스크 조회를 줄입니다.
+    private readonly Dictionary<string, string?> _displayNameCache = new(StringComparer.OrdinalIgnoreCase);
+
     // 다음 정리 작업을 수행할 시각입니다.
     private DateTimeOffset _nextCleanupUtc = DateTimeOffset.MinValue;
 
@@ -126,7 +129,7 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
     /// <summary>
     /// 실제 프로세스를 조회해 메타데이터를 읽습니다.
     /// </summary>
-    private static ProcessMetadataInfo LoadProcessMetadata(uint processId)
+    private ProcessMetadataInfo LoadProcessMetadata(uint processId)
     {
         var fallbackName = $"PID {processId}";
 
@@ -169,8 +172,11 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
                 processName = Path.GetFileNameWithoutExtension(executablePath);
             }
 
+            var preferredDisplayName = ResolvePreferredDisplayName(executablePath, processName);
+
             return new ProcessMetadataInfo
             {
+                PreferredDisplayName = preferredDisplayName,
                 ProcessName = processName,
                 ExecutablePath = executablePath
             };
@@ -180,10 +186,55 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
             // 권한 문제 또는 종료된 프로세스는 PID 기반 이름으로 폴백합니다.
             return new ProcessMetadataInfo
             {
+                PreferredDisplayName = $"PID {processId}",
                 ProcessName = $"PID {processId}",
                 ExecutablePath = null
             };
         }
+    }
+
+    /// <summary>
+    /// 실행 파일 메타데이터에서 사람이 읽기 쉬운 이름을 먼저 찾고, 없으면 프로세스 이름으로 폴백합니다.
+    /// </summary>
+    private string ResolvePreferredDisplayName(string? executablePath, string processName)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            return processName;
+        }
+
+        lock (_syncRoot)
+        {
+            if (_displayNameCache.TryGetValue(executablePath, out var cachedDisplayName))
+            {
+                return string.IsNullOrWhiteSpace(cachedDisplayName) ? processName : cachedDisplayName;
+            }
+        }
+
+        string? displayName = null;
+        try
+        {
+            var versionInfo = FileVersionInfo.GetVersionInfo(executablePath);
+            displayName = NormalizeReadableMetadata(versionInfo.ProductName)
+                ?? NormalizeReadableMetadata(versionInfo.FileDescription);
+        }
+        catch
+        {
+            // 파일 버전 리소스를 못 읽으면 프로세스 이름 폴백을 그대로 사용합니다.
+        }
+
+        lock (_syncRoot)
+        {
+            _displayNameCache[executablePath] = displayName;
+        }
+
+        return string.IsNullOrWhiteSpace(displayName) ? processName : displayName;
+    }
+
+    private static string? NormalizeReadableMetadata(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
 
     /// <summary>

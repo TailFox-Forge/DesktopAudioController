@@ -12,7 +12,7 @@ internal static class ProgramAudioPreferenceStore
         AudioSessionInfo session,
         out ProgramAudioPreference preference)
     {
-        var matchKey = CreateMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
+        var matchKey = ResolveMatchKey(session);
         if (matchKey is not null && preferencesByKey.TryGetValue(matchKey, out preference!))
         {
             return true;
@@ -28,7 +28,7 @@ internal static class ProgramAudioPreferenceStore
         int? volume = null,
         bool? muted = null)
     {
-        var matchKey = CreateMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
+        var matchKey = ResolveMatchKey(session);
         if (matchKey is null)
         {
             throw new InvalidOperationException("프로그램 설정 저장용 매칭 키를 계산할 수 없습니다.");
@@ -57,16 +57,51 @@ internal static class ProgramAudioPreferenceStore
 
     public static AudioSessionInfo CreateRestoredSessionSnapshot(AudioSessionInfo session, ProgramAudioPreference preference)
     {
+        var displayName = string.IsNullOrWhiteSpace(preference.CustomDisplayName)
+            ? session.DisplayName
+            : preference.CustomDisplayName!.Trim();
+
         return new AudioSessionInfo
         {
+            MatchKey = session.MatchKey,
             Id = session.Id,
-            DisplayName = session.DisplayName,
+            DisplayName = displayName,
             DisambiguationText = session.DisambiguationText,
             ExecutablePath = session.ExecutablePath,
             IconSourcePath = session.IconSourcePath,
             Volume = preference.Volume,
             IsMuted = preference.IsMuted
         };
+    }
+
+    public static AudioSessionInfo ApplyStoredPresentation(AudioSessionInfo session, ProgramAudioPreference preference)
+    {
+        if (string.IsNullOrWhiteSpace(preference.CustomDisplayName))
+        {
+            return session;
+        }
+
+        return new AudioSessionInfo
+        {
+            MatchKey = session.MatchKey,
+            Id = session.Id,
+            DisplayName = preference.CustomDisplayName.Trim(),
+            DisambiguationText = session.DisambiguationText,
+            ExecutablePath = session.ExecutablePath,
+            IconSourcePath = session.IconSourcePath,
+            Volume = session.Volume,
+            IsMuted = session.IsMuted
+        };
+    }
+
+    public static string? ResolveMatchKey(AudioSessionInfo session)
+    {
+        if (!string.IsNullOrWhiteSpace(session.MatchKey))
+        {
+            return session.MatchKey;
+        }
+
+        return CreateMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
     }
 
     public static string? CreateMatchKey(string sessionId, string? executablePath, string displayName)

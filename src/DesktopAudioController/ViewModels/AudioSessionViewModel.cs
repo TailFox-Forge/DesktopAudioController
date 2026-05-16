@@ -16,6 +16,9 @@ public sealed class AudioSessionViewModel : ObservableObject
     // UI에 표시할 세션 이름입니다.
     private string _displayName;
 
+    // 프로그램 설정 저장/복원에 사용할 고정 매칭 키입니다.
+    private string? _matchKey;
+
     // 동일 이름 세션을 구분하기 위한 보조 텍스트입니다.
     private string? _disambiguationText;
 
@@ -52,6 +55,7 @@ public sealed class AudioSessionViewModel : ObservableObject
     public AudioSessionViewModel(
         string deviceId,
         string id,
+        string? matchKey,
         string displayName,
         string? disambiguationText,
         string? executablePath,
@@ -64,6 +68,7 @@ public sealed class AudioSessionViewModel : ObservableObject
     {
         DeviceId = deviceId;
         Id = id;
+        _matchKey = matchKey;
         _displayName = displayName;
         _disambiguationText = disambiguationText;
         _executablePath = executablePath;
@@ -89,6 +94,15 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// 오디오 세션 고유 식별자입니다.
     /// </summary>
     public string Id { get; }
+
+    /// <summary>
+    /// 프로그램 설정 저장/복원용 고정 매칭 키입니다.
+    /// </summary>
+    public string? MatchKey
+    {
+        get => _matchKey;
+        private set => SetProperty(ref _matchKey, value);
+    }
 
     /// <summary>
     /// UI에 노출할 세션 표시 이름입니다.
@@ -194,6 +208,7 @@ public sealed class AudioSessionViewModel : ObservableObject
     /// 서비스에서 읽어온 최신 세션 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
     /// </summary>
     public void UpdateSnapshot(
+        string? matchKey,
         string displayName,
         string? disambiguationText,
         string? executablePath,
@@ -207,6 +222,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         _volumeCommitTimer.Stop();
         try
         {
+            MatchKey = matchKey;
             DisplayName = displayName;
             DisambiguationText = disambiguationText;
             ExecutablePath = executablePath;

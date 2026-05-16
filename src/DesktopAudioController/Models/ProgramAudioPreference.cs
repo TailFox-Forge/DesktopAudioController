@@ -21,6 +21,11 @@ public sealed class ProgramAudioPreference
     public string DisplayName { get; set; } = string.Empty;
 
     /// <summary>
+    /// 사용자가 직접 지정한 표시 이름입니다. 비어 있으면 자동 이름을 그대로 사용합니다.
+    /// </summary>
+    public string? CustomDisplayName { get; set; }
+
+    /// <summary>
     /// 마지막으로 저장한 프로그램 볼륨입니다.
     /// </summary>
     public int Volume { get; set; } = 100;

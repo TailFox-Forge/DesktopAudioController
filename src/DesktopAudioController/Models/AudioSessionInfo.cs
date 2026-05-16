@@ -6,6 +6,11 @@ namespace DesktopAudioController.Models;
 public sealed class AudioSessionInfo
 {
     /// <summary>
+    /// 프로그램 설정 저장/복원에 사용할 고정 매칭 키입니다.
+    /// </summary>
+    public string? MatchKey { get; init; }
+
+    /// <summary>
     /// Windows 오디오 세션을 식별하는 고유 ID 문자열입니다.
     /// </summary>
     public required string Id { get; init; }

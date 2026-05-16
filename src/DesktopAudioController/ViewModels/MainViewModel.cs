@@ -203,10 +203,15 @@ public sealed class MainViewModel : ObservableObject
         var selectedIds = settings.VisibleDeviceIds.ToHashSet();
 
         // 메인 화면에는 사용자가 선택한 장치만 남기고 필요 시 연결된 장치만 필터링합니다.
+        var loadedProgramAudioPreferencesByKey = settings.ProgramAudioPreferences
+            .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
+            .GroupBy(preference => preference.MatchKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+
         var visibleDevices = devices
             .Where(device => selectedIds.Contains(device.Id))
             .Where(device => !settings.ShowOnlyConnectedDevices || device.IsConnected)
-            .Select(device => BuildDeviceSnapshot(device, settings.ShowSystemSounds))
+            .Select(device => BuildDeviceSnapshot(device, settings.ShowSystemSounds, loadedProgramAudioPreferencesByKey))
             .ToList();
 
         return new LoadSnapshot
@@ -237,7 +242,7 @@ public sealed class MainViewModel : ObservableObject
                 continue;
             }
 
-            snapshotsById[visibleDeviceId] = BuildDeviceSnapshot(device, includeSystemSounds);
+            snapshotsById[visibleDeviceId] = BuildDeviceSnapshot(device, includeSystemSounds, _programAudioPreferencesByKey);
         }
 
         return new StateSnapshot
@@ -249,7 +254,10 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>
     /// 장치 한 개에 대한 현재 상태와 세션 목록 스냅샷을 만듭니다.
     /// </summary>
-    private DeviceSnapshot BuildDeviceSnapshot(AudioDeviceInfo device, bool includeSystemSounds)
+    private DeviceSnapshot BuildDeviceSnapshot(
+        AudioDeviceInfo device,
+        bool includeSystemSounds,
+        IReadOnlyDictionary<string, ProgramAudioPreference> preferencesByKey)
     {
         IReadOnlyList<AudioSessionInfo> sessions = [];
 
@@ -265,6 +273,7 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             sessions = _audioSessionService.GetSessions(device.Id, includeSystemSounds).ToList();
+            sessions = ApplyStoredSessionPresentations(sessions, preferencesByKey).ToList();
             sessions = DisambiguateSessionDisplayNames(sessions).ToList();
         }
         catch (Exception exception)
@@ -406,6 +415,7 @@ public sealed class MainViewModel : ObservableObject
                         : null);
 
                 existingSession.UpdateSnapshot(
+                    snapshot.MatchKey,
                     snapshot.DisplayName,
                     snapshot.DisambiguationText,
                     snapshot.ExecutablePath,
@@ -436,6 +446,8 @@ public sealed class MainViewModel : ObservableObject
         {
             return session;
         }
+
+        session = ProgramAudioPreferenceStore.ApplyStoredPresentation(session, preference);
 
         if (_restoredSessionIds.Contains(session.Id))
         {
@@ -487,15 +499,9 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        var matchKey = ProgramAudioPreferenceStore.CreateMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
-        if (matchKey is null)
-        {
-            AppLog.Debug("MainViewModel", $"프로그램 설정 저장 생략: 매칭 키 없음 deviceId={deviceId} sessionId={sessionId}");
-            return;
-        }
-
         var sessionSnapshot = new AudioSessionInfo
         {
+            MatchKey = session.MatchKey,
             Id = session.Id,
             DisplayName = session.DisplayName,
             DisambiguationText = session.DisambiguationText,
@@ -504,6 +510,13 @@ public sealed class MainViewModel : ObservableObject
             Volume = session.Volume,
             IsMuted = session.IsMuted
         };
+
+        var matchKey = ProgramAudioPreferenceStore.ResolveMatchKey(sessionSnapshot);
+        if (matchKey is null)
+        {
+            AppLog.Debug("MainViewModel", $"프로그램 설정 저장 생략: 매칭 키 없음 deviceId={deviceId} sessionId={sessionId}");
+            return;
+        }
 
         _programAudioPreferencesByKey.TryGetValue(matchKey, out var preference);
         preference = ProgramAudioPreferenceStore.CreateOrUpdatePreference(preference, sessionSnapshot, volume, muted);
@@ -556,6 +569,7 @@ public sealed class MainViewModel : ObservableObject
         var viewModel = new AudioSessionViewModel(
             deviceId,
             session.Id,
+            session.MatchKey,
             session.DisplayName,
             session.DisambiguationText,
             session.ExecutablePath,
@@ -605,13 +619,29 @@ public sealed class MainViewModel : ObservableObject
             .Select(session => disambiguationById.TryGetValue(session.Id, out var label)
                 ? new AudioSessionInfo
                 {
+                    MatchKey = session.MatchKey,
                     Id = session.Id,
                     DisplayName = session.DisplayName,
                     DisambiguationText = label,
                     ExecutablePath = session.ExecutablePath,
+                    IconSourcePath = session.IconSourcePath,
                     Volume = session.Volume,
                     IsMuted = session.IsMuted
                 }
+                : session)
+            .ToList();
+    }
+
+    /// <summary>
+    /// 저장된 사용자 지정 이름이 있으면 세션 표시 이름에 먼저 반영합니다.
+    /// </summary>
+    private static IReadOnlyList<AudioSessionInfo> ApplyStoredSessionPresentations(
+        IReadOnlyList<AudioSessionInfo> sessions,
+        IReadOnlyDictionary<string, ProgramAudioPreference> preferencesByKey)
+    {
+        return sessions
+            .Select(session => ProgramAudioPreferenceStore.TryGetStoredPreference(preferencesByKey, session, out var preference)
+                ? ProgramAudioPreferenceStore.ApplyStoredPresentation(session, preference)
                 : session)
             .ToList();
     }
@@ -914,10 +944,71 @@ public sealed class MainViewModel : ObservableObject
                     MatchKey = preference.MatchKey,
                     ExecutablePath = preference.ExecutablePath,
                     DisplayName = preference.DisplayName,
+                    CustomDisplayName = preference.CustomDisplayName,
                     Volume = preference.Volume,
                     IsMuted = preference.IsMuted
                 })
                 .ToList()
         };
+    }
+
+    /// <summary>
+    /// 현재 세션에 대한 사용자 지정 표시 이름을 저장하고 즉시 파일에 반영합니다.
+    /// </summary>
+    public bool SetCustomSessionDisplayName(string deviceId, string sessionId, string? customDisplayName)
+    {
+        var session = VisibleDevices
+            .FirstOrDefault(visibleDevice => visibleDevice.Id == deviceId)?
+            .Sessions
+            .FirstOrDefault(currentSession => currentSession.Id == sessionId);
+        if (session is null)
+        {
+            return false;
+        }
+
+        var matchKey = session.MatchKey;
+        if (string.IsNullOrWhiteSpace(matchKey))
+        {
+            matchKey = ProgramAudioPreferenceStore.CreateMatchKey(session.Id, session.ExecutablePath, session.DisplayName);
+        }
+
+        if (string.IsNullOrWhiteSpace(matchKey))
+        {
+            return false;
+        }
+
+        if (!_programAudioPreferencesByKey.TryGetValue(matchKey, out var preference))
+        {
+            preference = new ProgramAudioPreference
+            {
+                MatchKey = matchKey,
+                ExecutablePath = session.ExecutablePath,
+                DisplayName = session.DisplayName,
+                Volume = session.Volume,
+                IsMuted = session.IsMuted
+            };
+        }
+
+        var normalizedCustomDisplayName = NormalizeCustomDisplayName(customDisplayName, preference.DisplayName);
+        preference.ExecutablePath = session.ExecutablePath;
+        preference.CustomDisplayName = normalizedCustomDisplayName;
+        _programAudioPreferencesByKey[matchKey] = preference;
+
+        QueueProgramPreferenceSave();
+        FlushPendingProgramPreferenceSave();
+        return true;
+    }
+
+    private static string? NormalizeCustomDisplayName(string? customDisplayName, string baseDisplayName)
+    {
+        var trimmed = customDisplayName?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return null;
+        }
+
+        return string.Equals(trimmed, baseDisplayName, StringComparison.Ordinal)
+            ? null
+            : trimmed;
     }
 }
