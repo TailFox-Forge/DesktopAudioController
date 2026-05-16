@@ -98,14 +98,20 @@
                                         BorderBrush="#DDD"
                                         BorderThickness="1">
                                     <StackPanel>
-                                        <DockPanel Margin="0,0,0,8">
-                                            <TextBlock FontSize="14"
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                       FontSize="14"
                                                        FontWeight="SemiBold"
                                                        TextTrimming="CharacterEllipsis"
                                                        ToolTip="{Binding Name}"
                                                        Text="{Binding Name}" />
-                                            <StackPanel DockPanel.Dock="Right"
-                                                        Orientation="Horizontal">
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        HorizontalAlignment="Right">
                                                 <TextBlock Margin="0,0,8,0"
                                                            VerticalAlignment="Center"
                                                            Foreground="#666"
@@ -114,7 +120,7 @@
                                                         Click="SetDefaultButton_OnClick"
                                                         Content="기본 장치로 설정" />
                                             </StackPanel>
-                                        </DockPanel>
+                                        </Grid>
                                         <!-- 장치 마스터 볼륨은 초기 화면에서 항상 바로 조절할 수 있게 둡니다. -->
                                         <Slider Minimum="0"
                                                 Maximum="100"
