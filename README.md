@@ -2,10 +2,6 @@
 
 Windows에서 사용자가 고른 출력 장치만 표시하고, 장치 마스터 볼륨과 해당 장치에서 실제로 소리를 내는 프로그램별 세션 볼륨을 빠르게 제어하는 WPF 데스크톱 유틸리티입니다.
 
-## 실행 화면 예시
-
-![DesktopAudioController 실행 화면 예시](docs/images/main-window-example.png)
-
 ## 현재 상태
 
 ```text
