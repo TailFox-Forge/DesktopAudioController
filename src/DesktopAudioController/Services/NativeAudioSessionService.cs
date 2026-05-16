@@ -55,6 +55,13 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
                     continue;
                 }
 
+                var processId = session.GetProcessID;
+                if (!session.IsSystemSoundsSession && processId != 0 && !_processMetadataCacheService.IsProcessAlive(processId))
+                {
+                    _processMetadataCacheService.Invalidate(processId);
+                    continue;
+                }
+
                 results.Add(new AudioSessionInfo
                 {
                     Id = session.GetSessionIdentifier,

@@ -84,6 +84,46 @@ public sealed class CachedProcessMetadataService : IProcessMetadataCacheService
     }
 
     /// <summary>
+    /// 지정한 PID의 프로세스가 현재 살아 있는지 확인합니다.
+    /// </summary>
+    public bool IsProcessAlive(uint processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            try
+            {
+                return !process.HasExited;
+            }
+            catch
+            {
+                // 보호 프로세스처럼 종료 여부 확인이 막히면 살아 있는 것으로 간주해 목록에서 섣불리 빼지 않습니다.
+                return true;
+            }
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch
+        {
+            // 존재 여부를 단정할 수 없는 오류는 살아 있는 것으로 간주합니다.
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 지정한 PID의 메타데이터 캐시를 즉시 제거합니다.
+    /// </summary>
+    public void Invalidate(uint processId)
+    {
+        lock (_syncRoot)
+        {
+            _metadataCache.Remove(processId);
+        }
+    }
+
+    /// <summary>
     /// 실제 프로세스를 조회해 메타데이터를 읽습니다.
     /// </summary>
     private static ProcessMetadataInfo LoadProcessMetadata(uint processId)
