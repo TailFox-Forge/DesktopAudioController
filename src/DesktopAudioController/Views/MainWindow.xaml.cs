@@ -804,7 +804,8 @@ public partial class MainWindow : Window
     private void RestoreFromExternalActivationCore()
     {
         _externalActivationRequested = false;
-        AppLog.Info("MainWindow", "외부 실행 요청으로 기존 창 복원");
+        AppLog.Info("MainWindow", "외부 실행 요청으로 기존 창 복원 및 초기 위치 원복");
+        ApplyPrimaryMonitorBounds();
         RestoreFromTray();
         Topmost = true;
         Topmost = false;
