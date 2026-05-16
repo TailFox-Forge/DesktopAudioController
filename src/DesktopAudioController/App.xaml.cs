@@ -41,6 +41,12 @@ public partial class App : System.Windows.Application
     // 이전 실행의 정상 종료 여부를 기록하는 상태 서비스입니다.
     private AppRunStateService? _appRunStateService;
 
+    // 중복 실행을 막고 기존 인스턴스를 다시 활성화하는 서비스입니다.
+    private SingleInstanceService? _singleInstanceService;
+
+    // 메인 창 생성 전에 활성화 요청이 오면 창이 준비된 뒤 복원하도록 보류합니다.
+    private bool _pendingExternalActivationRequest;
+
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
     /// </summary>
@@ -49,6 +55,12 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
         AppLog.Initialize();
         AppLog.Info("App", $"OnStartup args=[{string.Join(", ", e.Args)}]");
+        if (!TryEnsurePrimaryInstance())
+        {
+            Shutdown();
+            return;
+        }
+
         DispatcherUnhandledException += App_OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
@@ -124,6 +136,12 @@ public partial class App : System.Windows.Application
             previousRunIncident);
         MainWindow = mainWindow;
         mainWindow.Show();
+        if (_pendingExternalActivationRequest)
+        {
+            _pendingExternalActivationRequest = false;
+            mainWindow.RestoreFromExternalActivation();
+        }
+
         AppLog.Info("App", "메인 창 표시 완료");
 
         if (_settingsService.TryConsumeLoadWarning(out var warningMessage))
@@ -162,6 +180,9 @@ public partial class App : System.Windows.Application
         AppLog.Info("App", "OnExit 알림 서비스 Dispose 시작");
         _audioNotificationService?.Dispose();
         AppLog.Info("App", "OnExit 알림 서비스 Dispose 완료");
+        AppLog.Info("App", "OnExit 단일 인스턴스 서비스 Dispose 시작");
+        _singleInstanceService?.Dispose();
+        AppLog.Info("App", "OnExit 단일 인스턴스 서비스 Dispose 완료");
         AppLog.Info("App", "OnExit 완료");
         TryMarkCleanShutdown();
         base.OnExit(e);
@@ -222,6 +243,50 @@ public partial class App : System.Windows.Application
             AppLog.Warn("App", "실행 상태 추적 시작 실패", exception);
             return PreviousRunIncident.None;
         }
+    }
+
+    private bool TryEnsurePrimaryInstance()
+    {
+        try
+        {
+            _singleInstanceService = new SingleInstanceService();
+            if (_singleInstanceService.TryAcquirePrimaryInstance())
+            {
+                _singleInstanceService.StartActivationListener(HandleExternalActivationRequestAsync);
+                AppLog.Info("App", "단일 인스턴스 가드 활성화 완료");
+                return true;
+            }
+
+            AppLog.Warn("App", "이미 실행 중인 인스턴스 감지");
+            var notified = _singleInstanceService
+                .TryNotifyExistingInstanceAsync(TimeSpan.FromSeconds(2))
+                .GetAwaiter()
+                .GetResult();
+            AppLog.Info("App", $"기존 인스턴스 활성화 요청 결과 success={notified}");
+            return false;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("App", "단일 인스턴스 가드 초기화 실패, 보호 없이 계속 진행", exception);
+            TryDispose(_singleInstanceService);
+            _singleInstanceService = null;
+            return true;
+        }
+    }
+
+    private Task HandleExternalActivationRequestAsync()
+    {
+        return Dispatcher.InvokeAsync(() =>
+        {
+            AppLog.Info("App", "기존 인스턴스 활성화 요청 수신");
+            if (MainWindow is MainWindow mainWindow)
+            {
+                mainWindow.RestoreFromExternalActivation();
+                return;
+            }
+
+            _pendingExternalActivationRequest = true;
+        }).Task;
     }
 
     private void TryMarkCleanShutdown()

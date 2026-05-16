@@ -30,6 +30,7 @@
     <Compile Include="..\..\src\DesktopAudioController\Services\ISettingsService.cs" Link="Source\Services\ISettingsService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\IUpdateCheckService.cs" Link="Source\Services\IUpdateCheckService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ProgramAudioPreferenceStore.cs" Link="Source\Services\ProgramAudioPreferenceStore.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\SingleInstanceService.cs" Link="Source\Services\SingleInstanceService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\SettingsPersistenceException.cs" Link="Source\Services\SettingsPersistenceException.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\SettingsService.cs" Link="Source\Services\SettingsService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\UpdateCheckResult.cs" Link="Source\Services\UpdateCheckResult.cs" />

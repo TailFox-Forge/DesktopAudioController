@@ -111,6 +111,9 @@ public partial class MainWindow : Window
     // 이전 실행이 정상 종료되지 않았을 때 시작 직후 안내에 사용할 정보입니다.
     private readonly PreviousRunIncident _previousRunIncident;
 
+    // 외부에서 앱을 다시 실행했을 때 기존 인스턴스를 보여줘야 하는 요청 플래그입니다.
+    private bool _externalActivationRequested;
+
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
     /// </summary>
@@ -159,6 +162,20 @@ public partial class MainWindow : Window
         WindowState = WindowState.Normal;
         Activate();
         _ = OpenSettingsInternalAsync();
+    }
+
+    /// <summary>
+    /// 후속 실행이 기존 인스턴스를 앞으로 가져와 달라고 요청했을 때 호출됩니다.
+    /// </summary>
+    public void RestoreFromExternalActivation()
+    {
+        _externalActivationRequested = true;
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        RestoreFromExternalActivationCore();
     }
 
     /// <summary>
@@ -371,6 +388,13 @@ public partial class MainWindow : Window
 
         // 창 표시 이후에 백그라운드 업데이트 확인을 시작해, 오프라인 상태여도 UI가 멈추지 않게 합니다.
         _ = CheckForUpdateInBackgroundAsync();
+
+        if (_externalActivationRequested)
+        {
+            RestoreFromExternalActivationCore();
+            ShowPreviousRunIncidentIfNeeded();
+            return;
+        }
 
         // 수동 실행 또는 첫 실행 설정이 필요한 경우에는 시작 최소화를 적용하지 않습니다.
         if (!_isStartupLaunch || _forceVisibleOnStartup)
@@ -652,8 +676,9 @@ public partial class MainWindow : Window
     {
         var currentVersion = GetApplicationVersionText();
         var title = Uri.EscapeDataString("[Bug] 비정상 종료 보고");
+        const string redactedLogDirectoryHint = @"%LocalAppData%\DesktopAudioController\logs";
         var body = Uri.EscapeDataString(
-            $"## 요약\n이전 실행이 정상 종료되지 않았습니다.\n\n## 환경\n- 버전: {currentVersion}\n- 로그 위치: {AppLog.LogDirectoryPath}\n\n## 확인 사항\n- 앱 실행 중 강제 종료/재부팅/블루스크린/크래시 가능성\n- 로그 파일을 첨부해 주세요.\n");
+            $"## 요약\n이전 실행이 정상 종료되지 않았습니다.\n\n## 환경\n- 버전: {currentVersion}\n- 로그 폴더: {redactedLogDirectoryHint}\n\n## 확인 사항\n- 앱 실행 중 강제 종료/재부팅/블루스크린/크래시 가능성\n- 최신 로그 파일을 첨부해 주세요.\n");
 
         return TryOpenReleasePage($"https://github.com/TailFox-Forge/DesktopAudioController/issues/new?labels=bug&title={title}&body={body}");
     }
@@ -774,6 +799,16 @@ public partial class MainWindow : Window
         Show();
         WindowState = WindowState.Normal;
         Activate();
+    }
+
+    private void RestoreFromExternalActivationCore()
+    {
+        _externalActivationRequested = false;
+        AppLog.Info("MainWindow", "외부 실행 요청으로 기존 창 복원");
+        RestoreFromTray();
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
 
     /// <summary>
