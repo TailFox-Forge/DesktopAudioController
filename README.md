@@ -142,19 +142,80 @@ Public 전환: 보류
 
 ```text
 DesktopAudioController/
+  README.md                                                   -> 프로젝트 개요, 실행 방식, 배포/업데이트, 현재 단계 설명
+  LICENSE                                                     -> 라이선스
   docs/
-    design.md
-    release-notes-template.md
+    design.md                                                 -> 설계 배경, 구현 방향, 단계별 설계 메모
+    regression-checklist.md                                   -> 수동 회귀 검증 체크리스트
+    release-notes-template.md                                 -> 릴리즈 노트 작성 템플릿
+    v1-release-criteria.md                                    -> v1.0.0 출고 기준
+    images/
+      main-window-example.png                                 -> 메인 화면 예시 이미지 자산
   scripts/
-    publish-win-x64.sh
+    publish-win-x64.sh                                        -> win-x64 self-contained single-file exe zip 생성 스크립트
   src/
     DesktopAudioController/
+      DesktopAudioController.csproj                           -> 앱 타깃 프레임워크, 버전, 패키지 참조 정의
+      app.manifest                                             -> Windows 실행 권한 / DPI / 호환성 매니페스트
+      App.xaml                                                 -> WPF 애플리케이션 리소스 진입점
+      App.xaml.cs                                              -> 앱 시작, 서비스 생성, 메인 창 초기화, 종료 Dispose 순서 제어
+      Infrastructure/
+        ObservableObject.cs                                    -> MVVM 바인딩용 INotifyPropertyChanged 기반 클래스
       Models/
+        AppSettings.cs                                         -> settings.json 저장 스키마
+        AudioDeviceInfo.cs                                     -> 출력 장치 1개에 대한 상태 모델
+        AudioSessionInfo.cs                                    -> 오디오 세션 1개에 대한 상태 모델
+        ProcessMetadataInfo.cs                                 -> PID / 실행 파일 / 표시명 캐시 모델
+        ProgramAudioPreference.cs                              -> 프로그램별 볼륨 / 음소거 / 사용자 지정 이름 저장 모델
       Services/
+        AppLog.cs                                              -> 로그 초기화 및 Info/Warn/Error 기록 유틸리티
+        AudioNotificationChangedEventArgs.cs                   -> 오디오 변경 종류(State/Topology) 이벤트 인자
+        CachedAppIconService.cs                                -> 앱 아이콘 로딩 및 캐시
+        CachedProcessMetadataService.cs                        -> 프로세스명 / exe 경로 / 파일 메타데이터 캐시
+        GitHubReleaseUpdateCheckService.cs                     -> GitHub Releases 조회 및 최신 버전 판정
+        IAudioDeviceCatalogService.cs                          -> 출력 장치 조회/제어 서비스 인터페이스
+        IAudioNotificationService.cs                           -> 오디오 이벤트 구독 서비스 인터페이스
+        IAudioSessionService.cs                                -> 세션 조회/볼륨/음소거 제어 인터페이스
+        IAppIconService.cs                                     -> 아이콘 조회 서비스 인터페이스
+        IProcessMetadataCacheService.cs                        -> 프로세스 메타데이터 캐시 인터페이스
+        ISettingsService.cs                                    -> 설정 로드/저장 서비스 인터페이스
+        IStartupLaunchService.cs                               -> 자동 실행 등록 서비스 인터페이스
+        IUpdateCheckService.cs                                 -> 업데이트 확인 서비스 인터페이스
+        NativeAudioDeviceCatalogService.cs                     -> Core Audio 기반 장치 열거 / 마스터 볼륨 / 기본 장치 변경
+        NativeAudioNotificationService.cs                      -> Core Audio 이벤트 구독 / 해제 / 종료 시 Dispose 처리
+        NativeAudioSessionService.cs                           -> 장치별 세션 열거, 세션 볼륨/음소거, 세션 이름 보정
+        PlaceholderAudioDeviceCatalogService.cs                -> UI 골격 점검용 가짜 장치 서비스
+        ProgramAudioPreferenceStore.cs                         -> 프로그램 저장 키 생성, 설정 저장/복원 적용
+        RegistryStartupLaunchService.cs                        -> Windows 시작 시 자동 실행 레지스트리 동기화
+        SettingsPersistenceException.cs                        -> 설정 저장/복구 예외 타입
+        SettingsService.cs                                     -> settings.json 로드/저장, 백업, 복구 처리
+        StartupRegistrationException.cs                        -> 자동 실행 등록 실패 예외 타입
+        UpdateCheckResult.cs                                   -> 업데이트 확인 결과 모델
       ViewModels/
+        AudioDeviceSelectionViewModel.cs                       -> 설정창의 장치 선택 행 상태
+        AudioSessionViewModel.cs                               -> 프로그램 세션 행 상태, 볼륨/음소거/이름 변경 바인딩
+        MainViewModel.cs                                       -> 메인 화면 데이터 로드, 자동 갱신, 저장 설정 복원, 필터 적용
+        SettingsViewModel.cs                                   -> 설정창 데이터 바인딩 및 저장 로직
+        VisibleDeviceViewModel.cs                              -> 메인 화면 장치 카드 상태와 장치 제어 바인딩
       Views/
-      App.xaml.cs
-      DesktopAudioController.csproj
+        MainWindow.xaml                                        -> 메인 화면 레이아웃
+        MainWindow.xaml.cs                                     -> 트레이 메뉴, 새로고침, 업데이트 안내, 창 이벤트 브리지
+        RenameProgramWindow.xaml                               -> 사용자 지정 이름 입력 팝업 레이아웃
+        RenameProgramWindow.xaml.cs                            -> 이름 변경 저장 / 자동 이름 복원 처리
+        SettingsWindow.xaml                                    -> 설정창 레이아웃
+        SettingsWindow.xaml.cs                                 -> 설정 저장 / 취소 / 닫기 처리
+  tests/
+    DesktopAudioController.Tests/
+      DesktopAudioController.Tests.csproj                      -> xUnit 테스트 프로젝트
+      GitHubReleaseUpdateCheckServiceTests.cs                  -> 릴리즈 파싱, 버전 비교, zip 자산 선택 테스트
+      ProgramAudioPreferenceStoreTests.cs                      -> 프로그램 설정 저장 키, 저장/복원 로직 테스트
+      SettingsServiceTests.cs                                  -> 설정 round-trip, 기본값, 손상 복구 테스트
+```
+
+생성 산출물:
+
+```text
+artifacts/release/                                             -> publish 스크립트 실행 시 생성되는 배포 산출물 폴더
 ```
 
 ## 빌드
