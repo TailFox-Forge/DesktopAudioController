@@ -25,7 +25,7 @@ Public 전환: 완료
 배포 형태: win-x64 self-contained single-file exe zip
 릴리즈 페이지: https://github.com/TailFox-Forge/DesktopAudioController/releases
 최근 확인 사항:
-- 저장소 Public 전환 완료 및 릴리즈 노트 공개 준비 완료
+- 저장소 Public 전환 완료 및 v0.12.0 테스트용 릴리즈 게시 완료
 - Phase 11 범위 종료 및 Phase 12 시작
 - win-x64 publish 산출물을 single-file exe zip 기준으로 고정
 - 프로그램 이름 자동 개선 / 사용자 지정 이름 저장 복원 반영
@@ -412,12 +412,13 @@ MIT License
 - 저장소 Public 전환 완료
 - win-x64 self-contained single-file exe zip 배포 기준 확정
 - README 구조/배포/환경/사양 정보 최신화
-- 최신 릴리즈 노트 공개 준비 완료
+- v0.12.0 릴리즈 게시 완료
 - 설정창 `로그 폴더 열기` 버튼 추가
 - 공개 첨부용 로그 민감정보 요약 처리
 - P12-1 배포 형식 단일화 기준 반영 완료
 - P12-2 Public 전환 완료
 - P12-3 로그 첨부 편의 및 공개 로그 간소화 반영 완료
+- P12-4 v0.12.0 테스트용 릴리즈 게시 완료
 ```
 
 </details>
