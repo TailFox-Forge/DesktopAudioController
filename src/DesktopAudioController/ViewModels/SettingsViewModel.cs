@@ -163,41 +163,27 @@ public sealed class SettingsViewModel : ObservableObject
     public void Save()
     {
         var currentSettings = _settingsService.Load();
-        var selectedVisibleDeviceIds = AvailableDevices
-            .Where(device => device.IsSelected)
-            .Select(device => device.Id)
-            .ToList();
-        if (_preserveConfiguredVisibleDevicesOnEmptySave &&
-            selectedVisibleDeviceIds.Count == 0 &&
-            AvailableDevices.Count == 0 &&
-            currentSettings.VisibleDeviceIds.Count > 0)
+        var savePlan = SettingsSavePlanner.Build(
+            currentSettings,
+            [.. AvailableDevices.Select(device => new VisibleDeviceSelection(device.Id, device.IsSelected))],
+            StartMinimized,
+            RunAtWindowsStartup,
+            MinimizeToTray,
+            ShowOnlyConnectedDevices,
+            ShowSystemSounds,
+            ShowOnlyActiveSessions,
+            IncludePreReleaseUpdates,
+            _preserveConfiguredVisibleDevicesOnEmptySave);
+        if (savePlan.PreservedConfiguredVisibleDevices)
         {
-            selectedVisibleDeviceIds = [.. currentSettings.VisibleDeviceIds];
             AppLog.Warn(
                 "SettingsViewModel",
-                $"제한 모드 저장 보호 적용 preservedVisibleDevices={selectedVisibleDeviceIds.Count}");
+                $"제한 모드 저장 보호 적용 preservedVisibleDevices={savePlan.Settings.VisibleDeviceIds.Count}");
         }
-
-        // 체크된 장치와 토글 옵션을 새 설정 모델로 묶습니다.
-        // 화면 상태를 파일 저장용 모델로 재구성한 결과입니다.
-        var settings = new AppSettings
-        {
-            VisibleDeviceIds = selectedVisibleDeviceIds,
-            StartMinimized = StartMinimized,
-            RunAtWindowsStartup = RunAtWindowsStartup,
-            MinimizeToTray = MinimizeToTray,
-            ShowOnlyConnectedDevices = ShowOnlyConnectedDevices,
-            ShowSystemSounds = ShowSystemSounds,
-            ShowOnlyActiveSessions = ShowOnlyActiveSessions,
-            IncludePreReleaseUpdates = IncludePreReleaseUpdates,
-            ProgramAudioPreferences = currentSettings.ProgramAudioPreferences
-                .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
-                .ToList()
-        };
 
         // 설정 파일 저장과 자동 실행 레지스트리 반영은 같은 사용자 의도이므로 함께 적용합니다.
         // 구성된 설정 모델을 파일에 저장합니다.
-        _settingsService.Save(settings);
+        _settingsService.Save(savePlan.Settings);
         _startupLaunchService.Apply(RunAtWindowsStartup);
     }
 

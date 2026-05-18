@@ -265,22 +265,20 @@ public partial class MainWindow : Window
     private async void RefreshButton_OnClick(object sender, RoutedEventArgs e)
     {
         var app = System.Windows.Application.Current as App;
-        AppLog.Info("MainWindow", $"수동 장치 새로고침 요청 degradedMode={app?.IsInDegradedMode ?? false}");
+        var degradedMode = app?.IsInDegradedMode == true;
+        AppLog.Info("MainWindow", $"수동 장치 새로고침 요청 degradedMode={degradedMode}");
 
-        if (app?.IsInDegradedMode == true)
+        var executionResult = await ManualRefreshCoordinator.ExecuteAsync(
+            degradedMode,
+            "manual_refresh_button",
+            reason => app?.TryRecoverFromDegradedModeAsync(reason) ?? Task.FromResult<App.AudioRuntimeRecoveryResult?>(null),
+            recoveryResult => ApplyRecoveredAudioRuntime(recoveryResult.ViewModel, recoveryResult.NotificationService),
+            ReloadViewModelAsync);
+
+        if (executionResult.RecoveryAttempted && !executionResult.RecoveryApplied)
         {
-            var recoveryResult = await app.TryRecoverFromDegradedModeAsync("manual_refresh_button");
-            if (recoveryResult is not null)
-            {
-                ApplyRecoveredAudioRuntime(recoveryResult.ViewModel, recoveryResult.NotificationService);
-            }
-            else
-            {
-                AppLog.Warn("MainWindow", "수동 장치 새로고침 복구 실패: 제한 모드 유지");
-            }
+            AppLog.Warn("MainWindow", "수동 장치 새로고침 복구 실패: 제한 모드 유지");
         }
-
-        await ReloadViewModelAsync("manual_refresh_button");
     }
 
     /// <summary>
