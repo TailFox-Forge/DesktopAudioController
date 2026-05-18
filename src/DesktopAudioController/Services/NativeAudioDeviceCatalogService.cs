@@ -22,63 +22,77 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     public IReadOnlyList<AudioDeviceInfo> GetAvailableOutputDevices()
     {
         var stopwatch = Stopwatch.StartNew();
-        using var enumerator = new MMDeviceEnumerator();
-
-        // 현재 연결된 장치와 최근 분리된 장치를 함께 보여주기 위해 두 상태를 같이 조회합니다.
-        var deviceCollection = enumerator.EnumerateAudioEndPoints(
-            DataFlow.Render,
-            DeviceState.Active | DeviceState.Unplugged);
-
-        // 기본 출력 장치 ID입니다. 장치가 전혀 없는 환경이면 null일 수 있습니다.
-        string? defaultDeviceId = null;
+        AppLog.Debug("NativeAudioDeviceCatalogService", "GetAvailableOutputDevices 시작");
 
         try
         {
-            defaultDeviceId = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
-        }
-        catch
-        {
-            // 기본 장치가 없는 환경에서는 기본 장치 표시를 생략합니다.
-        }
+            using var enumerator = new MMDeviceEnumerator();
 
-        // 최종적으로 UI에 전달할 출력 장치 목록입니다.
-        var results = new List<AudioDeviceInfo>();
+            // 현재 연결된 장치와 최근 분리된 장치를 함께 보여주기 위해 두 상태를 같이 조회합니다.
+            var deviceCollection = enumerator.EnumerateAudioEndPoints(
+                DataFlow.Render,
+                DeviceState.Active | DeviceState.Unplugged);
 
-        for (int index = 0; index < deviceCollection.Count; index++)
-        {
-            // 루프 안의 device는 현재 열거된 출력 장치 한 개입니다.
-            using var device = deviceCollection[index];
+            // 기본 출력 장치 ID입니다. 장치가 전혀 없는 환경이면 null일 수 있습니다.
+            string? defaultDeviceId = null;
 
             try
             {
-                results.Add(new AudioDeviceInfo
-                {
-                    Id = device.ID,
-                    Name = device.FriendlyName,
-                    IsConnected = device.State == DeviceState.Active,
-                    IsDefault = device.ID == defaultDeviceId,
-                    IsMuted = device.AudioEndpointVolume.Mute,
-                    Volume = (int)Math.Round(device.AudioEndpointVolume.MasterVolumeLevelScalar * 100)
-                });
+                defaultDeviceId = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
             }
             catch
             {
-                // 열거 도중 장치가 사라지거나 접근 오류가 나면 해당 장치만 건너뜁니다.
+                // 기본 장치가 없는 환경에서는 기본 장치 표시를 생략합니다.
             }
-        }
 
-        stopwatch.Stop();
-        var message = $"GetAvailableOutputDevices 완료 count={results.Count} elapsedMs={stopwatch.ElapsedMilliseconds}";
-        if (stopwatch.ElapsedMilliseconds >= SlowEnumerationThresholdMs)
-        {
-            AppLog.Warn("NativeAudioDeviceCatalogService", message);
-        }
-        else
-        {
-            AppLog.Debug("NativeAudioDeviceCatalogService", message);
-        }
+            // 최종적으로 UI에 전달할 출력 장치 목록입니다.
+            var results = new List<AudioDeviceInfo>();
 
-        return results;
+            for (int index = 0; index < deviceCollection.Count; index++)
+            {
+                // 루프 안의 device는 현재 열거된 출력 장치 한 개입니다.
+                using var device = deviceCollection[index];
+
+                try
+                {
+                    results.Add(new AudioDeviceInfo
+                    {
+                        Id = device.ID,
+                        Name = device.FriendlyName,
+                        IsConnected = device.State == DeviceState.Active,
+                        IsDefault = device.ID == defaultDeviceId,
+                        IsMuted = device.AudioEndpointVolume.Mute,
+                        Volume = (int)Math.Round(device.AudioEndpointVolume.MasterVolumeLevelScalar * 100)
+                    });
+                }
+                catch
+                {
+                    // 열거 도중 장치가 사라지거나 접근 오류가 나면 해당 장치만 건너뜁니다.
+                }
+            }
+
+            stopwatch.Stop();
+            var message = $"GetAvailableOutputDevices 완료 count={results.Count} elapsedMs={stopwatch.ElapsedMilliseconds}";
+            if (stopwatch.ElapsedMilliseconds >= SlowEnumerationThresholdMs)
+            {
+                AppLog.Warn("NativeAudioDeviceCatalogService", message);
+            }
+            else
+            {
+                AppLog.Debug("NativeAudioDeviceCatalogService", message);
+            }
+
+            return results;
+        }
+        catch (Exception exception)
+        {
+            stopwatch.Stop();
+            AppLog.Error(
+                "NativeAudioDeviceCatalogService",
+                $"GetAvailableOutputDevices 실패 elapsedMs={stopwatch.ElapsedMilliseconds}",
+                exception);
+            throw;
+        }
     }
 
     /// <summary>
@@ -91,7 +105,7 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
 
         try
         {
-        // ID로 대상 장치를 다시 열어 현재 볼륨 값을 적용합니다.
+            // ID로 대상 장치를 다시 열어 현재 볼륨 값을 적용합니다.
             using var enumerator = new MMDeviceEnumerator();
             using var device = enumerator.GetDevice(deviceId);
 

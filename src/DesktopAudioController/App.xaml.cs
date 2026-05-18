@@ -5,6 +5,7 @@ using DesktopAudioController.ViewModels;
 using DesktopAudioController.Views;
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DesktopAudioController;
@@ -14,6 +15,21 @@ namespace DesktopAudioController;
 /// </summary>
 public partial class App : System.Windows.Application
 {
+    internal sealed record AudioRuntimeRecoveryResult(
+        MainViewModel ViewModel,
+        IAudioNotificationService NotificationService);
+
+    private sealed class AudioServicesBundle
+    {
+        public required IAudioDeviceCatalogService DeviceCatalogService { get; init; }
+
+        public required IAudioSessionService SessionService { get; init; }
+
+        public required IAudioNotificationService NotificationService { get; init; }
+
+        public required IProcessMetadataCacheService ProcessMetadataCacheService { get; init; }
+    }
+
     // 부팅 직후 Core Audio 열거가 멎는 경우 UI가 영원히 안 뜨지 않도록 초기 로드 시간 제한을 둡니다.
     private static readonly TimeSpan InitialDeviceLoadTimeout = TimeSpan.FromSeconds(6);
 
@@ -49,6 +65,14 @@ public partial class App : System.Windows.Application
 
     // 메인 창 생성 전에 활성화 요청이 오면 창이 준비된 뒤 복원하도록 보류합니다.
     private bool _pendingExternalActivationRequest;
+
+    // 현재 앱이 제한 모드인지 나타냅니다. 설정 저장 보호와 수동 복구 경로에서 사용합니다.
+    private bool _isInDegradedMode;
+
+    // 제한 모드 복구는 한 번에 하나만 진행합니다.
+    private readonly SemaphoreSlim _audioRuntimeRecoverySemaphore = new(1, 1);
+
+    internal bool IsInDegradedMode => _isInDegradedMode;
 
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
@@ -146,11 +170,7 @@ public partial class App : System.Windows.Application
 
     private async Task<(MainViewModel ViewModel, string? WarningMessage)> CreateMainViewModelAsync(string? startupWarningMessage)
     {
-        var mainViewModel = new MainViewModel(
-            _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
-            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
-            _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
-            _appIconService ?? throw new InvalidOperationException("App icon service is not initialized."));
+        var mainViewModel = CreateMainViewModelForCurrentServices();
 
         try
         {
@@ -171,11 +191,7 @@ public partial class App : System.Windows.Application
             startupWarningMessage = EnterDegradedMode("오디오 장치 초기화에 실패해 제한 모드로 시작했습니다. 로그를 확인한 뒤 앱을 다시 실행해 주세요.");
         }
 
-        var degradedMainViewModel = new MainViewModel(
-            _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
-            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
-            _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
-            _appIconService ?? throw new InvalidOperationException("App icon service is not initialized."));
+        var degradedMainViewModel = CreateMainViewModelForCurrentServices();
         degradedMainViewModel.Load();
         AppLog.Info("App", $"제한 모드 장치 로드 완료 visibleDevices={degradedMainViewModel.VisibleDevices.Count} hasConfiguredDevices={degradedMainViewModel.HasConfiguredDevices}");
         return (degradedMainViewModel, startupWarningMessage);
@@ -214,18 +230,16 @@ public partial class App : System.Windows.Application
         return new SettingsViewModel(
             _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
             _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
-            _startupLaunchService ?? throw new InvalidOperationException("Startup launch service is not initialized."));
+            _startupLaunchService ?? throw new InvalidOperationException("Startup launch service is not initialized."),
+            _isInDegradedMode);
     }
 
     private string? TryInitializeAudioServices()
     {
         try
         {
-            _audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
-            _processMetadataCacheService = new CachedProcessMetadataService();
-            _audioSessionService = new NativeAudioSessionService(_processMetadataCacheService);
-            _audioNotificationService = new NativeAudioNotificationService();
-            _audioNotificationService.Start();
+            ApplyAudioServices(CreateNativeAudioServices());
+            _isInDegradedMode = false;
             return null;
         }
         catch (Exception exception)
@@ -243,12 +257,64 @@ public partial class App : System.Windows.Application
         _audioDeviceCatalogService = UnavailableAudioServices.CreateDeviceCatalogService();
         _audioSessionService = UnavailableAudioServices.CreateSessionService();
         _audioNotificationService = UnavailableAudioServices.CreateNotificationService();
+        _isInDegradedMode = true;
         AppLog.Warn("App", $"제한 모드 진입 reason={warningMessage}");
         _ = DisposeAudioServicesForRecoveryAsync(
             audioNotificationServiceToDispose,
             audioSessionServiceToDispose,
             audioDeviceCatalogServiceToDispose);
         return warningMessage;
+    }
+
+    internal async Task<AudioRuntimeRecoveryResult?> TryRecoverFromDegradedModeAsync(string reason)
+    {
+        if (!_isInDegradedMode)
+        {
+            AppLog.Debug("App", $"제한 모드 복구 생략 reason={reason} degradedMode=False");
+            return null;
+        }
+
+        await _audioRuntimeRecoverySemaphore.WaitAsync();
+        try
+        {
+            if (!_isInDegradedMode)
+            {
+                AppLog.Debug("App", $"제한 모드 복구 생략 reason={reason} degradedMode=False postWait");
+                return null;
+            }
+
+            AppLog.Info("App", $"제한 모드 복구 시도 시작 reason={reason}");
+
+            AudioServicesBundle audioServices;
+            try
+            {
+                audioServices = CreateNativeAudioServices();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Error("App", $"제한 모드 복구 실패: 오디오 서비스 재생성 실패 reason={reason}", exception);
+                return null;
+            }
+
+            var previousNotificationService = _audioNotificationService;
+            var previousSessionService = _audioSessionService;
+            var previousDeviceCatalogService = _audioDeviceCatalogService;
+            ApplyAudioServices(audioServices);
+            _isInDegradedMode = false;
+
+            TryDispose(previousNotificationService);
+            TryDispose(previousSessionService as IDisposable);
+            TryDispose(previousDeviceCatalogService as IDisposable);
+
+            AppLog.Info("App", $"제한 모드 복구 성공 reason={reason}");
+            return new AudioRuntimeRecoveryResult(
+                CreateMainViewModelForCurrentServices(),
+                _audioNotificationService ?? throw new InvalidOperationException("Audio notification service is not initialized."));
+        }
+        finally
+        {
+            _audioRuntimeRecoverySemaphore.Release();
+        }
     }
 
     private PreviousRunIncident BeginRunStateTracking()
@@ -266,6 +332,55 @@ public partial class App : System.Windows.Application
         {
             AppLog.Warn("App", "실행 상태 추적 시작 실패", exception);
             return PreviousRunIncident.None;
+        }
+    }
+
+    private MainViewModel CreateMainViewModelForCurrentServices()
+    {
+        return new MainViewModel(
+            _settingsService ?? throw new InvalidOperationException("Settings service is not initialized."),
+            _audioDeviceCatalogService ?? throw new InvalidOperationException("Audio device service is not initialized."),
+            _audioSessionService ?? throw new InvalidOperationException("Audio session service is not initialized."),
+            _appIconService ?? throw new InvalidOperationException("App icon service is not initialized."));
+    }
+
+    private void ApplyAudioServices(AudioServicesBundle audioServices)
+    {
+        _audioDeviceCatalogService = audioServices.DeviceCatalogService;
+        _audioSessionService = audioServices.SessionService;
+        _audioNotificationService = audioServices.NotificationService;
+        _processMetadataCacheService = audioServices.ProcessMetadataCacheService;
+    }
+
+    private static AudioServicesBundle CreateNativeAudioServices()
+    {
+        IAudioDeviceCatalogService? audioDeviceCatalogService = null;
+        IAudioSessionService? audioSessionService = null;
+        IAudioNotificationService? audioNotificationService = null;
+        IProcessMetadataCacheService? processMetadataCacheService = null;
+
+        try
+        {
+            audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
+            processMetadataCacheService = new CachedProcessMetadataService();
+            audioSessionService = new NativeAudioSessionService(processMetadataCacheService!);
+            audioNotificationService = new NativeAudioNotificationService();
+            audioNotificationService.Start();
+
+            return new AudioServicesBundle
+            {
+                DeviceCatalogService = audioDeviceCatalogService!,
+                SessionService = audioSessionService!,
+                NotificationService = audioNotificationService!,
+                ProcessMetadataCacheService = processMetadataCacheService!
+            };
+        }
+        catch
+        {
+            TryDispose(audioNotificationService);
+            TryDispose(audioSessionService as IDisposable);
+            TryDispose(audioDeviceCatalogService as IDisposable);
+            throw;
         }
     }
 

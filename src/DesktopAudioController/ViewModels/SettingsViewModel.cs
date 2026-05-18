@@ -28,6 +28,9 @@ public sealed class SettingsViewModel : ObservableObject
     // Windows 자동 실행 등록을 적용하는 서비스입니다.
     private readonly IStartupLaunchService _startupLaunchService;
 
+    // 제한 모드에서 빈 장치 목록을 저장할 때 기존 표시 장치 선택을 보존할지 여부입니다.
+    private readonly bool _preserveConfiguredVisibleDevicesOnEmptySave;
+
     // 시작 최소화 옵션의 내부 필드입니다.
     private bool _startMinimized;
 
@@ -55,11 +58,13 @@ public sealed class SettingsViewModel : ObservableObject
     public SettingsViewModel(
         ISettingsService settingsService,
         IAudioDeviceCatalogService audioDeviceCatalogService,
-        IStartupLaunchService startupLaunchService)
+        IStartupLaunchService startupLaunchService,
+        bool preserveConfiguredVisibleDevicesOnEmptySave = false)
     {
         _settingsService = settingsService;
         _audioDeviceCatalogService = audioDeviceCatalogService;
         _startupLaunchService = startupLaunchService;
+        _preserveConfiguredVisibleDevicesOnEmptySave = preserveConfiguredVisibleDevicesOnEmptySave;
     }
 
     /// <summary>
@@ -158,15 +163,26 @@ public sealed class SettingsViewModel : ObservableObject
     public void Save()
     {
         var currentSettings = _settingsService.Load();
+        var selectedVisibleDeviceIds = AvailableDevices
+            .Where(device => device.IsSelected)
+            .Select(device => device.Id)
+            .ToList();
+        if (_preserveConfiguredVisibleDevicesOnEmptySave &&
+            selectedVisibleDeviceIds.Count == 0 &&
+            AvailableDevices.Count == 0 &&
+            currentSettings.VisibleDeviceIds.Count > 0)
+        {
+            selectedVisibleDeviceIds = [.. currentSettings.VisibleDeviceIds];
+            AppLog.Warn(
+                "SettingsViewModel",
+                $"제한 모드 저장 보호 적용 preservedVisibleDevices={selectedVisibleDeviceIds.Count}");
+        }
 
         // 체크된 장치와 토글 옵션을 새 설정 모델로 묶습니다.
         // 화면 상태를 파일 저장용 모델로 재구성한 결과입니다.
         var settings = new AppSettings
         {
-            VisibleDeviceIds = AvailableDevices
-                .Where(device => device.IsSelected)
-                .Select(device => device.Id)
-                .ToList(),
+            VisibleDeviceIds = selectedVisibleDeviceIds,
             StartMinimized = StartMinimized,
             RunAtWindowsStartup = RunAtWindowsStartup,
             MinimizeToTray = MinimizeToTray,

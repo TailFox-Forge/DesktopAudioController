@@ -30,81 +30,97 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     public IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId, bool includeSystemSounds = false)
     {
         var stopwatch = Stopwatch.StartNew();
-        using var enumerator = new MMDeviceEnumerator();
+        AppLog.Debug(
+            "NativeAudioSessionService",
+            $"GetSessions 시작 deviceId={deviceId} includeSystemSounds={includeSystemSounds}");
 
-        // device는 세션을 읽어올 대상 출력 장치입니다.
-        using var device = enumerator.GetDevice(deviceId);
-
-        // sessions는 해당 출력 장치에 연결된 현재 오디오 세션 컬렉션입니다.
-        var sessions = device.AudioSessionManager.Sessions;
-
-        // UI에 전달할 세션 목록 결과입니다.
-        var results = new List<AudioSessionInfo>();
-
-        for (int index = 0; index < sessions.Count; index++)
+        try
         {
-            // 루프 안의 session은 한 개의 앱 오디오 세션입니다.
-            using var session = sessions[index];
+            using var enumerator = new MMDeviceEnumerator();
 
-            try
+            // device는 세션을 읽어올 대상 출력 장치입니다.
+            using var device = enumerator.GetDevice(deviceId);
+
+            // sessions는 해당 출력 장치에 연결된 현재 오디오 세션 컬렉션입니다.
+            var sessions = device.AudioSessionManager.Sessions;
+
+            // UI에 전달할 세션 목록 결과입니다.
+            var results = new List<AudioSessionInfo>();
+
+            for (int index = 0; index < sessions.Count; index++)
             {
-                // 종료된 세션은 화면에 남길 이유가 없습니다.
-                if (session.State == AudioSessionState.AudioSessionStateExpired)
+                // 루프 안의 session은 한 개의 앱 오디오 세션입니다.
+                using var session = sessions[index];
+
+                try
                 {
-                    continue;
+                    // 종료된 세션은 화면에 남길 이유가 없습니다.
+                    if (session.State == AudioSessionState.AudioSessionStateExpired)
+                    {
+                        continue;
+                    }
+
+                    // Windows 시스템 사운드는 일반 앱 목록과 분리하는 편이 UX가 낫습니다.
+                    if (!includeSystemSounds && session.IsSystemSoundsSession)
+                    {
+                        continue;
+                    }
+
+                    var processId = session.GetProcessID;
+                    if (!session.IsSystemSoundsSession && processId != 0 && !_processMetadataCacheService.IsProcessAlive(processId))
+                    {
+                        _processMetadataCacheService.Invalidate(processId);
+                        continue;
+                    }
+
+                    var displayName = ResolveDisplayName(session);
+                    var executablePath = ResolveExecutablePath(session);
+                    var iconSourcePath = ResolveIconSourcePath(session);
+
+                    results.Add(new AudioSessionInfo
+                    {
+                        MatchKey = ProgramAudioPreferenceStore.CreateMatchKey(
+                            session.GetSessionIdentifier,
+                            executablePath,
+                            displayName),
+                        Id = session.GetSessionIdentifier,
+                        DisplayName = displayName,
+                        ExecutablePath = executablePath,
+                        IconSourcePath = iconSourcePath,
+                        Volume = (int)Math.Round(session.SimpleAudioVolume.Volume * 100),
+                        IsMuted = session.SimpleAudioVolume.Mute,
+                        IsActive = session.State == AudioSessionState.AudioSessionStateActive
+                    });
                 }
-
-                // Windows 시스템 사운드는 일반 앱 목록과 분리하는 편이 UX가 낫습니다.
-                if (!includeSystemSounds && session.IsSystemSoundsSession)
+                catch
                 {
-                    continue;
+                    // 세션 조회 중 앱이 종료될 수 있으므로 해당 세션만 건너뜁니다.
                 }
-
-                var processId = session.GetProcessID;
-                if (!session.IsSystemSoundsSession && processId != 0 && !_processMetadataCacheService.IsProcessAlive(processId))
-                {
-                    _processMetadataCacheService.Invalidate(processId);
-                    continue;
-                }
-
-                var displayName = ResolveDisplayName(session);
-                var executablePath = ResolveExecutablePath(session);
-                var iconSourcePath = ResolveIconSourcePath(session);
-
-                results.Add(new AudioSessionInfo
-                {
-                    MatchKey = ProgramAudioPreferenceStore.CreateMatchKey(
-                        session.GetSessionIdentifier,
-                        executablePath,
-                        displayName),
-                    Id = session.GetSessionIdentifier,
-                    DisplayName = displayName,
-                    ExecutablePath = executablePath,
-                    IconSourcePath = iconSourcePath,
-                    Volume = (int)Math.Round(session.SimpleAudioVolume.Volume * 100),
-                    IsMuted = session.SimpleAudioVolume.Mute,
-                    IsActive = session.State == AudioSessionState.AudioSessionStateActive
-                });
             }
-            catch
+
+            var coalescedSessions = CoalesceSessions(results);
+            stopwatch.Stop();
+            var message = $"GetSessions 완료 deviceId={deviceId} includeSystemSounds={includeSystemSounds} count={coalescedSessions.Count} elapsedMs={stopwatch.ElapsedMilliseconds}";
+            if (stopwatch.ElapsedMilliseconds >= SlowEnumerationThresholdMs)
             {
-                // 세션 조회 중 앱이 종료될 수 있으므로 해당 세션만 건너뜁니다.
+                AppLog.Warn("NativeAudioSessionService", message);
             }
-        }
+            else
+            {
+                AppLog.Debug("NativeAudioSessionService", message);
+            }
 
-        var coalescedSessions = CoalesceSessions(results);
-        stopwatch.Stop();
-        var message = $"GetSessions 완료 deviceId={deviceId} includeSystemSounds={includeSystemSounds} count={coalescedSessions.Count} elapsedMs={stopwatch.ElapsedMilliseconds}";
-        if (stopwatch.ElapsedMilliseconds >= SlowEnumerationThresholdMs)
-        {
-            AppLog.Warn("NativeAudioSessionService", message);
+            return coalescedSessions;
         }
-        else
+        catch (Exception exception)
         {
-            AppLog.Debug("NativeAudioSessionService", message);
+            stopwatch.Stop();
+            AppLog.Error(
+                "NativeAudioSessionService",
+                $"GetSessions 실패 deviceId={deviceId} includeSystemSounds={includeSystemSounds} elapsedMs={stopwatch.ElapsedMilliseconds}",
+                exception);
+            throw;
         }
-
-        return coalescedSessions;
     }
 
     /// <summary>

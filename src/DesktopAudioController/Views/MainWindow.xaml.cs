@@ -28,13 +28,13 @@ public partial class MainWindow : Window
     }
 
     // 메인 화면 데이터와 바인딩되는 뷰모델입니다.
-    private readonly MainViewModel _viewModel;
+    private MainViewModel _viewModel;
 
     // 설정 창을 열 때마다 새 설정 뷰모델을 만들기 위한 팩토리입니다.
     private readonly Func<SettingsViewModel> _settingsViewModelFactory;
 
     // Core Audio 이벤트를 받아 메인 화면 갱신을 트리거하는 서비스입니다.
-    private readonly IAudioNotificationService _audioNotificationService;
+    private IAudioNotificationService _audioNotificationService;
 
     // 시작 최소화, 트레이 최소화 같은 창 동작 옵션을 읽는 설정 서비스입니다.
     private readonly ISettingsService _settingsService;
@@ -264,7 +264,23 @@ public partial class MainWindow : Window
     /// </summary>
     private async void RefreshButton_OnClick(object sender, RoutedEventArgs e)
     {
-        await RefreshStateViewAsync("manual_refresh_button");
+        var app = System.Windows.Application.Current as App;
+        AppLog.Info("MainWindow", $"수동 장치 새로고침 요청 degradedMode={app?.IsInDegradedMode ?? false}");
+
+        if (app?.IsInDegradedMode == true)
+        {
+            var recoveryResult = await app.TryRecoverFromDegradedModeAsync("manual_refresh_button");
+            if (recoveryResult is not null)
+            {
+                ApplyRecoveredAudioRuntime(recoveryResult.ViewModel, recoveryResult.NotificationService);
+            }
+            else
+            {
+                AppLog.Warn("MainWindow", "수동 장치 새로고침 복구 실패: 제한 모드 유지");
+            }
+        }
+
+        await ReloadViewModelAsync("manual_refresh_button");
     }
 
     /// <summary>
@@ -306,6 +322,7 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task OpenSettingsInternalAsync()
     {
+        AppLog.Debug("MainWindow", "설정 창 로딩 시작");
         if (TryActivateExistingSettingsWindow())
         {
             return;
@@ -332,6 +349,7 @@ public partial class MainWindow : Window
             semaphoreAcquired = true;
             var settingsViewModel = _settingsViewModelFactory();
             await settingsViewModel.LoadAsync(loadCancellationTokenSource.Token).WaitAsync(loadCancellationTokenSource.Token);
+            AppLog.Debug("MainWindow", $"설정 창 로딩 완료 visibleDevices={settingsViewModel.AvailableDevices.Count}");
 
             settingsWindow = new SettingsWindow(settingsViewModel)
             {
@@ -402,6 +420,21 @@ public partial class MainWindow : Window
                 _isSettingsWindowOpening = false;
             }
         }
+    }
+
+    private void ApplyRecoveredAudioRuntime(MainViewModel viewModel, IAudioNotificationService audioNotificationService)
+    {
+        AppLog.Info("MainWindow", "제한 모드 복구 성공: 뷰모델/알림 서비스 교체");
+        _audioNotificationService.Changed -= AudioNotificationService_OnChanged;
+        _audioNotificationService = audioNotificationService;
+        _audioNotificationService.Changed += AudioNotificationService_OnChanged;
+        _viewModel = viewModel;
+        DataContext = _viewModel;
+        StartupStatusText.Visibility = Visibility.Collapsed;
+        StartupStatusText.Text = string.Empty;
+        _lastTrayMenuSignature = null;
+        UpdateEmptyState();
+        RefreshTrayMenu(force: true);
     }
 
     private bool TryActivateExistingSettingsWindow()
