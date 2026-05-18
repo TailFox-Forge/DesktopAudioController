@@ -237,11 +237,17 @@ public partial class App : System.Windows.Application
 
     private string EnterDegradedMode(string warningMessage)
     {
-        DisposeAudioServicesForRecovery();
+        var audioNotificationServiceToDispose = _audioNotificationService;
+        var audioSessionServiceToDispose = _audioSessionService;
+        var audioDeviceCatalogServiceToDispose = _audioDeviceCatalogService;
         _audioDeviceCatalogService = UnavailableAudioServices.CreateDeviceCatalogService();
         _audioSessionService = UnavailableAudioServices.CreateSessionService();
         _audioNotificationService = UnavailableAudioServices.CreateNotificationService();
         AppLog.Warn("App", $"제한 모드 진입 reason={warningMessage}");
+        _ = DisposeAudioServicesForRecoveryAsync(
+            audioNotificationServiceToDispose,
+            audioSessionServiceToDispose,
+            audioDeviceCatalogServiceToDispose);
         return warningMessage;
     }
 
@@ -341,11 +347,25 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private void DisposeAudioServicesForRecovery()
+    private Task DisposeAudioServicesForRecoveryAsync(
+        IAudioNotificationService? audioNotificationService,
+        IAudioSessionService? audioSessionService,
+        IAudioDeviceCatalogService? audioDeviceCatalogService)
     {
-        TryDispose(_audioNotificationService);
-        TryDispose(_audioSessionService as IDisposable);
-        TryDispose(_audioDeviceCatalogService as IDisposable);
+        if (audioNotificationService is null && audioSessionService is null && audioDeviceCatalogService is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        AppLog.Info("App", "제한 모드 복구용 오디오 서비스 비동기 정리 예약");
+        return Task.Run(() =>
+        {
+            AppLog.Info("App", "제한 모드 복구용 오디오 서비스 Dispose 시작");
+            TryDispose(audioNotificationService);
+            TryDispose(audioSessionService as IDisposable);
+            TryDispose(audioDeviceCatalogService as IDisposable);
+            AppLog.Info("App", "제한 모드 복구용 오디오 서비스 Dispose 완료");
+        });
     }
 
     private static void TryDispose(IDisposable? disposable)

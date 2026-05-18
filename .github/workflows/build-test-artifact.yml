@@ -1,0 +1,114 @@
+name: Build Test Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_suffix:
+        description: "Optional suffix for the artifact version"
+        required: false
+        default: ""
+  push:
+    branches:
+      - "test/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build-win-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve artifact version
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $suffix = "${{ inputs.artifact_suffix }}"
+          if ([string]::IsNullOrWhiteSpace($suffix)) {
+            $suffix = "test-$sha"
+          }
+
+          $version = "v0.13.3-$suffix"
+          $publishRoot = "artifacts/release/win-x64/$version"
+          $publishDir = "$publishRoot/publish"
+          $packageDir = "artifacts/release/packages"
+          $packageBaseName = "DesktopAudioController-$version-win-x64"
+          $packagePath = "$packageDir/$packageBaseName.zip"
+          $checksumPath = "$packagePath.sha256"
+
+          "ARTIFACT_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PUBLISH_ROOT=$publishRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PUBLISH_DIR=$publishDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PACKAGE_DIR=$packageDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PACKAGE_BASENAME=$packageBaseName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PACKAGE_PATH=$packagePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CHECKSUM_PATH=$checksumPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          dotnet restore src/DesktopAudioController/DesktopAudioController.csproj `
+            -r win-x64 `
+            -p:EnableWindowsTargeting=true
+
+          dotnet restore tests/DesktopAudioController.Tests/DesktopAudioController.Tests.csproj
+
+      - name: Test
+        shell: pwsh
+        run: |
+          dotnet test tests/DesktopAudioController.Tests/DesktopAudioController.Tests.csproj `
+            -c Release `
+            -p:EnableWindowsTargeting=true `
+            --no-restore
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force $env:PUBLISH_ROOT -ErrorAction SilentlyContinue
+          Remove-Item -Force $env:PACKAGE_PATH, $env:CHECKSUM_PATH -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $env:PUBLISH_DIR | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:PACKAGE_DIR | Out-Null
+
+          dotnet publish src/DesktopAudioController/DesktopAudioController.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -p:EnableWindowsTargeting=true `
+            -o $env:PUBLISH_DIR
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          if (Test-Path $env:PACKAGE_PATH) {
+            Remove-Item -Force $env:PACKAGE_PATH
+          }
+
+          Compress-Archive -Path "$env:PUBLISH_DIR/*" -DestinationPath $env:PACKAGE_PATH
+
+      - name: Write sha256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 $env:PACKAGE_PATH).Hash.ToLowerInvariant()
+          "$hash  $env:PACKAGE_BASENAME.zip" | Out-File -FilePath $env:CHECKSUM_PATH -Encoding ascii
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_BASENAME }}
+          path: |
+            ${{ env.PACKAGE_PATH }}
+            ${{ env.CHECKSUM_PATH }}
+          if-no-files-found: error
