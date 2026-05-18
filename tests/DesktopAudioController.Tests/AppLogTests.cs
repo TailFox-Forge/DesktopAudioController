@@ -30,7 +30,9 @@ public sealed class AppLogTests
     public void Initialize_CleansUpLogsByAgeCountAndTotalSize()
     {
         using var tempDirectory = new TemporaryDirectory();
-        var currentLogPath = Path.Combine(tempDirectory.DirectoryPath, "DesktopAudioController-20990101.log");
+        var currentLogPath = Path.Combine(
+            tempDirectory.DirectoryPath,
+            $"DesktopAudioController-{DateTime.Now:yyyyMMdd}.log");
         var field = typeof(AppLog).GetField("_logFilePath", BindingFlags.Static | BindingFlags.NonPublic);
 
         Assert.NotNull(field);
