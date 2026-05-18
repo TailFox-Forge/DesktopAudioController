@@ -58,9 +58,15 @@ public sealed class AppLogTests
                 .EnumerateFiles(tempDirectory.DirectoryPath, "DesktopAudioController-*.log")
                 .Select(path => new FileInfo(path))
                 .ToList();
+            var expectedCurrentLogPath = Path.GetFullPath(currentLogPath);
 
             Assert.DoesNotContain(remainingLogs, file => file.Name == "DesktopAudioController-20000101.log");
-            Assert.Contains(remainingLogs, file => file.FullName == currentLogPath);
+            Assert.Contains(
+                remainingLogs,
+                file => string.Equals(
+                    Path.GetFullPath(file.FullName),
+                    expectedCurrentLogPath,
+                    StringComparison.OrdinalIgnoreCase));
             Assert.True(remainingLogs.Count <= 30);
             Assert.True(remainingLogs.Sum(file => file.Length) <= 100L * 1024 * 1024);
         }
