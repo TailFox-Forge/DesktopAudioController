@@ -27,7 +27,7 @@ public sealed class AppLogTests
     }
 
     [Fact]
-    public void Initialize_CleansUpLogsByAgeCountAndTotalSize()
+    public void Initialize_DeletesExpiredLogs()
     {
         using var tempDirectory = new TemporaryDirectory();
         var currentLogPath = Path.Combine(
@@ -41,17 +41,49 @@ public sealed class AppLogTests
         try
         {
             field.SetValue(null, currentLogPath);
-            CreateLogFile(
-                Path.Combine(tempDirectory.DirectoryPath, "DesktopAudioController-20000101.log"),
-                1024,
-                DateTime.UtcNow.AddDays(-8));
+            var expiredLogPath = Path.Combine(tempDirectory.DirectoryPath, "DesktopAudioController-20000101.log");
+            var recentLogPath = Path.Combine(tempDirectory.DirectoryPath, "DesktopAudioController-20991231.log");
+            CreateLogFile(expiredLogPath, 1024, DateTime.UtcNow.AddDays(-8));
+            CreateLogFile(recentLogPath, 1024, DateTime.UtcNow.AddDays(-1));
 
-            for (var index = 0; index < 31; index++)
+            AppLog.Initialize();
+
+            var expectedCurrentLogPath = Path.GetFullPath(currentLogPath);
+
+            Assert.False(File.Exists(expiredLogPath));
+            Assert.True(File.Exists(recentLogPath));
+            Assert.True(File.Exists(expectedCurrentLogPath));
+        }
+        finally
+        {
+            field.SetValue(null, originalValue);
+        }
+    }
+
+    [Fact]
+    public void Initialize_EnforcesLogCountAndTotalSize()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var currentDateStamp = DateTime.Now.ToString("yyyyMMdd");
+        var currentLogPath = Path.Combine(
+            tempDirectory.DirectoryPath,
+            $"DesktopAudioController-{currentDateStamp}.log");
+        var field = typeof(AppLog).GetField("_logFilePath", BindingFlags.Static | BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        var originalValue = (string?)field!.GetValue(null);
+
+        try
+        {
+            field.SetValue(null, currentLogPath);
+            CreateLogFile(currentLogPath, 1024, DateTime.UtcNow);
+
+            for (var index = 1; index <= 31; index++)
             {
                 CreateLogFile(
-                    Path.Combine(tempDirectory.DirectoryPath, $"DesktopAudioController-202605{index + 1:00}.log"),
+                    Path.Combine(tempDirectory.DirectoryPath, $"DesktopAudioController-{currentDateStamp}.{index}.log"),
                     4L * 1024 * 1024,
-                    DateTime.UtcNow.AddMinutes(-(31 - index)));
+                    DateTime.UtcNow.AddMinutes(-index));
             }
 
             AppLog.Initialize();
@@ -60,14 +92,12 @@ public sealed class AppLogTests
                 .EnumerateFiles(tempDirectory.DirectoryPath, "DesktopAudioController-*.log")
                 .Select(path => new FileInfo(path))
                 .ToList();
-            var expectedCurrentLogPath = Path.GetFullPath(currentLogPath);
 
-            Assert.DoesNotContain(remainingLogs, file => file.Name == "DesktopAudioController-20000101.log");
             Assert.Contains(
                 remainingLogs,
                 file => string.Equals(
                     Path.GetFullPath(file.FullName),
-                    expectedCurrentLogPath,
+                    Path.GetFullPath(currentLogPath),
                     StringComparison.OrdinalIgnoreCase));
             Assert.True(remainingLogs.Count <= 30);
             Assert.True(remainingLogs.Sum(file => file.Length) <= 100L * 1024 * 1024);
