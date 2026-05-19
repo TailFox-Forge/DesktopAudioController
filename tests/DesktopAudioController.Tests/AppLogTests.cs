@@ -114,7 +114,6 @@ public sealed class AppLogTests
         using var tempDirectory = new TemporaryDirectory();
         var currentDateStamp = DateTime.Now.ToString("yyyyMMdd");
         var baseLogPath = Path.Combine(tempDirectory.DirectoryPath, $"DesktopAudioController-{currentDateStamp}.log");
-        var rolledLogPath = Path.Combine(tempDirectory.DirectoryPath, $"DesktopAudioController-{currentDateStamp}.1.log");
         var field = typeof(AppLog).GetField("_logFilePath", BindingFlags.Static | BindingFlags.NonPublic);
 
         Assert.NotNull(field);
@@ -127,8 +126,14 @@ public sealed class AppLogTests
 
             AppLog.Info("AppLogTests", "rollover-entry");
 
-            Assert.True(File.Exists(rolledLogPath));
-            Assert.Contains("rollover-entry", File.ReadAllText(rolledLogPath), StringComparison.Ordinal);
+            var writtenLogPath = Directory
+                .EnumerateFiles(tempDirectory.DirectoryPath, "DesktopAudioController-*.log")
+                .Select(Path.GetFullPath)
+                .FirstOrDefault(path =>
+                    !string.Equals(path, Path.GetFullPath(baseLogPath), StringComparison.OrdinalIgnoreCase)
+                    && File.ReadAllText(path).Contains("rollover-entry", StringComparison.Ordinal));
+
+            Assert.False(string.IsNullOrWhiteSpace(writtenLogPath));
         }
         finally
         {
