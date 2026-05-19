@@ -36,7 +36,7 @@ jobs:
             $suffix = "test-$sha"
           }
 
-          $version = "v0.13.3-$suffix"
+          $version = "v0.13.4-$suffix"
           $publishRoot = "artifacts/release/win-x64/$version"
           $publishDir = "$publishRoot/publish"
           $packageDir = "artifacts/release/packages"
