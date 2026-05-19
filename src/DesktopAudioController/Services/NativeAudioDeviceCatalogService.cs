@@ -15,6 +15,7 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
 
     // 장치 열거가 체감 지연으로 이어질 수 있는 기준 시간입니다.
     private static readonly long SlowEnumerationThresholdMs = 500;
+    private readonly AudioDeviceCatalogSnapshotCache _snapshotCache = new();
 
     /// <summary>
     /// 현재 시스템에 등록된 렌더 장치 목록을 반환합니다.
@@ -23,6 +24,16 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
     {
         var stopwatch = Stopwatch.StartNew();
         AppLog.Debug("NativeAudioDeviceCatalogService", "GetAvailableOutputDevices 시작");
+        var enumerationLease = _snapshotCache.BeginEnumeration();
+
+        if (!enumerationLease.CanEnumerate)
+        {
+            stopwatch.Stop();
+            AppLog.Warn(
+                "NativeAudioDeviceCatalogService",
+                $"GetAvailableOutputDevices 생략: 이전 조회 진행 중 cachedCount={enumerationLease.CachedDevices.Count} elapsedMs={stopwatch.ElapsedMilliseconds}");
+            return enumerationLease.CachedDevices;
+        }
 
         try
         {
@@ -71,6 +82,7 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
                 }
             }
 
+            _snapshotCache.StoreSuccessfulSnapshot(results);
             stopwatch.Stop();
             var message = $"GetAvailableOutputDevices 완료 count={results.Count} elapsedMs={stopwatch.ElapsedMilliseconds}";
             if (stopwatch.ElapsedMilliseconds >= SlowEnumerationThresholdMs)
@@ -87,11 +99,27 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
         catch (Exception exception)
         {
             stopwatch.Stop();
+            if (enumerationLease.CachedDevices.Count > 0)
+            {
+                AppLog.Error(
+                    "NativeAudioDeviceCatalogService",
+                    $"GetAvailableOutputDevices 실패 elapsedMs={stopwatch.ElapsedMilliseconds}",
+                    exception);
+                AppLog.Warn(
+                    "NativeAudioDeviceCatalogService",
+                    $"GetAvailableOutputDevices 실패 후 캐시 반환 count={enumerationLease.CachedDevices.Count} elapsedMs={stopwatch.ElapsedMilliseconds}");
+                return enumerationLease.CachedDevices;
+            }
+
             AppLog.Error(
                 "NativeAudioDeviceCatalogService",
                 $"GetAvailableOutputDevices 실패 elapsedMs={stopwatch.ElapsedMilliseconds}",
                 exception);
             throw;
+        }
+        finally
+        {
+            _snapshotCache.CompleteEnumeration();
         }
     }
 
