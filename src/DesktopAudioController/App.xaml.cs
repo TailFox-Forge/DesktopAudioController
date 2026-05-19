@@ -90,6 +90,9 @@ public partial class App : System.Windows.Application
     private readonly object _deferredNotificationStartSyncRoot = new();
     private Task? _deferredNotificationStartTask;
 
+    // 자동 실행 제한 모드 후 지연 재시작은 앱 종료나 수동 복구 시 취소할 수 있어야 합니다.
+    private CancellationTokenSource? _automaticStartupRecoveryCancellationSource;
+
     // 재시작 복구는 한 번만 예약합니다.
     private int _restartRecoveryScheduled;
 
@@ -154,10 +157,16 @@ public partial class App : System.Windows.Application
 
         var (mainViewModel, effectiveStartupWarningMessage) = await CreateMainViewModelAsync(startupWarningMessage);
         startupWarningMessage = effectiveStartupWarningMessage;
-
-        if (TryScheduleAutomaticStartupRecoveryRetry(isStartupLaunch, isStartupRecoveryRetry))
+        var shouldAutoRetryStartup = StartupRecoveryPlanner.ShouldAutoRetry(
+            isStartupLaunch,
+            isStartupRecoveryRetry,
+            _isInDegradedMode,
+            _degradedModeRecoveryRequiresRestart);
+        if (shouldAutoRetryStartup && !string.IsNullOrWhiteSpace(startupWarningMessage))
         {
-            return;
+            startupWarningMessage = StartupRecoveryPlanner.BuildAutomaticRetryWarningMessage(
+                startupWarningMessage,
+                AutomaticStartupRecoveryRestartDelay);
         }
 
         // 메인 창은 설정 창 팩토리를 받아 필요할 때마다 새 설정 뷰모델을 생성합니다.
@@ -180,6 +189,9 @@ public partial class App : System.Windows.Application
         }
 
         AppLog.Info("App", "메인 창 표시 완료");
+        ScheduleAutomaticStartupRecoveryRetryIfNeeded(
+            shouldAutoRetryStartup,
+            mainWindow);
 
         if (_settingsService.TryConsumeLoadWarning(out var warningMessage))
         {
@@ -237,6 +249,7 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         AppLog.Info("App", "OnExit 시작");
+        CancelAutomaticStartupRecoveryRetry();
         AppLog.Info("App", "OnExit 장치 서비스 Dispose 시작");
         (_audioDeviceCatalogService as IDisposable)?.Dispose();
         AppLog.Info("App", "OnExit 장치 서비스 Dispose 완료");
@@ -385,24 +398,61 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private bool TryScheduleAutomaticStartupRecoveryRetry(bool isStartupLaunch, bool isStartupRecoveryRetry)
+    private void ScheduleAutomaticStartupRecoveryRetryIfNeeded(bool shouldAutoRetryStartup, MainWindow mainWindow)
     {
-        if (!StartupRecoveryPlanner.ShouldAutoRetry(
-                isStartupLaunch,
-                isStartupRecoveryRetry,
-                _isInDegradedMode,
-                _degradedModeRecoveryRequiresRestart))
+        if (!shouldAutoRetryStartup)
         {
-            return false;
+            return;
         }
 
-        AppLog.Warn("App", "자동 실행 제한 모드 감지: 지연 재시작 복구 예약");
-        return TryScheduleRestart(
-            reason: "startup_degraded_mode",
-            relaunchArguments: StartupRecoveryPlanner.BuildAutomaticRetryArguments(
-                RegistryStartupLaunchService.StartupLaunchArgument),
-            delay: AutomaticStartupRecoveryRestartDelay,
-            logAction: "제한 모드 자동 재시작 복구 예약");
+        AppLog.Warn(
+            "App",
+            $"자동 실행 제한 모드 감지: {AutomaticStartupRecoveryRestartDelay.TotalSeconds:0}초 뒤 자동 재시작 예정");
+        mainWindow.ShowAutomaticStartupRecoveryNotification(AutomaticStartupRecoveryRestartDelay);
+        CancelAutomaticStartupRecoveryRetry();
+        var cancellationSource = new CancellationTokenSource();
+        _automaticStartupRecoveryCancellationSource = cancellationSource;
+        _ = RunAutomaticStartupRecoveryRestartAsync(cancellationSource.Token);
+    }
+
+    private async Task RunAutomaticStartupRecoveryRestartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(AutomaticStartupRecoveryRestartDelay, cancellationToken);
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (!_isInDegradedMode || !_degradedModeRecoveryRequiresRestart)
+                {
+                    AppLog.Debug("App", "자동 실행 제한 모드 재시작 생략: 더 이상 제한 모드 아님");
+                    return;
+                }
+
+                AppLog.Info("App", "자동 실행 제한 모드 재시작 실행 reason=startup_degraded_mode");
+                TryScheduleRestart(
+                    reason: "startup_degraded_mode",
+                    relaunchArguments: StartupRecoveryPlanner.BuildAutomaticRetryArguments(
+                        RegistryStartupLaunchService.StartupLaunchArgument),
+                    delay: TimeSpan.FromSeconds(2),
+                    logAction: "제한 모드 자동 재시작 복구 예약");
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            AppLog.Debug("App", "자동 실행 제한 모드 재시작 취소");
+        }
+    }
+
+    private void CancelAutomaticStartupRecoveryRetry()
+    {
+        if (_automaticStartupRecoveryCancellationSource is null)
+        {
+            return;
+        }
+
+        _automaticStartupRecoveryCancellationSource.Cancel();
+        _automaticStartupRecoveryCancellationSource.Dispose();
+        _automaticStartupRecoveryCancellationSource = null;
     }
 
     internal bool TryScheduleRestartRecovery(string reason)

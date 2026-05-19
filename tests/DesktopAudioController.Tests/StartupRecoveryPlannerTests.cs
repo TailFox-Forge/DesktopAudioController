@@ -40,4 +40,16 @@ public sealed class StartupRecoveryPlannerTests
             ],
             arguments);
     }
+
+    [Fact]
+    public void BuildAutomaticRetryWarningMessage_AppendsDelayNotice()
+    {
+        var message = StartupRecoveryPlanner.BuildAutomaticRetryWarningMessage(
+            "부팅 직후 오디오 장치 초기화가 지연되었습니다.",
+            TimeSpan.FromSeconds(15));
+
+        Assert.Equal(
+            "부팅 직후 오디오 장치 초기화가 지연되었습니다. 15초 뒤 프로그램을 자동으로 다시 시작합니다.",
+            message);
+    }
 }

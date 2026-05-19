@@ -24,4 +24,10 @@ internal static class StartupRecoveryPlanner
             StartupRecoveryRetryArgument
         ];
     }
+
+    public static string BuildAutomaticRetryWarningMessage(string warningMessage, TimeSpan delay)
+    {
+        var totalSeconds = Math.Max(1, (int)Math.Ceiling(delay.TotalSeconds));
+        return $"{warningMessage} {totalSeconds}초 뒤 프로그램을 자동으로 다시 시작합니다.";
+    }
 }

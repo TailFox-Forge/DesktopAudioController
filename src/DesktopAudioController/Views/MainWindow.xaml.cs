@@ -854,6 +854,22 @@ public partial class MainWindow : Window
         StartupStatusText.Visibility = Visibility.Visible;
     }
 
+    internal void ShowAutomaticStartupRecoveryNotification(TimeSpan delay)
+    {
+        try
+        {
+            var totalSeconds = Math.Max(1, (int)Math.Ceiling(delay.TotalSeconds));
+            _notifyIcon.BalloonTipTitle = "DesktopAudioController";
+            _notifyIcon.BalloonTipText = $"오디오 초기화가 지연되어 {totalSeconds}초 뒤 자동으로 다시 시작합니다.";
+            _notifyIcon.ShowBalloonTip(5000);
+            AppLog.Info("MainWindow", $"자동 재시작 안내 표시 delaySeconds={totalSeconds}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainWindow", "자동 재시작 안내 표시 실패", exception);
+        }
+    }
+
     private void ShowPreviousRunIncidentIfNeeded()
     {
         if (!_previousRunIncident.Detected)
