@@ -4,6 +4,7 @@ using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 using DesktopAudioController.Views;
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -70,6 +71,9 @@ public partial class App : System.Windows.Application
     // 현재 앱이 제한 모드인지 나타냅니다. 설정 저장 보호와 수동 복구 경로에서 사용합니다.
     private bool _isInDegradedMode;
 
+    // 부팅 직후 열거 타임아웃이 난 제한 모드는 같은 프로세스에서 복구하지 않고 재시작 복구로 넘깁니다.
+    private bool _degradedModeRecoveryRequiresRestart;
+
     // 제한 모드 복구는 한 번에 하나만 진행합니다.
     private readonly SemaphoreSlim _audioRuntimeRecoverySemaphore = new(1, 1);
 
@@ -83,7 +87,11 @@ public partial class App : System.Windows.Application
     private readonly object _deferredNotificationStartSyncRoot = new();
     private Task? _deferredNotificationStartTask;
 
+    // 재시작 복구는 한 번만 예약합니다.
+    private int _restartRecoveryScheduled;
+
     internal bool IsInDegradedMode => _isInDegradedMode;
+    internal bool RequiresRestartToRecoverDegradedMode => _isInDegradedMode && _degradedModeRecoveryRequiresRestart;
 
     /// <summary>
     /// 앱 시작 시 서비스 초기화, 메인 뷰모델 로드, 메인 창 표시를 수행합니다.
@@ -194,7 +202,9 @@ public partial class App : System.Windows.Application
         {
             mainViewModel.InvalidatePendingSnapshots();
             AppLog.Error("App", "초기 장치 로드 타임아웃, 제한 모드로 전환", exception);
-            startupWarningMessage = EnterDegradedMode("부팅 직후 오디오 장치 초기화가 지연되어 제한 모드로 시작했습니다. 잠시 후 다시 실행해 주세요.");
+            startupWarningMessage = EnterDegradedMode(
+                "부팅 직후 오디오 장치 초기화가 지연되어 제한 모드로 시작했습니다. 잠시 후 다시 실행해 주세요.",
+                requiresRestartForRecovery: true);
         }
         catch (Exception exception)
         {
@@ -251,6 +261,7 @@ public partial class App : System.Windows.Application
         {
             ApplyAudioServices(CreateNativeAudioServices());
             _isInDegradedMode = false;
+            _degradedModeRecoveryRequiresRestart = false;
             return null;
         }
         catch (Exception exception)
@@ -260,7 +271,7 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private string EnterDegradedMode(string warningMessage)
+    private string EnterDegradedMode(string warningMessage, bool requiresRestartForRecovery = false)
     {
         var audioNotificationServiceToDispose = _audioNotificationService;
         var audioSessionServiceToDispose = _audioSessionService;
@@ -269,6 +280,7 @@ public partial class App : System.Windows.Application
         _audioSessionService = UnavailableAudioServices.CreateSessionService();
         _audioNotificationService = UnavailableAudioServices.CreateNotificationService();
         _isInDegradedMode = true;
+        _degradedModeRecoveryRequiresRestart = requiresRestartForRecovery;
         AppLog.Warn("App", $"제한 모드 진입 reason={warningMessage}");
         _ = DisposeAudioServicesForRecoveryAsync(
             audioNotificationServiceToDispose,
@@ -342,6 +354,7 @@ public partial class App : System.Windows.Application
             var previousDeviceCatalogService = _audioDeviceCatalogService;
             ApplyAudioServices(audioServices);
             _isInDegradedMode = false;
+            _degradedModeRecoveryRequiresRestart = false;
 
             TryDispose(previousNotificationService);
             TryDispose(previousSessionService as IDisposable);
@@ -356,6 +369,44 @@ public partial class App : System.Windows.Application
         finally
         {
             _audioRuntimeRecoverySemaphore.Release();
+        }
+    }
+
+    internal bool TryScheduleRestartRecovery(string reason)
+    {
+        if (Interlocked.Exchange(ref _restartRecoveryScheduled, 1) != 0)
+        {
+            AppLog.Warn("App", $"제한 모드 재시작 복구 생략: 이미 예약됨 reason={reason}");
+            return true;
+        }
+
+        var executablePath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            AppLog.Warn("App", $"제한 모드 재시작 복구 실패: 실행 파일 경로 없음 reason={reason}");
+            Interlocked.Exchange(ref _restartRecoveryScheduled, 0);
+            return false;
+        }
+
+        try
+        {
+            AppLog.Info("App", $"제한 모드 재시작 복구 예약 reason={reason} executablePath={executablePath}");
+            Process.Start(new ProcessStartInfo("cmd.exe")
+            {
+                Arguments = $"/c ping -n 3 127.0.0.1 > nul && start \"\" \"{executablePath}\"",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+
+            Shutdown();
+            return true;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("App", $"제한 모드 재시작 복구 실패 reason={reason}", exception);
+            Interlocked.Exchange(ref _restartRecoveryScheduled, 0);
+            return false;
         }
     }
 

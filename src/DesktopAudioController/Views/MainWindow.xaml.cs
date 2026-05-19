@@ -268,6 +268,17 @@ public partial class MainWindow : Window
         var degradedMode = app?.IsInDegradedMode == true;
         AppLog.Info("MainWindow", $"수동 장치 새로고침 요청 degradedMode={degradedMode}");
 
+        if (degradedMode && app?.RequiresRestartToRecoverDegradedMode == true)
+        {
+            AppLog.Warn("MainWindow", "수동 장치 새로고침: 제한 모드 재시작 복구로 전환");
+            if (app.TryScheduleRestartRecovery("manual_refresh_button"))
+            {
+                return;
+            }
+
+            AppLog.Warn("MainWindow", "수동 장치 새로고침: 재시작 복구 예약 실패, 기존 복구 경로로 계속");
+        }
+
         var executionResult = await ManualRefreshCoordinator.ExecuteAsync(
             degradedMode,
             "manual_refresh_button",
