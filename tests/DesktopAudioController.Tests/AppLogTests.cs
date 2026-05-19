@@ -143,8 +143,11 @@ public sealed class AppLogTests
 
     private static void CreateLogFile(string filePath, long length, DateTime lastWriteTimeUtc)
     {
-        using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
-        stream.SetLength(length);
+        using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
+        {
+            stream.SetLength(length);
+        }
+
         File.SetLastWriteTimeUtc(filePath, lastWriteTimeUtc);
     }
 
