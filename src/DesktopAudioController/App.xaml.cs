@@ -17,7 +17,8 @@ public partial class App : System.Windows.Application
 {
     internal sealed record AudioRuntimeRecoveryResult(
         MainViewModel ViewModel,
-        IAudioNotificationService NotificationService);
+        IAudioNotificationService NotificationService,
+        bool NotificationServiceStartDeferred);
 
     private sealed class AudioServicesBundle
     {
@@ -77,6 +78,10 @@ public partial class App : System.Windows.Application
 
     // 수동 복구 시 서비스 재생성은 UI를 오래 붙잡지 않도록 별도 시간 제한을 둡니다.
     private static readonly TimeSpan DegradedRecoveryServiceCreationTimeout = TimeSpan.FromSeconds(8);
+
+    // 제한 모드 복구 직후 알림 서비스 시작은 UI와 분리해 한 번에 하나만 백그라운드로 진행합니다.
+    private readonly object _deferredNotificationStartSyncRoot = new();
+    private Task? _deferredNotificationStartTask;
 
     internal bool IsInDegradedMode => _isInDegradedMode;
 
@@ -303,7 +308,7 @@ public partial class App : System.Windows.Application
                 var recoveryTask = Task.Run(() =>
                 {
                     AppLog.Info("App", $"제한 모드 복구용 오디오 서비스 생성 시작 reason={reason}");
-                    var services = CreateNativeAudioServices();
+                    var services = CreateNativeAudioServices(startNotificationService: false);
                     AppLog.Info("App", $"제한 모드 복구용 오디오 서비스 생성 완료 reason={reason}");
                     return services;
                 });
@@ -345,11 +350,66 @@ public partial class App : System.Windows.Application
             AppLog.Info("App", $"제한 모드 복구 성공 reason={reason}");
             return new AudioRuntimeRecoveryResult(
                 CreateMainViewModelForCurrentServices(),
-                _audioNotificationService ?? throw new InvalidOperationException("Audio notification service is not initialized."));
+                _audioNotificationService ?? throw new InvalidOperationException("Audio notification service is not initialized."),
+                NotificationServiceStartDeferred: true);
         }
         finally
         {
             _audioRuntimeRecoverySemaphore.Release();
+        }
+    }
+
+    internal void EnsureRecoveredAudioNotificationServiceStarted(string reason)
+    {
+        if (_audioNotificationService is null)
+        {
+            return;
+        }
+
+        lock (_deferredNotificationStartSyncRoot)
+        {
+            if (_deferredNotificationStartTask is { IsCompleted: false })
+            {
+                AppLog.Debug("App", $"복구 후 오디오 알림 서비스 시작 생략: 이미 진행 중 reason={reason}");
+                return;
+            }
+
+            var notificationService = _audioNotificationService;
+            var startTask = Task.Run(() =>
+            {
+                AppLog.Info("App", $"복구 후 오디오 알림 서비스 시작 reason={reason}");
+                notificationService.Start();
+                AppLog.Info("App", $"복구 후 오디오 알림 서비스 시작 완료 reason={reason}");
+            });
+
+            _deferredNotificationStartTask = startTask;
+            _ = startTask.ContinueWith(
+                completedTask =>
+                {
+                    try
+                    {
+                        if (completedTask.Exception is not null)
+                        {
+                            AppLog.Warn(
+                                "App",
+                                $"복구 후 오디오 알림 서비스 시작 실패 reason={reason}",
+                                completedTask.Exception.GetBaseException());
+                        }
+                    }
+                    finally
+                    {
+                        lock (_deferredNotificationStartSyncRoot)
+                        {
+                            if (ReferenceEquals(_deferredNotificationStartTask, completedTask))
+                            {
+                                _deferredNotificationStartTask = null;
+                            }
+                        }
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
     }
 
@@ -388,7 +448,7 @@ public partial class App : System.Windows.Application
         _processMetadataCacheService = audioServices.ProcessMetadataCacheService;
     }
 
-    private static AudioServicesBundle CreateNativeAudioServices()
+    private static AudioServicesBundle CreateNativeAudioServices(bool startNotificationService = true)
     {
         IAudioDeviceCatalogService? audioDeviceCatalogService = null;
         IAudioSessionService? audioSessionService = null;
@@ -401,7 +461,10 @@ public partial class App : System.Windows.Application
             processMetadataCacheService = new CachedProcessMetadataService();
             audioSessionService = new NativeAudioSessionService(processMetadataCacheService!);
             audioNotificationService = new NativeAudioNotificationService();
-            audioNotificationService.Start();
+            if (startNotificationService)
+            {
+                audioNotificationService.Start();
+            }
 
             return new AudioServicesBundle
             {

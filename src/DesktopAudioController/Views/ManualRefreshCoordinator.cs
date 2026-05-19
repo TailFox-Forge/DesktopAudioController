@@ -11,11 +11,13 @@ internal static class ManualRefreshCoordinator
         string reason,
         Func<string, Task<TRecovery?>> tryRecoverAsync,
         Action<TRecovery> applyRecoveredRuntime,
-        Func<string, Task> reloadAsync)
+        Func<string, Task> reloadAsync,
+        Func<TRecovery, string, Task>? afterReloadAsync = null)
         where TRecovery : class
     {
         var recoveryAttempted = false;
         var recoveryApplied = false;
+        TRecovery? appliedRecovery = null;
 
         if (isInDegradedMode)
         {
@@ -25,10 +27,16 @@ internal static class ManualRefreshCoordinator
             {
                 applyRecoveredRuntime(recoveryResult);
                 recoveryApplied = true;
+                appliedRecovery = recoveryResult;
             }
         }
 
         await reloadAsync(reason);
+        if (recoveryApplied && appliedRecovery is not null && afterReloadAsync is not null)
+        {
+            await afterReloadAsync(appliedRecovery, reason);
+        }
+
         return new ManualRefreshExecutionResult(recoveryAttempted, recoveryApplied);
     }
 }

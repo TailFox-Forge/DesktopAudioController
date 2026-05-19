@@ -57,4 +57,37 @@ public sealed class ManualRefreshCoordinatorTests
             ["recover:manual_refresh_button", "reload:manual_refresh_button"],
             events);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenAfterReloadCallbackProvided_RunsItAfterReload()
+    {
+        var events = new List<string>();
+        var recovery = new object();
+
+        var result = await ManualRefreshCoordinator.ExecuteAsync(
+            isInDegradedMode: true,
+            reason: "manual_refresh_button",
+            tryRecoverAsync: reason =>
+            {
+                events.Add($"recover:{reason}");
+                return Task.FromResult<object?>(recovery);
+            },
+            applyRecoveredRuntime: _ => events.Add("apply"),
+            reloadAsync: reason =>
+            {
+                events.Add($"reload:{reason}");
+                return Task.CompletedTask;
+            },
+            afterReloadAsync: (_, reason) =>
+            {
+                events.Add($"after_reload:{reason}");
+                return Task.CompletedTask;
+            });
+
+        Assert.True(result.RecoveryAttempted);
+        Assert.True(result.RecoveryApplied);
+        Assert.Equal(
+            ["recover:manual_refresh_button", "apply", "reload:manual_refresh_button", "after_reload:manual_refresh_button"],
+            events);
+    }
 }

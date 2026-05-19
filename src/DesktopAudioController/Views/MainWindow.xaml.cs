@@ -273,7 +273,16 @@ public partial class MainWindow : Window
             "manual_refresh_button",
             reason => app?.TryRecoverFromDegradedModeAsync(reason) ?? Task.FromResult<App.AudioRuntimeRecoveryResult?>(null),
             recoveryResult => ApplyRecoveredAudioRuntime(recoveryResult.ViewModel, recoveryResult.NotificationService),
-            ReloadViewModelAsync);
+            ReloadViewModelAsync,
+            (recoveryResult, reason) =>
+            {
+                if (recoveryResult.NotificationServiceStartDeferred)
+                {
+                    app?.EnsureRecoveredAudioNotificationServiceStarted(reason);
+                }
+
+                return Task.CompletedTask;
+            });
 
         if (executionResult.RecoveryAttempted && !executionResult.RecoveryApplied)
         {
