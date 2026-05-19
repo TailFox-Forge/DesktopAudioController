@@ -8,6 +8,8 @@ namespace DesktopAudioController.Services;
 /// </summary>
 public sealed class NativeAudioNotificationService : IAudioNotificationService
 {
+    private const int DisposeSyncRootTimeoutMs = 1000;
+
     // 장치 열거와 시스템 오디오 알림 등록에 사용하는 COM 래퍼입니다.
     private readonly MMDeviceEnumerator _enumerator = new();
 
@@ -22,6 +24,9 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
 
     // 서비스 시작 여부를 나타냅니다.
     private bool _started;
+
+    // 종료 또는 교체 중인 인스턴스는 새 콜백 처리를 시작하지 않도록 막습니다.
+    private volatile bool _disposeRequested;
 
     public NativeAudioNotificationService()
     {
@@ -45,6 +50,7 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
                 return;
             }
 
+            _disposeRequested = false;
             _enumerator.RegisterEndpointNotificationCallback(_endpointNotificationClient);
             RebuildSubscriptionsLocked();
             _started = true;
@@ -56,16 +62,26 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     internal void HandleTopologyChanged()
     {
+        if (_disposeRequested)
+        {
+            return;
+        }
+
         try
         {
             lock (_syncRoot)
             {
-                if (!_started)
+                if (_disposeRequested || !_started)
                 {
                     return;
                 }
 
                 RebuildSubscriptionsLocked();
+            }
+
+            if (_disposeRequested)
+            {
+                return;
             }
 
             RaiseChanged(AudioNotificationChangeKind.Topology);
@@ -81,6 +97,11 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     internal void HandleStateChanged()
     {
+        if (_disposeRequested)
+        {
+            return;
+        }
+
         try
         {
             RaiseChanged(AudioNotificationChangeKind.State);
@@ -96,16 +117,26 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     internal void HandleSessionCollectionChanged()
     {
+        if (_disposeRequested)
+        {
+            return;
+        }
+
         try
         {
             lock (_syncRoot)
             {
-                if (!_started)
+                if (_disposeRequested || !_started)
                 {
                     return;
                 }
 
                 RebuildSubscriptionsLocked();
+            }
+
+            if (_disposeRequested)
+            {
+                return;
             }
 
             RaiseChanged(AudioNotificationChangeKind.State);
@@ -205,7 +236,7 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     private void RaiseChanged(AudioNotificationChangeKind kind)
     {
-        if (Changed is null)
+        if (_disposeRequested || Changed is null)
         {
             return;
         }
@@ -229,11 +260,24 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
     /// </summary>
     public void Dispose()
     {
-        List<DeviceSubscription> subscriptionsToDispose;
-        var shouldUnregister = false;
+        _disposeRequested = true;
+        Changed = null;
 
-        lock (_syncRoot)
+        List<DeviceSubscription> subscriptionsToDispose = [];
+        var shouldUnregister = false;
+        var lockTaken = false;
+
+        try
         {
+            Monitor.TryEnter(_syncRoot, TimeSpan.FromMilliseconds(DisposeSyncRootTimeoutMs), ref lockTaken);
+            if (!lockTaken)
+            {
+                AppLog.Warn(
+                    "NativeAudioNotificationService",
+                    $"Dispose 중 sync lock 획득 타임아웃 timeoutMs={DisposeSyncRootTimeoutMs}");
+                return;
+            }
+
             if (_started)
             {
                 shouldUnregister = true;
@@ -242,6 +286,13 @@ public sealed class NativeAudioNotificationService : IAudioNotificationService
 
             subscriptionsToDispose = _deviceSubscriptions.Values.ToList();
             _deviceSubscriptions.Clear();
+        }
+        finally
+        {
+            if (lockTaken)
+            {
+                Monitor.Exit(_syncRoot);
+            }
         }
 
         if (shouldUnregister)
