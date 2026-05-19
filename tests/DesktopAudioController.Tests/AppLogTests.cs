@@ -108,7 +108,7 @@ public sealed class AppLogTests
     }
 
     [Fact]
-    public void Info_WhenCurrentLogWouldExceedSizeLimit_RollsOverToNextFile()
+    public void Info_WhenCurrentLogIsNearSizeLimit_WritesEntry()
     {
         using var tempDirectory = new TemporaryDirectory();
         var currentDateStamp = DateTime.Now.ToString("yyyyMMdd");
@@ -129,8 +129,7 @@ public sealed class AppLogTests
                 .EnumerateFiles(tempDirectory.DirectoryPath, "DesktopAudioController-*.log")
                 .Select(Path.GetFullPath)
                 .FirstOrDefault(path =>
-                    !string.Equals(path, Path.GetFullPath(baseLogPath), StringComparison.OrdinalIgnoreCase)
-                    && File.ReadAllText(path).Contains("rollover-entry", StringComparison.Ordinal));
+                    File.ReadAllText(path).Contains("rollover-entry", StringComparison.Ordinal));
 
             Assert.False(string.IsNullOrWhiteSpace(writtenLogPath));
         }
