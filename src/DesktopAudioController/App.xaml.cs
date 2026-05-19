@@ -72,6 +72,12 @@ public partial class App : System.Windows.Application
     // 제한 모드 복구는 한 번에 하나만 진행합니다.
     private readonly SemaphoreSlim _audioRuntimeRecoverySemaphore = new(1, 1);
 
+    // 타임아웃된 백그라운드 복구 작업이 아직 끝나지 않았으면 새 시도를 막습니다.
+    private readonly PendingRecoveryTaskGate<AudioServicesBundle> _pendingTimedOutAudioRecoveryGate = new();
+
+    // 수동 복구 시 서비스 재생성은 UI를 오래 붙잡지 않도록 별도 시간 제한을 둡니다.
+    private static readonly TimeSpan DegradedRecoveryServiceCreationTimeout = TimeSpan.FromSeconds(8);
+
     internal bool IsInDegradedMode => _isInDegradedMode;
 
     /// <summary>
@@ -283,12 +289,42 @@ public partial class App : System.Windows.Application
                 return null;
             }
 
+            if (!_pendingTimedOutAudioRecoveryGate.TryAcquireNewAttempt(out _))
+            {
+                AppLog.Warn("App", $"제한 모드 복구 생략: 이전 복구 작업 진행 중 reason={reason}");
+                return null;
+            }
+
             AppLog.Info("App", $"제한 모드 복구 시도 시작 reason={reason}");
 
             AudioServicesBundle audioServices;
             try
             {
-                audioServices = CreateNativeAudioServices();
+                var recoveryTask = Task.Run(() =>
+                {
+                    AppLog.Info("App", $"제한 모드 복구용 오디오 서비스 생성 시작 reason={reason}");
+                    var services = CreateNativeAudioServices();
+                    AppLog.Info("App", $"제한 모드 복구용 오디오 서비스 생성 완료 reason={reason}");
+                    return services;
+                });
+
+                var completedTask = await Task.WhenAny(
+                    recoveryTask,
+                    Task.Delay(DegradedRecoveryServiceCreationTimeout));
+                if (!ReferenceEquals(completedTask, recoveryTask))
+                {
+                    _pendingTimedOutAudioRecoveryGate.Track(
+                        recoveryTask,
+                        completedRecoveryTask => HandleTimedOutRecoveryTaskCompletion(completedRecoveryTask, reason));
+                    throw new TimeoutException("The operation has timed out.");
+                }
+
+                audioServices = await recoveryTask;
+            }
+            catch (TimeoutException exception)
+            {
+                AppLog.Error("App", $"제한 모드 복구 실패: 오디오 서비스 재생성 타임아웃 reason={reason}", exception);
+                return null;
             }
             catch (Exception exception)
             {
@@ -381,6 +417,24 @@ public partial class App : System.Windows.Application
             TryDispose(audioSessionService as IDisposable);
             TryDispose(audioDeviceCatalogService as IDisposable);
             throw;
+        }
+    }
+
+    private static void HandleTimedOutRecoveryTaskCompletion(Task<AudioServicesBundle> completedTask, string reason)
+    {
+        if (completedTask.IsCompletedSuccessfully)
+        {
+            AppLog.Warn("App", $"제한 모드 복구용 오디오 서비스 생성 지연 완료 후 결과 폐기 reason={reason}");
+            DisposeAudioServicesBundle(completedTask.Result);
+            return;
+        }
+
+        if (completedTask.Exception is not null)
+        {
+            AppLog.Warn(
+                "App",
+                $"제한 모드 복구용 오디오 서비스 생성 지연 실패 reason={reason}",
+                completedTask.Exception.GetBaseException());
         }
     }
 
@@ -498,6 +552,13 @@ public partial class App : System.Windows.Application
         {
             // 제한 모드 복구 과정의 dispose 실패는 이후 fallback 경로를 막지 않습니다.
         }
+    }
+
+    private static void DisposeAudioServicesBundle(AudioServicesBundle audioServices)
+    {
+        TryDispose(audioServices.NotificationService);
+        TryDispose(audioServices.SessionService as IDisposable);
+        TryDispose(audioServices.DeviceCatalogService as IDisposable);
     }
 
     /// <summary>

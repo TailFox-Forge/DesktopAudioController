@@ -31,6 +31,7 @@
     <Compile Include="..\..\src\DesktopAudioController\Services\GitHubReleaseUpdateCheckService.cs" Link="Source\Services\GitHubReleaseUpdateCheckService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ISettingsService.cs" Link="Source\Services\ISettingsService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\IUpdateCheckService.cs" Link="Source\Services\IUpdateCheckService.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\PendingRecoveryTaskGate.cs" Link="Source\Services\PendingRecoveryTaskGate.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ProgramAudioPreferenceStore.cs" Link="Source\Services\ProgramAudioPreferenceStore.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\SingleInstanceService.cs" Link="Source\Services\SingleInstanceService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\SettingsPersistenceException.cs" Link="Source\Services\SettingsPersistenceException.cs" />
