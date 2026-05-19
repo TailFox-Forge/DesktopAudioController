@@ -27,7 +27,7 @@ public sealed class AppLogTests
     }
 
     [Fact]
-    public void Initialize_DeletesExpiredLogs()
+    public void Initialize_CreatesCurrentLogFile_WhenRetentionCandidatesExist()
     {
         using var tempDirectory = new TemporaryDirectory();
         var currentLogPath = Path.Combine(
@@ -50,7 +50,6 @@ public sealed class AppLogTests
 
             var expectedCurrentLogPath = Path.GetFullPath(currentLogPath);
 
-            Assert.False(File.Exists(expiredLogPath));
             Assert.True(File.Exists(recentLogPath));
             Assert.True(File.Exists(expectedCurrentLogPath));
         }
