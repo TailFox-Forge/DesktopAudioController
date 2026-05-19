@@ -83,6 +83,9 @@ public partial class App : System.Windows.Application
     // 수동 복구 시 서비스 재생성은 UI를 오래 붙잡지 않도록 별도 시간 제한을 둡니다.
     private static readonly TimeSpan DegradedRecoveryServiceCreationTimeout = TimeSpan.FromSeconds(8);
 
+    // 자동 실행 직후 제한 모드에 떨어진 경우 오디오 스택이 올라올 시간을 더 준 뒤 한 번 다시 시작합니다.
+    private static readonly TimeSpan AutomaticStartupRecoveryRestartDelay = TimeSpan.FromSeconds(15);
+
     // 제한 모드 복구 직후 알림 서비스 시작은 UI와 분리해 한 번에 하나만 백그라운드로 진행합니다.
     private readonly object _deferredNotificationStartSyncRoot = new();
     private Task? _deferredNotificationStartTask;
@@ -118,7 +121,12 @@ public partial class App : System.Windows.Application
                 argument,
                 RegistryStartupLaunchService.StartupLaunchArgument,
                 StringComparison.OrdinalIgnoreCase));
-        AppLog.Info("App", $"startupLaunch={isStartupLaunch}");
+        var isStartupRecoveryRetry = e.Args.Any(argument =>
+            string.Equals(
+                argument,
+                StartupRecoveryPlanner.StartupRecoveryRetryArgument,
+                StringComparison.OrdinalIgnoreCase));
+        AppLog.Info("App", $"startupLaunch={isStartupLaunch} startupRecoveryRetry={isStartupRecoveryRetry}");
         var previousRunIncident = BeginRunStateTracking();
 
         _settingsService = new SettingsService();
@@ -146,6 +154,11 @@ public partial class App : System.Windows.Application
 
         var (mainViewModel, effectiveStartupWarningMessage) = await CreateMainViewModelAsync(startupWarningMessage);
         startupWarningMessage = effectiveStartupWarningMessage;
+
+        if (TryScheduleAutomaticStartupRecoveryRetry(isStartupLaunch, isStartupRecoveryRetry))
+        {
+            return;
+        }
 
         // 메인 창은 설정 창 팩토리를 받아 필요할 때마다 새 설정 뷰모델을 생성합니다.
         var mainWindow = new MainWindow(
@@ -372,7 +385,40 @@ public partial class App : System.Windows.Application
         }
     }
 
+    private bool TryScheduleAutomaticStartupRecoveryRetry(bool isStartupLaunch, bool isStartupRecoveryRetry)
+    {
+        if (!StartupRecoveryPlanner.ShouldAutoRetry(
+                isStartupLaunch,
+                isStartupRecoveryRetry,
+                _isInDegradedMode,
+                _degradedModeRecoveryRequiresRestart))
+        {
+            return false;
+        }
+
+        AppLog.Warn("App", "자동 실행 제한 모드 감지: 지연 재시작 복구 예약");
+        return TryScheduleRestart(
+            reason: "startup_degraded_mode",
+            relaunchArguments: StartupRecoveryPlanner.BuildAutomaticRetryArguments(
+                RegistryStartupLaunchService.StartupLaunchArgument),
+            delay: AutomaticStartupRecoveryRestartDelay,
+            logAction: "제한 모드 자동 재시작 복구 예약");
+    }
+
     internal bool TryScheduleRestartRecovery(string reason)
+    {
+        return TryScheduleRestart(
+            reason,
+            Array.Empty<string>(),
+            TimeSpan.FromSeconds(2),
+            "제한 모드 재시작 복구 예약");
+    }
+
+    private bool TryScheduleRestart(
+        string reason,
+        IReadOnlyList<string> relaunchArguments,
+        TimeSpan delay,
+        string logAction)
     {
         if (Interlocked.Exchange(ref _restartRecoveryScheduled, 1) != 0)
         {
@@ -390,10 +436,15 @@ public partial class App : System.Windows.Application
 
         try
         {
-            AppLog.Info("App", $"제한 모드 재시작 복구 예약 reason={reason} executablePath={executablePath}");
+            var relaunchArgumentText = relaunchArguments.Count == 0
+                ? "[]"
+                : $"[{string.Join(", ", relaunchArguments)}]";
+            AppLog.Info(
+                "App",
+                $"{logAction} reason={reason} executablePath={executablePath} relaunchArgs={relaunchArgumentText} delayMs={(int)delay.TotalMilliseconds}");
             Process.Start(new ProcessStartInfo("cmd.exe")
             {
-                Arguments = $"/c ping -n 3 127.0.0.1 > nul && start \"\" \"{executablePath}\"",
+                Arguments = BuildDelayedRestartCommand(executablePath, relaunchArguments, delay),
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 WindowStyle = ProcessWindowStyle.Hidden
@@ -408,6 +459,18 @@ public partial class App : System.Windows.Application
             Interlocked.Exchange(ref _restartRecoveryScheduled, 0);
             return false;
         }
+    }
+
+    private static string BuildDelayedRestartCommand(
+        string executablePath,
+        IReadOnlyList<string> relaunchArguments,
+        TimeSpan delay)
+    {
+        var delayPingCount = Math.Max(2, (int)Math.Ceiling(delay.TotalSeconds) + 1);
+        var relaunchArgumentSuffix = relaunchArguments.Count == 0
+            ? string.Empty
+            : $" {string.Join(" ", relaunchArguments)}";
+        return $"/c ping -n {delayPingCount} 127.0.0.1 > nul && start \"\" \"{executablePath}\"{relaunchArgumentSuffix}";
     }
 
     internal void EnsureRecoveredAudioNotificationServiceStarted(string reason)
