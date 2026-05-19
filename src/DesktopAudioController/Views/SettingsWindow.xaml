@@ -7,10 +7,10 @@
         Title="설정"
         Icon="pack://application:,,,/Assets/AppIcon.ico"
         Width="750"
+        Height="720"
         MinHeight="420"
         FontSize="13"
-        WindowStartupLocation="CenterOwner"
-        SizeToContent="Height">
+        WindowStartupLocation="CenterOwner">
     <DockPanel Margin="16">
         <!-- 하단 버튼 영역에는 로그 폴더 바로가기와 저장/취소를 함께 둡니다. -->
         <Grid DockPanel.Dock="Bottom"

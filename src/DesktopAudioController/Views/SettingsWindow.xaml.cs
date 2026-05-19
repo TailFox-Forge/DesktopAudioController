@@ -11,6 +11,8 @@ namespace DesktopAudioController.Views;
 /// </summary>
 public partial class SettingsWindow : Window
 {
+    private const double SettingsWindowScreenMargin = 16;
+
     // 설정 창에 바인딩되는 뷰모델입니다.
     private readonly SettingsViewModel _viewModel;
 
@@ -20,8 +22,21 @@ public partial class SettingsWindow : Window
     public SettingsWindow(SettingsViewModel viewModel)
     {
         InitializeComponent();
+        ApplyScreenBounds();
         _viewModel = viewModel;
         DataContext = _viewModel;
+    }
+
+    private void ApplyScreenBounds()
+    {
+        var workArea = SystemParameters.WorkArea;
+        var maxHeight = Math.Max(MinHeight, workArea.Height - SettingsWindowScreenMargin);
+
+        MaxHeight = maxHeight;
+        if (Height > maxHeight)
+        {
+            Height = maxHeight;
+        }
     }
 
     /// <summary>
