@@ -23,9 +23,12 @@
   <ItemGroup>
     <Compile Include="..\..\src\DesktopAudioController\Models\AppSettings.cs" Link="Source\Models\AppSettings.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Models\AudioDeviceInfo.cs" Link="Source\Models\AudioDeviceInfo.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Models\AudioDeviceStartupSnapshot.cs" Link="Source\Models\AudioDeviceStartupSnapshot.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Models\AudioSessionInfo.cs" Link="Source\Models\AudioSessionInfo.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Models\ProgramAudioPreference.cs" Link="Source\Models\ProgramAudioPreference.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\AudioDeviceProbeCommand.cs" Link="Source\Services\AudioDeviceProbeCommand.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AudioDeviceCatalogSnapshotCache.cs" Link="Source\Services\AudioDeviceCatalogSnapshotCache.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\AudioDeviceStartupSnapshotService.cs" Link="Source\Services\AudioDeviceStartupSnapshotService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\ViewModels\SettingsSavePlanner.cs" Link="Source\ViewModels\SettingsSavePlanner.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Views\ManualRefreshCoordinator.cs" Link="Source\Views\ManualRefreshCoordinator.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AppLog.cs" Link="Source\Services\AppLog.cs" />

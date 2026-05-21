@@ -114,6 +114,9 @@ public partial class MainWindow : Window
     // 이전 실행이 정상 종료되지 않았을 때 시작 직후 안내에 사용할 정보입니다.
     private readonly PreviousRunIncident _previousRunIncident;
 
+    // 첫 화면은 캐시로 띄우고 뒤에서 실장치 상태를 다시 읽어야 하는 경우 true입니다.
+    private readonly bool _requiresStartupBackgroundRefresh;
+
     // 외부에서 앱을 다시 실행했을 때 기존 인스턴스를 보여줘야 하는 요청 플래그입니다.
     private bool _externalActivationRequested;
 
@@ -122,6 +125,14 @@ public partial class MainWindow : Window
 
     // 현재 떠 있는 설정 창 인스턴스입니다.
     private SettingsWindow? _activeSettingsWindow;
+
+    // 부팅 직후 장치 스택이 늦게 올라오는 환경을 위해 시작 직후 백그라운드 재시도 간격을 둡니다.
+    private static readonly TimeSpan[] StartupBackgroundRefreshRetryDelays =
+    [
+        TimeSpan.Zero,
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10)
+    ];
 
     /// <summary>
     /// 메인 창을 초기화하고 데이터 바인딩을 연결합니다.
@@ -135,7 +146,8 @@ public partial class MainWindow : Window
         bool isStartupLaunch,
         bool forceVisibleOnStartup,
         string? startupWarningMessage = null,
-        PreviousRunIncident previousRunIncident = default)
+        PreviousRunIncident previousRunIncident = default,
+        bool requiresStartupBackgroundRefresh = false)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -147,6 +159,7 @@ public partial class MainWindow : Window
         _forceVisibleOnStartup = forceVisibleOnStartup;
         _startupWarningMessage = startupWarningMessage;
         _previousRunIncident = previousRunIncident;
+        _requiresStartupBackgroundRefresh = requiresStartupBackgroundRefresh;
         _notifyIcon = CreateNotifyIcon();
         RefreshTrayMenu(force: true);
         DataContext = _viewModel;
@@ -284,7 +297,7 @@ public partial class MainWindow : Window
             "manual_refresh_button",
             reason => app?.TryRecoverFromDegradedModeAsync(reason) ?? Task.FromResult<App.AudioRuntimeRecoveryResult?>(null),
             recoveryResult => ApplyRecoveredAudioRuntime(recoveryResult.ViewModel, recoveryResult.NotificationService),
-            ReloadViewModelAsync,
+            async reason => await ReloadViewModelAsync(reason),
             (recoveryResult, reason) =>
             {
                 if (recoveryResult.NotificationServiceStartDeferred)
@@ -528,6 +541,10 @@ public partial class MainWindow : Window
 
         // 창 표시 이후에 백그라운드 업데이트 확인을 시작해, 오프라인 상태여도 UI가 멈추지 않게 합니다.
         _ = CheckForUpdateInBackgroundAsync();
+        if (_requiresStartupBackgroundRefresh)
+        {
+            _ = RunStartupBackgroundRefreshLoopAsync();
+        }
 
         if (_externalActivationRequested)
         {
@@ -1286,7 +1303,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 전체 장치/세션 스냅샷을 백그라운드에서 다시 읽고 UI에 반영합니다.
     /// </summary>
-    private async Task ReloadViewModelAsync(string reason)
+    private async Task<bool> ReloadViewModelAsync(string reason)
     {
         await _viewRefreshSemaphore.WaitAsync();
         try
@@ -1299,20 +1316,28 @@ public partial class MainWindow : Window
             await _viewModel.LoadAsync().WaitAsync(FullRefreshOperationTimeout);
             UpdateEmptyState();
             RefreshTrayMenu();
+            if (string.Equals(reason, "startup_background_refresh", StringComparison.Ordinal))
+            {
+                HideStartupStatusAfterBackgroundRefresh();
+            }
 
             if (!string.Equals(reason, "topology_event", StringComparison.Ordinal))
             {
                 AppLog.Debug("MainWindow", $"전체 새로고침 완료 reason={reason}");
             }
+
+            return true;
         }
         catch (TimeoutException exception)
         {
             _viewModel.InvalidatePendingSnapshots();
             AppLog.Error("MainWindow", $"전체 새로고침 타임아웃 reason={reason}", exception);
+            return false;
         }
         catch (Exception exception)
         {
             AppLog.Error("MainWindow", $"전체 새로고침 실패 reason={reason}", exception);
+            return false;
         }
         finally
         {
@@ -1323,7 +1348,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 현재 보이는 장치 구조는 유지하고 상태 값만 백그라운드 조회 후 반영합니다.
     /// </summary>
-    private async Task RefreshStateViewAsync(string reason = "state_refresh")
+    private async Task<bool> RefreshStateViewAsync(string reason = "state_refresh")
     {
         await _viewRefreshSemaphore.WaitAsync();
         try
@@ -1340,20 +1365,57 @@ public partial class MainWindow : Window
             {
                 AppLog.Debug("MainWindow", $"상태 부분 새로고침 완료 reason={reason}");
             }
+
+            return true;
         }
         catch (TimeoutException exception)
         {
             _viewModel.InvalidatePendingSnapshots();
             AppLog.Error("MainWindow", $"상태 부분 새로고침 타임아웃 reason={reason}", exception);
+            return false;
         }
         catch (Exception exception)
         {
             AppLog.Error("MainWindow", $"상태 부분 새로고침 실패 reason={reason}", exception);
+            return false;
         }
         finally
         {
             _viewRefreshSemaphore.Release();
         }
+    }
+
+    private async Task RunStartupBackgroundRefreshLoopAsync()
+    {
+        foreach (var retryDelay in StartupBackgroundRefreshRetryDelays)
+        {
+            if (retryDelay > TimeSpan.Zero)
+            {
+                AppLog.Info("MainWindow", $"시작 장치 초기화 재시도 대기 delayMs={(int)retryDelay.TotalMilliseconds}");
+                await Task.Delay(retryDelay);
+            }
+
+            var refreshed = await ReloadViewModelAsync("startup_background_refresh");
+            if (refreshed)
+            {
+                AppLog.Info("MainWindow", "시작 장치 초기화 백그라운드 새로고침 성공");
+                return;
+            }
+        }
+
+        AppLog.Warn("MainWindow", "시작 장치 초기화 백그라운드 새로고침 종료: 재시도 예산 소진");
+    }
+
+    private void HideStartupStatusAfterBackgroundRefresh()
+    {
+        if (string.IsNullOrWhiteSpace(StartupStatusText.Text))
+        {
+            return;
+        }
+
+        StartupStatusText.Visibility = Visibility.Collapsed;
+        StartupStatusText.Text = string.Empty;
+        AppLog.Info("MainWindow", "시작 경고 문구 숨김: 백그라운드 장치 초기화 완료");
     }
 
     /// <summary>

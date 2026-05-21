@@ -32,8 +32,10 @@ public partial class App : System.Windows.Application
         public required IProcessMetadataCacheService ProcessMetadataCacheService { get; init; }
     }
 
-    // 부팅 직후 Core Audio 열거가 멎는 경우 UI가 영원히 안 뜨지 않도록 초기 로드 시간 제한을 둡니다.
-    private static readonly TimeSpan InitialDeviceLoadTimeout = TimeSpan.FromSeconds(6);
+    private sealed record StartupViewModelResult(
+        MainViewModel ViewModel,
+        string? WarningMessage,
+        bool RequiresBackgroundRefresh);
 
     // 설정 파일 입출력을 담당하는 서비스입니다.
     private ISettingsService? _settingsService;
@@ -58,6 +60,9 @@ public partial class App : System.Windows.Application
 
     // GitHub 릴리즈 기준 새 버전 여부를 확인하는 서비스입니다.
     private IUpdateCheckService? _updateCheckService;
+
+    // 최근 정상 장치 열거 결과를 저장해 다음 실행 시 첫 화면 구성을 빠르게 합니다.
+    private AudioDeviceStartupSnapshotService? _audioDeviceStartupSnapshotService;
 
     // 이전 실행의 정상 종료 여부를 기록하는 상태 서비스입니다.
     private AppRunStateService? _appRunStateService;
@@ -107,6 +112,12 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
         AppLog.Initialize();
         AppLog.Info("App", $"OnStartup args=[{string.Join(", ", e.Args)}]");
+        if (AudioDeviceProbeCommand.TryParse(e.Args, out var probeOutputPath))
+        {
+            Shutdown(AudioDeviceProbeWorker.Run(probeOutputPath));
+            return;
+        }
+
         if (!TryEnsurePrimaryInstance())
         {
             Shutdown();
@@ -136,6 +147,7 @@ public partial class App : System.Windows.Application
         _startupLaunchService = new RegistryStartupLaunchService();
         _updateCheckService = new GitHubReleaseUpdateCheckService();
         _appIconService = new CachedAppIconService();
+        _audioDeviceStartupSnapshotService = new AudioDeviceStartupSnapshotService();
 
         var startupWarningMessage = TryInitializeAudioServices();
 
@@ -155,8 +167,9 @@ public partial class App : System.Windows.Application
             }
         }
 
-        var (mainViewModel, effectiveStartupWarningMessage) = await CreateMainViewModelAsync(startupWarningMessage);
-        startupWarningMessage = effectiveStartupWarningMessage;
+        var startupViewModelResult = await CreateMainViewModelAsync(startupWarningMessage);
+        var mainViewModel = startupViewModelResult.ViewModel;
+        startupWarningMessage = startupViewModelResult.WarningMessage;
         var shouldAutoRetryStartup = StartupRecoveryPlanner.ShouldAutoRetry(
             isStartupLaunch,
             isStartupRecoveryRetry,
@@ -179,7 +192,8 @@ public partial class App : System.Windows.Application
             isStartupLaunch,
             !mainViewModel.HasConfiguredDevices || !string.IsNullOrWhiteSpace(startupWarningMessage) || previousRunIncident.Detected,
             startupWarningMessage,
-            previousRunIncident);
+            previousRunIncident,
+            startupViewModelResult.RequiresBackgroundRefresh);
         MainWindow = mainWindow;
         mainWindow.Show();
         if (_pendingExternalActivationRequest)
@@ -212,35 +226,40 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private async Task<(MainViewModel ViewModel, string? WarningMessage)> CreateMainViewModelAsync(string? startupWarningMessage)
+    private Task<StartupViewModelResult> CreateMainViewModelAsync(string? startupWarningMessage)
     {
         var mainViewModel = CreateMainViewModelForCurrentServices();
-
-        try
+        if (_isInDegradedMode)
         {
-            AppLog.Info("App", "초기 장치 로드 시작");
-            await mainViewModel.LoadAsync().WaitAsync(InitialDeviceLoadTimeout);
-            AppLog.Info("App", $"초기 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
-            return (mainViewModel, startupWarningMessage);
-        }
-        catch (TimeoutException exception)
-        {
-            mainViewModel.InvalidatePendingSnapshots();
-            AppLog.Error("App", "초기 장치 로드 타임아웃, 제한 모드로 전환", exception);
-            startupWarningMessage = EnterDegradedMode(
-                "부팅 직후 오디오 장치 초기화가 지연되어 제한 모드로 시작했습니다. 잠시 후 다시 실행해 주세요.",
-                requiresRestartForRecovery: true);
-        }
-        catch (Exception exception)
-        {
-            AppLog.Error("App", "초기 장치 로드 실패, 제한 모드로 전환", exception);
-            startupWarningMessage = EnterDegradedMode("오디오 장치 초기화에 실패해 제한 모드로 시작했습니다. 로그를 확인한 뒤 앱을 다시 실행해 주세요.");
+            mainViewModel.LoadFromCachedDevices([]);
+            AppLog.Info(
+                "App",
+                $"제한 모드 시작 장치 스냅샷 적용 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
+            return Task.FromResult(new StartupViewModelResult(mainViewModel, startupWarningMessage, RequiresBackgroundRefresh: false));
         }
 
-        var degradedMainViewModel = CreateMainViewModelForCurrentServices();
-        degradedMainViewModel.Load();
-        AppLog.Info("App", $"제한 모드 장치 로드 완료 visibleDevices={degradedMainViewModel.VisibleDevices.Count} hasConfiguredDevices={degradedMainViewModel.HasConfiguredDevices}");
-        return (degradedMainViewModel, startupWarningMessage);
+        if (_audioDeviceStartupSnapshotService?.TryLoad(out var startupSnapshot) == true)
+        {
+            mainViewModel.LoadFromCachedDevices(startupSnapshot.Devices);
+            AppLog.Info(
+                "App",
+                $"초기 캐시 장치 로드 완료 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices} cachedCount={startupSnapshot.Devices.Count} capturedAtUtc={startupSnapshot.CapturedAtUtc:O}");
+            var requiresBackgroundRefresh = mainViewModel.HasConfiguredDevices || startupSnapshot.Devices.Count > 0;
+            var effectiveWarningMessage = requiresBackgroundRefresh && string.IsNullOrWhiteSpace(startupWarningMessage)
+                ? "이전 장치 상태로 먼저 시작했습니다. 백그라운드에서 최신 장치 상태를 확인하는 중입니다."
+                : startupWarningMessage;
+            return Task.FromResult(new StartupViewModelResult(mainViewModel, effectiveWarningMessage, requiresBackgroundRefresh));
+        }
+
+        mainViewModel.LoadFromCachedDevices([]);
+        AppLog.Info(
+            "App",
+            $"초기 캐시 없음: 빈 장치 스냅샷으로 시작 visibleDevices={mainViewModel.VisibleDevices.Count} hasConfiguredDevices={mainViewModel.HasConfiguredDevices}");
+        var startupDeferredWarningMessage = string.IsNullOrWhiteSpace(startupWarningMessage) && mainViewModel.HasConfiguredDevices
+            ? "오디오 장치를 초기화하는 중입니다. 잠시 후 자동으로 최신 상태로 갱신합니다."
+            : startupWarningMessage;
+        var shouldRefreshInBackground = mainViewModel.HasConfiguredDevices || !string.IsNullOrWhiteSpace(startupDeferredWarningMessage);
+        return Task.FromResult(new StartupViewModelResult(mainViewModel, startupDeferredWarningMessage, shouldRefreshInBackground));
     }
 
     /// <summary>
@@ -612,7 +631,7 @@ public partial class App : System.Windows.Application
         _processMetadataCacheService = audioServices.ProcessMetadataCacheService;
     }
 
-    private static AudioServicesBundle CreateNativeAudioServices(bool startNotificationService = true)
+    private AudioServicesBundle CreateNativeAudioServices(bool startNotificationService = true)
     {
         IAudioDeviceCatalogService? audioDeviceCatalogService = null;
         IAudioSessionService? audioSessionService = null;
@@ -621,7 +640,15 @@ public partial class App : System.Windows.Application
 
         try
         {
-            audioDeviceCatalogService = new NativeAudioDeviceCatalogService();
+            var executablePath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(executablePath))
+            {
+                throw new InvalidOperationException("현재 실행 파일 경로를 확인할 수 없습니다.");
+            }
+
+            audioDeviceCatalogService = new WorkerBackedAudioDeviceCatalogService(
+                executablePath,
+                _audioDeviceStartupSnapshotService ?? new AudioDeviceStartupSnapshotService());
             processMetadataCacheService = new CachedProcessMetadataService();
             audioSessionService = new NativeAudioSessionService(processMetadataCacheService!);
             audioNotificationService = new NativeAudioNotificationService();

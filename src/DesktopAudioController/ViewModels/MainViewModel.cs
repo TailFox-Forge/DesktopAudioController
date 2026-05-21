@@ -126,6 +126,18 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 디스크에 남겨둔 최근 장치 스냅샷으로 먼저 화면 뼈대를 구성합니다.
+    /// 세션 목록은 이후 백그라운드 전체 새로고침에서 채웁니다.
+    /// </summary>
+    public void LoadFromCachedDevices(IReadOnlyList<AudioDeviceInfo> cachedDevices)
+    {
+        ApplyLoadSnapshot(BuildLoadSnapshot(cachedDevices, includeSessions: false));
+        AppLog.Info(
+            "MainViewModel",
+            $"시작 캐시 장치 스냅샷 적용 deviceCount={cachedDevices.Count} visibleDevices={VisibleDevices.Count} hasConfiguredDevices={HasConfiguredDevices}");
+    }
+
+    /// <summary>
     /// 장치/세션 조회는 백그라운드에서 수행하고, UI 반영만 Dispatcher에서 처리합니다.
     /// </summary>
     public async Task LoadAsync()
@@ -199,12 +211,14 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private LoadSnapshot BuildLoadSnapshot()
     {
+        return BuildLoadSnapshot(_audioDeviceCatalogService.GetAvailableOutputDevices(), includeSessions: true);
+    }
+
+    private LoadSnapshot BuildLoadSnapshot(IReadOnlyList<AudioDeviceInfo> devices, bool includeSessions)
+    {
         // 파일에서 읽어온 현재 사용자 설정입니다.
         var settings = _settingsService.Load();
         _cachedSettings = CloneSettings(settings);
-
-        // 현재 시스템에서 보이는 장치 상태를 조회합니다.
-        var devices = _audioDeviceCatalogService.GetAvailableOutputDevices();
 
         // 조회 성능을 위해 선택된 ID 목록을 해시셋으로 변환합니다.
         var selectedIds = settings.VisibleDeviceIds.ToHashSet();
@@ -218,7 +232,9 @@ public sealed class MainViewModel : ObservableObject
         var visibleDevices = devices
             .Where(device => selectedIds.Contains(device.Id))
             .Where(device => !settings.ShowOnlyConnectedDevices || device.IsConnected)
-            .Select(device => BuildDeviceSnapshot(device, settings.ShowSystemSounds, settings.ShowOnlyActiveSessions, loadedProgramAudioPreferencesByKey))
+            .Select(device => includeSessions
+                ? BuildDeviceSnapshot(device, settings.ShowSystemSounds, settings.ShowOnlyActiveSessions, loadedProgramAudioPreferencesByKey)
+                : BuildDeviceSkeletonSnapshot(device))
             .ToList();
 
         return new LoadSnapshot
@@ -296,6 +312,15 @@ public sealed class MainViewModel : ObservableObject
         {
             Device = device,
             Sessions = sessions
+        };
+    }
+
+    private static DeviceSnapshot BuildDeviceSkeletonSnapshot(AudioDeviceInfo device)
+    {
+        return new DeviceSnapshot
+        {
+            Device = device,
+            Sessions = []
         };
     }
 

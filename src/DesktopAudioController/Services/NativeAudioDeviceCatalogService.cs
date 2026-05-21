@@ -37,23 +37,45 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
 
         try
         {
+            var createEnumeratorStopwatch = Stopwatch.StartNew();
+            AppLog.Debug("NativeAudioDeviceCatalogService", "단계 시작 name=CreateEnumerator");
             using var enumerator = new MMDeviceEnumerator();
+            createEnumeratorStopwatch.Stop();
+            AppLog.Debug(
+                "NativeAudioDeviceCatalogService",
+                $"단계 완료 name=CreateEnumerator elapsedMs={createEnumeratorStopwatch.ElapsedMilliseconds}");
 
             // 현재 연결된 장치와 최근 분리된 장치를 함께 보여주기 위해 두 상태를 같이 조회합니다.
+            var enumerateEndpointsStopwatch = Stopwatch.StartNew();
+            AppLog.Debug("NativeAudioDeviceCatalogService", "단계 시작 name=EnumerateAudioEndPoints");
             var deviceCollection = enumerator.EnumerateAudioEndPoints(
                 DataFlow.Render,
                 DeviceState.Active | DeviceState.Unplugged);
+            enumerateEndpointsStopwatch.Stop();
+            AppLog.Debug(
+                "NativeAudioDeviceCatalogService",
+                $"단계 완료 name=EnumerateAudioEndPoints count={deviceCollection.Count} elapsedMs={enumerateEndpointsStopwatch.ElapsedMilliseconds}");
 
             // 기본 출력 장치 ID입니다. 장치가 전혀 없는 환경이면 null일 수 있습니다.
             string? defaultDeviceId = null;
 
+            var defaultEndpointStopwatch = Stopwatch.StartNew();
+            AppLog.Debug("NativeAudioDeviceCatalogService", "단계 시작 name=GetDefaultAudioEndpoint");
             try
             {
                 defaultDeviceId = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID;
+                defaultEndpointStopwatch.Stop();
+                AppLog.Debug(
+                    "NativeAudioDeviceCatalogService",
+                    $"단계 완료 name=GetDefaultAudioEndpoint defaultDeviceId={FormatDeviceIdForLog(defaultDeviceId)} elapsedMs={defaultEndpointStopwatch.ElapsedMilliseconds}");
             }
             catch
             {
                 // 기본 장치가 없는 환경에서는 기본 장치 표시를 생략합니다.
+                defaultEndpointStopwatch.Stop();
+                AppLog.Warn(
+                    "NativeAudioDeviceCatalogService",
+                    $"단계 건너뜀 name=GetDefaultAudioEndpoint elapsedMs={defaultEndpointStopwatch.ElapsedMilliseconds}");
             }
 
             // 최종적으로 UI에 전달할 출력 장치 목록입니다.
@@ -62,23 +84,44 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
             for (int index = 0; index < deviceCollection.Count; index++)
             {
                 // 루프 안의 device는 현재 열거된 출력 장치 한 개입니다.
+                var deviceStopwatch = Stopwatch.StartNew();
+                AppLog.Debug("NativeAudioDeviceCatalogService", $"장치 스냅샷 시작 index={index}");
                 using var device = deviceCollection[index];
 
                 try
                 {
+                    var deviceId = device.ID;
+                    var deviceName = device.FriendlyName;
+                    var deviceState = device.State;
+                    var endpointVolume = device.AudioEndpointVolume;
+                    var isMuted = endpointVolume.Mute;
+                    var volume = (int)Math.Round(endpointVolume.MasterVolumeLevelScalar * 100);
+                    var isDefault = deviceId == defaultDeviceId;
+                    var isConnected = deviceState == DeviceState.Active;
+
                     results.Add(new AudioDeviceInfo
                     {
-                        Id = device.ID,
-                        Name = device.FriendlyName,
-                        IsConnected = device.State == DeviceState.Active,
-                        IsDefault = device.ID == defaultDeviceId,
-                        IsMuted = device.AudioEndpointVolume.Mute,
-                        Volume = (int)Math.Round(device.AudioEndpointVolume.MasterVolumeLevelScalar * 100)
+                        Id = deviceId,
+                        Name = deviceName,
+                        IsConnected = isConnected,
+                        IsDefault = isDefault,
+                        IsMuted = isMuted,
+                        Volume = volume
                     });
+
+                    deviceStopwatch.Stop();
+                    AppLog.Debug(
+                        "NativeAudioDeviceCatalogService",
+                        $"장치 스냅샷 완료 index={index} deviceId={FormatDeviceIdForLog(deviceId)} name={deviceName} state={deviceState} connected={isConnected} isDefault={isDefault} volume={volume} muted={isMuted} elapsedMs={deviceStopwatch.ElapsedMilliseconds}");
                 }
-                catch
+                catch (Exception exception)
                 {
                     // 열거 도중 장치가 사라지거나 접근 오류가 나면 해당 장치만 건너뜁니다.
+                    deviceStopwatch.Stop();
+                    AppLog.Warn(
+                        "NativeAudioDeviceCatalogService",
+                        $"장치 스냅샷 실패 index={index} elapsedMs={deviceStopwatch.ElapsedMilliseconds}",
+                        exception);
                 }
             }
 
@@ -223,6 +266,13 @@ public sealed class NativeAudioDeviceCatalogService : IAudioDeviceCatalogService
 
         AppLog.Error("NativeAudioDeviceCatalogService", $"SetDefaultEndpoint 실패 deviceId={deviceId} role={role} hr=0x{hResult:X8}");
         Marshal.ThrowExceptionForHR(hResult);
+    }
+
+    private static string FormatDeviceIdForLog(string? deviceId)
+    {
+        return string.IsNullOrWhiteSpace(deviceId)
+            ? "[id:unknown]"
+            : $"[id:{deviceId}]";
     }
 
     /// <summary>
