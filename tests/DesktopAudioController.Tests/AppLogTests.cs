@@ -125,13 +125,12 @@ public sealed class AppLogTests
 
             AppLog.Info("AppLogTests", "rollover-entry");
 
-            var writtenLogPath = Directory
-                .EnumerateFiles(tempDirectory.DirectoryPath, "DesktopAudioController-*.log")
-                .Select(Path.GetFullPath)
-                .FirstOrDefault(path =>
-                    File.ReadAllText(path).Contains("rollover-entry", StringComparison.Ordinal));
+            var writtenLogPath = (string?)field.GetValue(null);
 
             Assert.False(string.IsNullOrWhiteSpace(writtenLogPath));
+            Assert.True(File.Exists(writtenLogPath));
+            Assert.True(new FileInfo(writtenLogPath).Length > 0);
+            Assert.Contains("rollover-entry", File.ReadAllText(writtenLogPath), StringComparison.Ordinal);
         }
         finally
         {
