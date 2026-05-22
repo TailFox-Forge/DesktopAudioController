@@ -10,6 +10,7 @@ using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 
 namespace DesktopAudioController.Views;
@@ -69,6 +70,9 @@ public partial class MainWindow : Window
     // 장치/세션 재조회는 한 번에 하나만 실행해 UI 반영 순서를 보장합니다.
     private readonly SemaphoreSlim _viewRefreshSemaphore = new(1, 1);
 
+    // 프로그램 세션 목록만 가볍게 주기 갱신하기 위한 타이머입니다.
+    private readonly DispatcherTimer _sessionRefreshTimer;
+
     // 같은 틱에서 중복 새로고침 요청이 들어올 때 한 번으로 합치기 위한 플래그입니다.
     private bool _isNotificationRefreshQueued;
 
@@ -102,6 +106,9 @@ public partial class MainWindow : Window
     // 상태만 다시 읽는 경로는 더 가벼우므로 상대적으로 짧은 타임아웃을 둡니다.
     private static readonly TimeSpan StateRefreshOperationTimeout = TimeSpan.FromSeconds(4);
 
+    // 세션 전용 갱신은 장치 열거를 하지 않으므로 짧게 제한합니다.
+    private static readonly TimeSpan SessionRefreshOperationTimeout = TimeSpan.FromSeconds(1);
+
     // 설정창 장치 로딩도 COM 조회이므로 메인 UI를 막지 않게 비동기로 열고, 실패 시 에러로 돌립니다.
     private static readonly TimeSpan SettingsLoadTimeout = TimeSpan.FromSeconds(6);
 
@@ -125,6 +132,12 @@ public partial class MainWindow : Window
 
     // 현재 떠 있는 설정 창 인스턴스입니다.
     private SettingsWindow? _activeSettingsWindow;
+
+    // 세션 자동 갱신이 이미 실행 중인지 여부입니다.
+    private bool _isAutomaticSessionRefreshRunning;
+
+    // 세션 자동 갱신 실패가 반복될 때 주기를 늦추기 위한 카운터입니다.
+    private int _consecutiveSessionRefreshFailures;
 
     // 부팅 직후 장치 스택이 늦게 올라오는 환경을 위해 시작 직후 백그라운드 재시도 간격을 둡니다.
     private static readonly TimeSpan[] StartupBackgroundRefreshRetryDelays =
@@ -161,12 +174,17 @@ public partial class MainWindow : Window
         _previousRunIncident = previousRunIncident;
         _requiresStartupBackgroundRefresh = requiresStartupBackgroundRefresh;
         _notifyIcon = CreateNotifyIcon();
+        _sessionRefreshTimer = new DispatcherTimer();
+        _sessionRefreshTimer.Tick += SessionRefreshTimer_OnTick;
         RefreshTrayMenu(force: true);
         DataContext = _viewModel;
         ApplyPrimaryMonitorBounds();
         _audioNotificationService.Changed += AudioNotificationService_OnChanged;
         Loaded += MainWindow_OnLoaded;
         StateChanged += MainWindow_OnStateChanged;
+        Activated += MainWindow_OnActivationChanged;
+        Deactivated += MainWindow_OnActivationChanged;
+        IsVisibleChanged += MainWindow_OnIsVisibleChanged;
         Closing += MainWindow_OnClosing;
         VersionText.Text = $"버전 {GetApplicationVersionText()}";
         ApplyStartupStatus();
@@ -545,6 +563,7 @@ public partial class MainWindow : Window
         {
             _ = RunStartupBackgroundRefreshLoopAsync();
         }
+        ConfigureAutomaticSessionRefresh(restart: true);
 
         if (_externalActivationRequested)
         {
@@ -584,7 +603,20 @@ public partial class MainWindow : Window
         if (WindowState == WindowState.Minimized && ShouldMinimizeToTray())
         {
             HideToTray();
+            return;
         }
+
+        ConfigureAutomaticSessionRefresh(restart: true);
+    }
+
+    private void MainWindow_OnActivationChanged(object? sender, EventArgs e)
+    {
+        ConfigureAutomaticSessionRefresh(restart: true);
+    }
+
+    private void MainWindow_OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        ConfigureAutomaticSessionRefresh(restart: true);
     }
 
     /// <summary>
@@ -606,6 +638,7 @@ public partial class MainWindow : Window
     {
         if (_isExitRequested || !ShouldMinimizeToTray())
         {
+            StopAutomaticSessionRefresh();
             _viewModel.FlushPendingProgramPreferenceSave();
             return;
         }
@@ -959,6 +992,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void HideToTray()
     {
+        StopAutomaticSessionRefresh();
         ShowInTaskbar = false;
         Hide();
     }
@@ -972,6 +1006,7 @@ public partial class MainWindow : Window
         Show();
         WindowState = WindowState.Normal;
         Activate();
+        ConfigureAutomaticSessionRefresh(restart: true);
     }
 
     private void RestoreFromExternalActivationCore()
@@ -1001,6 +1036,7 @@ public partial class MainWindow : Window
             _isExitRequested = true;
             _viewModel.FlushPendingProgramPreferenceSave();
             _notifyIcon.Visible = false;
+            StopAutomaticSessionRefresh();
             Close();
         });
     }
@@ -1383,6 +1419,109 @@ public partial class MainWindow : Window
         {
             _viewRefreshSemaphore.Release();
         }
+    }
+
+    /// <summary>
+    /// 장치 열거 없이 현재 보이는 장치의 세션 목록만 갱신합니다.
+    /// </summary>
+    private async Task<bool> RefreshSessionViewAsync(string reason)
+    {
+        if (!_viewRefreshSemaphore.Wait(0))
+        {
+            return true;
+        }
+
+        try
+        {
+            await _viewModel.RefreshSessionsOnlyAsync().WaitAsync(SessionRefreshOperationTimeout);
+            UpdateEmptyState();
+            return true;
+        }
+        catch (TimeoutException exception)
+        {
+            _viewModel.InvalidatePendingSnapshots();
+            AppLog.Warn("MainWindow", $"세션 자동 새로고침 타임아웃 reason={reason}", exception);
+            return false;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainWindow", $"세션 자동 새로고침 실패 reason={reason}", exception);
+            return false;
+        }
+        finally
+        {
+            _viewRefreshSemaphore.Release();
+        }
+    }
+
+    private async void SessionRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _sessionRefreshTimer.Stop();
+        try
+        {
+            if (_isAutomaticSessionRefreshRunning || !CanRunAutomaticSessionRefresh())
+            {
+                return;
+            }
+
+            if (_viewModel.HasPendingAudioControlChanges)
+            {
+                return;
+            }
+
+            _isAutomaticSessionRefreshRunning = true;
+            var refreshed = await RefreshSessionViewAsync("session_poll");
+            _consecutiveSessionRefreshFailures = refreshed
+                ? 0
+                : _consecutiveSessionRefreshFailures + 1;
+        }
+        finally
+        {
+            _isAutomaticSessionRefreshRunning = false;
+            ConfigureAutomaticSessionRefresh(restart: true);
+        }
+    }
+
+    private void ConfigureAutomaticSessionRefresh(bool restart)
+    {
+        var interval = ResolveAutomaticSessionRefreshInterval();
+        if (interval is null)
+        {
+            StopAutomaticSessionRefresh();
+            return;
+        }
+
+        _sessionRefreshTimer.Interval = interval.Value;
+        if (restart)
+        {
+            _sessionRefreshTimer.Stop();
+        }
+
+        if (!_sessionRefreshTimer.IsEnabled)
+        {
+            _sessionRefreshTimer.Start();
+        }
+    }
+
+    private void StopAutomaticSessionRefresh()
+    {
+        _sessionRefreshTimer.Stop();
+    }
+
+    private bool CanRunAutomaticSessionRefresh()
+    {
+        return ResolveAutomaticSessionRefreshInterval() is not null;
+    }
+
+    private TimeSpan? ResolveAutomaticSessionRefreshInterval()
+    {
+        return SessionRefreshPlanner.ResolveInterval(
+            IsLoaded,
+            IsVisible,
+            WindowState == WindowState.Minimized,
+            IsActive,
+            _viewModel.VisibleDevices.Count > 0,
+            _consecutiveSessionRefreshFailures);
     }
 
     private async Task RunStartupBackgroundRefreshLoopAsync()

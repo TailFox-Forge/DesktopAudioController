@@ -38,6 +38,13 @@ public sealed class MainViewModel : ObservableObject
         public required IReadOnlyDictionary<string, DeviceSnapshot> DevicesById { get; init; }
     }
 
+    private readonly record struct VisibleDeviceSessionTarget(string DeviceId, bool IsConnected);
+
+    private sealed class SessionOnlySnapshot
+    {
+        public required IReadOnlyDictionary<string, IReadOnlyList<AudioSessionInfo>> SessionsByDeviceId { get; init; }
+    }
+
     // 저장된 사용자 설정을 읽기 위한 서비스입니다.
     private readonly ISettingsService _settingsService;
 
@@ -80,6 +87,9 @@ public sealed class MainViewModel : ObservableObject
     // 상태 부분 갱신 역시 마지막 요청만 반영하도록 별도 세대 번호를 둡니다.
     private int _stateGeneration;
 
+    // 세션 전용 부분 갱신도 마지막 요청만 반영하도록 별도 세대 번호를 둡니다.
+    private int _sessionGeneration;
+
     // 프로그램별 볼륨/음소거 저장은 짧게 모아 마지막 값만 파일에 기록합니다.
     private static readonly TimeSpan ProgramPreferenceSaveDebounceDelay = TimeSpan.FromMilliseconds(400);
 
@@ -116,6 +126,12 @@ public sealed class MainViewModel : ObservableObject
         get => _hasConfiguredDevices;
         private set => SetProperty(ref _hasConfiguredDevices, value);
     }
+
+    /// <summary>
+    /// 장치 또는 세션 볼륨이 아직 서비스에 반영 대기 중인지 나타냅니다.
+    /// </summary>
+    public bool HasPendingAudioControlChanges =>
+        VisibleDevices.Any(device => device.HasPendingVolumeCommit || device.Sessions.Any(session => session.HasPendingVolumeCommit));
 
     /// <summary>
     /// 설정 파일과 장치 목록을 조합해 메인 화면 상태를 다시 계산합니다.
@@ -198,12 +214,49 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 장치 열거 없이 현재 보이는 장치들의 프로그램 세션 목록만 갱신합니다.
+    /// </summary>
+    public async Task RefreshSessionsOnlyAsync()
+    {
+        var visibleDeviceTargets = VisibleDevices
+            .Select(device => new VisibleDeviceSessionTarget(device.Id, device.IsConnected))
+            .ToList();
+        var showSystemSounds = _showSystemSounds;
+        var showOnlyActiveSessions = _showOnlyActiveSessions;
+        var preferencesByKey = _programAudioPreferencesByKey.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
+        var generation = Interlocked.Increment(ref _sessionGeneration);
+        var snapshot = await Task.Run(() => BuildSessionOnlySnapshot(
+            visibleDeviceTargets,
+            showSystemSounds,
+            showOnlyActiveSessions,
+            preferencesByKey));
+        if (generation != Volatile.Read(ref _sessionGeneration))
+        {
+            return;
+        }
+
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (generation != Volatile.Read(ref _sessionGeneration))
+            {
+                return;
+            }
+
+            ApplySessionOnlySnapshot(snapshot);
+        });
+    }
+
+    /// <summary>
     /// 타임아웃된 백그라운드 스냅샷이 늦게 돌아와도 이후 UI를 덮어쓰지 못하게 무효화합니다.
     /// </summary>
     public void InvalidatePendingSnapshots()
     {
         Interlocked.Increment(ref _loadGeneration);
         Interlocked.Increment(ref _stateGeneration);
+        Interlocked.Increment(ref _sessionGeneration);
     }
 
     /// <summary>
@@ -276,6 +329,29 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 장치 열거 없이 현재 보이는 장치들의 세션 스냅샷만 만듭니다.
+    /// </summary>
+    private SessionOnlySnapshot BuildSessionOnlySnapshot(
+        IReadOnlyList<VisibleDeviceSessionTarget> visibleDeviceTargets,
+        bool includeSystemSounds,
+        bool showOnlyActiveSessions,
+        IReadOnlyDictionary<string, ProgramAudioPreference> preferencesByKey)
+    {
+        var sessionsByDeviceId = new Dictionary<string, IReadOnlyList<AudioSessionInfo>>(StringComparer.Ordinal);
+        foreach (var target in visibleDeviceTargets)
+        {
+            sessionsByDeviceId[target.DeviceId] = target.IsConnected
+                ? BuildSessionSnapshots(target.DeviceId, includeSystemSounds, showOnlyActiveSessions, preferencesByKey)
+                : [];
+        }
+
+        return new SessionOnlySnapshot
+        {
+            SessionsByDeviceId = sessionsByDeviceId
+        };
+    }
+
+    /// <summary>
     /// 장치 한 개에 대한 현재 상태와 세션 목록 스냅샷을 만듭니다.
     /// </summary>
     private DeviceSnapshot BuildDeviceSnapshot(
@@ -284,35 +360,37 @@ public sealed class MainViewModel : ObservableObject
         bool showOnlyActiveSessions,
         IReadOnlyDictionary<string, ProgramAudioPreference> preferencesByKey)
     {
-        IReadOnlyList<AudioSessionInfo> sessions = [];
-
-        if (!device.IsConnected)
-        {
-            return new DeviceSnapshot
-            {
-                Device = device,
-                Sessions = sessions
-            };
-        }
-
-        try
-        {
-            sessions = _audioSessionService.GetSessions(device.Id, includeSystemSounds).ToList();
-            sessions = ApplyStoredSessionPresentations(sessions, preferencesByKey).ToList();
-            sessions = FilterSessionsByPlaybackState(sessions, showOnlyActiveSessions).ToList();
-            sessions = DisambiguateSessionDisplayNames(sessions).ToList();
-            sessions = AnnotateSessionPlaybackState(sessions).ToList();
-        }
-        catch (Exception exception)
-        {
-            AppLog.Warn("MainViewModel", $"세션 스냅샷 조회 실패 deviceId={device.Id}", exception);
-        }
+        var sessions = device.IsConnected
+            ? BuildSessionSnapshots(device.Id, includeSystemSounds, showOnlyActiveSessions, preferencesByKey)
+            : [];
 
         return new DeviceSnapshot
         {
             Device = device,
             Sessions = sessions
         };
+    }
+
+    private IReadOnlyList<AudioSessionInfo> BuildSessionSnapshots(
+        string deviceId,
+        bool includeSystemSounds,
+        bool showOnlyActiveSessions,
+        IReadOnlyDictionary<string, ProgramAudioPreference> preferencesByKey)
+    {
+        try
+        {
+            var sessions = _audioSessionService.GetSessions(deviceId, includeSystemSounds).ToList();
+            sessions = ApplyStoredSessionPresentations(sessions, preferencesByKey).ToList();
+            sessions = FilterSessionsByPlaybackState(sessions, showOnlyActiveSessions).ToList();
+            sessions = DisambiguateSessionDisplayNames(sessions).ToList();
+            sessions = AnnotateSessionPlaybackState(sessions).ToList();
+            return sessions;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainViewModel", $"세션 스냅샷 조회 실패 deviceId={deviceId}", exception);
+            return [];
+        }
     }
 
     private static DeviceSnapshot BuildDeviceSkeletonSnapshot(AudioDeviceInfo device)
@@ -390,6 +468,22 @@ public sealed class MainViewModel : ObservableObject
             }
         }
 
+    }
+
+    /// <summary>
+    /// 세션 전용 스냅샷을 현재 장치 카드 구조에만 반영합니다.
+    /// </summary>
+    private void ApplySessionOnlySnapshot(SessionOnlySnapshot snapshot)
+    {
+        foreach (var visibleDevice in VisibleDevices)
+        {
+            if (!snapshot.SessionsByDeviceId.TryGetValue(visibleDevice.Id, out var sessions))
+            {
+                continue;
+            }
+
+            ApplySessionSnapshots(visibleDevice, sessions);
+        }
     }
 
     /// <summary>

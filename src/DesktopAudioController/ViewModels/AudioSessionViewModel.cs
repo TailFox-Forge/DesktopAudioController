@@ -219,6 +219,11 @@ public sealed class AudioSessionViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 아직 서비스에 반영되지 않은 세션 볼륨 변경이 남아 있는지 여부입니다.
+    /// </summary>
+    public bool HasPendingVolumeCommit => _hasPendingVolumeCommit;
+
+    /// <summary>
     /// 서비스에서 읽어온 최신 세션 상태를 UI에만 반영하고, 서비스 재호출은 막습니다.
     /// </summary>
     public void UpdateSnapshot(

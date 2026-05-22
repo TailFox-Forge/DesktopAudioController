@@ -179,6 +179,11 @@ public sealed class VisibleDeviceViewModel : ObservableObject
     public ObservableCollection<AudioSessionViewModel> Sessions { get; } = [];
 
     /// <summary>
+    /// 아직 서비스에 반영되지 않은 장치 볼륨 변경이 남아 있는지 여부입니다.
+    /// </summary>
+    public bool HasPendingVolumeCommit => _hasPendingVolumeCommit;
+
+    /// <summary>
     /// 현재 장치를 기본 출력 장치로 설정합니다.
     /// </summary>
     public void SetAsDefault()
