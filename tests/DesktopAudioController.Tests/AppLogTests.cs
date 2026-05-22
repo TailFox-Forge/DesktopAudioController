@@ -27,6 +27,25 @@ public sealed class AppLogTests
     }
 
     [Fact]
+    public void Info_RedactsProbeWorkerPathsWithoutLeakingNextKey()
+    {
+        var method = typeof(AppLog).GetMethod("Sanitize", BindingFlags.Static | BindingFlags.NonPublic);
+
+        Assert.NotNull(method);
+        var content = (string?)method!.Invoke(
+            null,
+            [
+                "워커 probe 시작 executablePath=C:\\Users\\tester\\Downloads\\DesktopAudioController\\DesktopAudioController.exe outputPath=C:\\Users\\tester\\AppData\\Local\\Temp\\DesktopAudioController-audio-probe.json timeoutMs=3000"
+            ]);
+
+        Assert.NotNull(content);
+        Assert.Contains("executablePath=[path:DesktopAudioController.exe]", content, StringComparison.Ordinal);
+        Assert.Contains("outputPath=[path:DesktopAudioController-audio-probe.json]", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("C:\\Users\\tester", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("outputPath=C]", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Initialize_CreatesCurrentLogFile_WhenRetentionCandidatesExist()
     {
         using var tempDirectory = new TemporaryDirectory();

@@ -18,10 +18,10 @@ public static class AppLog
     private const long MaxSingleLogBytes = 5L * 1024 * 1024;
     private const long StartupWriteReserveBytes = 1L * 1024 * 1024;
     private static readonly Regex SensitiveKeyPattern = new(
-        @"(?<key>\b(?:deviceId|sessionId|defaultDeviceId|groupingId|path|backup|iconPath)=)(?<value>.*?)(?=\s+\w+=|$)",
+        @"(?<key>\b(?:deviceId|sessionId|defaultDeviceId|groupingId|path|backup|iconPath|executablePath|outputPath)=)(?<value>.*?)(?=\s+\w+=|$)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex GenericWindowsPathPattern = new(
-        @"[A-Za-z]:\\(?:[^\\\r\n:]+\\)*[^\\\r\n:]+",
+        @"[A-Za-z]:\\(?:[^\s\\\r\n:]+\\)*[^\s\\\r\n:]+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex GenericUnixPathPattern = new(
         @"\/home\/[^\/\s]+(?:\/[^\s:]+)+",
@@ -372,7 +372,7 @@ public static class AppLog
         return key switch
         {
             "deviceId=" or "sessionId=" or "defaultDeviceId=" or "groupingId=" => MaskIdentifier(value),
-            "path=" or "backup=" or "iconPath=" => MaskPathValue(value),
+            "path=" or "backup=" or "iconPath=" or "executablePath=" or "outputPath=" => MaskPathValue(value),
             _ => value
         };
     }
