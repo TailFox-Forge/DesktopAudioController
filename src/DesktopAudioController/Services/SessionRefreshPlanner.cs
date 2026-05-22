@@ -16,10 +16,10 @@ public static class SessionRefreshPlanner
         bool isVisible,
         bool isMinimized,
         bool isActive,
-        bool hasVisibleDevices,
+        bool hasExpandedSessionDevices,
         int consecutiveFailures)
     {
-        if (!isLoaded || !isVisible || isMinimized || !hasVisibleDevices)
+        if (!isLoaded || !isVisible || isMinimized || !hasExpandedSessionDevices)
         {
             return null;
         }

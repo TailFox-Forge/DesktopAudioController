@@ -134,6 +134,11 @@ public sealed class MainViewModel : ObservableObject
         VisibleDevices.Any(device => device.HasPendingVolumeCommit || device.Sessions.Any(session => session.HasPendingVolumeCommit));
 
     /// <summary>
+    /// 프로그램별 볼륨 영역을 펼쳐둔 장치가 있는지 나타냅니다.
+    /// </summary>
+    public bool HasExpandedSessionDevices => VisibleDevices.Any(device => device.IsExpanded);
+
+    /// <summary>
     /// 설정 파일과 장치 목록을 조합해 메인 화면 상태를 다시 계산합니다.
     /// </summary>
     public void Load()
@@ -219,6 +224,7 @@ public sealed class MainViewModel : ObservableObject
     public async Task RefreshSessionsOnlyAsync()
     {
         var visibleDeviceTargets = VisibleDevices
+            .Where(device => device.IsExpanded)
             .Select(device => new VisibleDeviceSessionTarget(device.Id, device.IsConnected))
             .ToList();
         var showSystemSounds = _showSystemSounds;
@@ -407,6 +413,10 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private void ApplyLoadSnapshot(LoadSnapshot snapshot)
     {
+        var expandedDeviceIds = VisibleDevices
+            .Where(device => device.IsExpanded)
+            .Select(device => device.Id)
+            .ToHashSet(StringComparer.Ordinal);
         _showSystemSounds = snapshot.ShowSystemSounds;
         _showOnlyActiveSessions = snapshot.ShowOnlyActiveSessions;
         var loadedProgramAudioPreferencesByKey = snapshot.ProgramAudioPreferences
@@ -427,7 +437,9 @@ public sealed class MainViewModel : ObservableObject
         VisibleDevices.Clear();
         foreach (var deviceSnapshot in snapshot.Devices)
         {
-            VisibleDevices.Add(CreateVisibleDeviceViewModel(deviceSnapshot));
+            var deviceViewModel = CreateVisibleDeviceViewModel(deviceSnapshot);
+            deviceViewModel.IsExpanded = expandedDeviceIds.Contains(deviceViewModel.Id);
+            VisibleDevices.Add(deviceViewModel);
         }
 
         HasConfiguredDevices = snapshot.HasConfiguredDevices;

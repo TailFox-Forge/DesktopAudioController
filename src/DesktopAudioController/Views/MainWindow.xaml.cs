@@ -545,6 +545,32 @@ public partial class MainWindow : Window
         await ReloadViewModelAsync("custom_session_name_saved");
     }
 
+    private async void SessionToggleButton_OnChecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: VisibleDeviceViewModel device })
+        {
+            return;
+        }
+
+        device.IsExpanded = true;
+        _consecutiveSessionRefreshFailures = 0;
+        var refreshed = await RefreshSessionViewAsync($"session_panel_opened deviceId={device.Id}");
+        _consecutiveSessionRefreshFailures = refreshed
+            ? 0
+            : _consecutiveSessionRefreshFailures + 1;
+        ConfigureAutomaticSessionRefresh(restart: true);
+    }
+
+    private void SessionToggleButton_OnUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: VisibleDeviceViewModel device })
+        {
+            device.IsExpanded = false;
+        }
+
+        ConfigureAutomaticSessionRefresh(restart: true);
+    }
+
     /// <summary>
     /// 창 로드가 끝난 시점에 시작 최소화 옵션을 적용합니다.
     /// </summary>
@@ -1520,7 +1546,7 @@ public partial class MainWindow : Window
             IsVisible,
             WindowState == WindowState.Minimized,
             IsActive,
-            _viewModel.VisibleDevices.Count > 0,
+            _viewModel.HasExpandedSessionDevices,
             _consecutiveSessionRefreshFailures);
     }
 

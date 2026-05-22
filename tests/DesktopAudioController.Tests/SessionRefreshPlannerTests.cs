@@ -12,7 +12,7 @@ public sealed class SessionRefreshPlannerTests
             isVisible: true,
             isMinimized: false,
             isActive: true,
-            hasVisibleDevices: true,
+            hasExpandedSessionDevices: true,
             consecutiveFailures: 0);
 
         Assert.Equal(TimeSpan.FromSeconds(3), interval);
@@ -26,7 +26,7 @@ public sealed class SessionRefreshPlannerTests
             isVisible: true,
             isMinimized: false,
             isActive: false,
-            hasVisibleDevices: true,
+            hasExpandedSessionDevices: true,
             consecutiveFailures: 0);
 
         Assert.Equal(TimeSpan.FromSeconds(10), interval);
@@ -41,14 +41,14 @@ public sealed class SessionRefreshPlannerTests
         bool isLoaded,
         bool isVisible,
         bool isMinimized,
-        bool hasVisibleDevices)
+        bool hasExpandedSessionDevices)
     {
         var interval = SessionRefreshPlanner.ResolveInterval(
             isLoaded,
             isVisible,
             isMinimized,
             isActive: true,
-            hasVisibleDevices,
+            hasExpandedSessionDevices,
             consecutiveFailures: 0);
 
         Assert.Null(interval);
@@ -62,7 +62,7 @@ public sealed class SessionRefreshPlannerTests
             isVisible: true,
             isMinimized: false,
             isActive: true,
-            hasVisibleDevices: true,
+            hasExpandedSessionDevices: true,
             consecutiveFailures: 2);
 
         Assert.Equal(TimeSpan.FromSeconds(15), interval);

@@ -66,7 +66,7 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         _isConnected = isConnected;
         _volume = initialVolume;
         _isMuted = initialMuted;
-        _isExpanded = isDefault;
+        _isExpanded = false;
         _onVolumeChanged = onVolumeChanged;
         _onMutedChanged = onMutedChanged;
         _onSetAsDefault = onSetAsDefault;
@@ -209,10 +209,6 @@ public sealed class VisibleDeviceViewModel : ObservableObject
         {
             Name = name;
             IsDefault = isDefault;
-            if (isDefault)
-            {
-                IsExpanded = true;
-            }
             IsConnected = isConnected;
             Volume = volume;
             IsMuted = isMuted;
