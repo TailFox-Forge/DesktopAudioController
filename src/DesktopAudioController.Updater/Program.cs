@@ -7,6 +7,8 @@ namespace DesktopAudioController.Updater;
 internal static class Program
 {
     private const int MaxCopyAttempts = 20;
+    private const string ApplicationExecutableName = "DesktopAudioController.exe";
+    private const string PreferredPayloadDirectoryName = "DesktopAudioController";
     private static readonly TimeSpan ProcessExitTimeout = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan CopyRetryDelay = TimeSpan.FromMilliseconds(300);
 
@@ -41,8 +43,31 @@ internal static class Program
 
         Directory.CreateDirectory(extractDirectory);
         ZipFile.ExtractToDirectory(options.PackagePath, extractDirectory, overwriteFiles: true);
-        CopyDirectory(extractDirectory, options.TargetDirectory);
+        var payloadDirectory = ResolvePayloadDirectory(extractDirectory);
+        CopyDirectory(payloadDirectory, options.TargetDirectory);
         StartApplication(options.ApplicationExecutablePath, options.TargetDirectory);
+    }
+
+    private static string ResolvePayloadDirectory(string extractDirectory)
+    {
+        if (File.Exists(Path.Combine(extractDirectory, ApplicationExecutableName)))
+        {
+            return extractDirectory;
+        }
+
+        var preferredPayloadDirectory = Path.Combine(extractDirectory, PreferredPayloadDirectoryName);
+        if (File.Exists(Path.Combine(preferredPayloadDirectory, ApplicationExecutableName)))
+        {
+            return preferredPayloadDirectory;
+        }
+
+        var childDirectories = Directory.GetDirectories(extractDirectory);
+        if (childDirectories.Length == 1 && File.Exists(Path.Combine(childDirectories[0], ApplicationExecutableName)))
+        {
+            return childDirectories[0];
+        }
+
+        throw new FileNotFoundException("업데이트 패키지에서 실행 파일을 찾지 못했습니다.", ApplicationExecutableName);
     }
 
     private static void WaitForTargetProcessExit(int processId)

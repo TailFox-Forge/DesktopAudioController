@@ -10,7 +10,7 @@ PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csp
 UPDATER_PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController.Updater/DesktopAudioController.Updater.csproj"
 
 # 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.13.11-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+VERSION="${1:-v0.13.12-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 
 # 우선순위:
 # 1. DOTNET_BIN 환경 변수
