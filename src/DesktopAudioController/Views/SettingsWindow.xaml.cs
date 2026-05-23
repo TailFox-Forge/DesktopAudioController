@@ -111,6 +111,156 @@ public partial class SettingsWindow : Window
         Close();
     }
 
+    private void ExportSettingsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "설정 내보내기",
+            Filter = "JSON 설정 파일 (*.json)|*.json|모든 파일 (*.*)|*.*",
+            FileName = $"DesktopAudioController-settings-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            AddExtension = true,
+            DefaultExt = ".json",
+            OverwritePrompt = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.ExportSettings(dialog.FileName);
+            AppLog.Info("SettingsWindow", "설정 내보내기 성공");
+            System.Windows.MessageBox.Show(
+                this,
+                $"설정을 파일로 내보냈습니다.\n\n경로: {dialog.FileName}",
+                "설정 내보내기 완료",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            ShowSettingsPersistenceFailure("설정 내보내기 실패", exception);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedSettingsFailure("설정 내보내기 실패", exception);
+        }
+    }
+
+    private void ImportSettingsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "설정 가져오기",
+            Filter = "JSON 설정 파일 (*.json)|*.json|모든 파일 (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            "선택한 파일의 설정으로 현재 설정을 덮어씁니다.\n\n계속할까요?",
+            "설정 가져오기",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.ImportSettings(dialog.FileName);
+            AppLog.Info("SettingsWindow", "설정 가져오기 성공");
+            CompleteAppliedSettingsChange("설정 가져오기 완료", "설정을 가져와 적용했습니다.");
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            ShowSettingsPersistenceFailure("설정 가져오기 실패", exception);
+        }
+        catch (StartupRegistrationException exception)
+        {
+            ShowStartupRegistrationFailure(exception);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedSettingsFailure("설정 가져오기 실패", exception);
+        }
+    }
+
+    private void ResetSettingsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            "모든 앱 설정을 기본값으로 초기화합니다.\n프로그램별 볼륨, 음소거, 이름 변경 저장값도 함께 삭제됩니다.\n\n계속할까요?",
+            "설정 초기화",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.ResetSettings();
+            AppLog.Info("SettingsWindow", "설정 초기화 성공");
+            CompleteAppliedSettingsChange("설정 초기화 완료", "설정을 기본값으로 초기화했습니다.");
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            ShowSettingsPersistenceFailure("설정 초기화 실패", exception);
+        }
+        catch (StartupRegistrationException exception)
+        {
+            ShowStartupRegistrationFailure(exception);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedSettingsFailure("설정 초기화 실패", exception);
+        }
+    }
+
+    private void ClearProgramSettingsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            "프로그램별 볼륨, 음소거, 이름 변경 저장값만 삭제합니다.\n장치 선택과 앱 동작 설정은 유지됩니다.\n\n계속할까요?",
+            "프로그램 저장값 초기화",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.ClearProgramAudioPreferences();
+            AppLog.Info("SettingsWindow", "프로그램 저장값 초기화 성공");
+            CompleteAppliedSettingsChange("프로그램 저장값 초기화 완료", "프로그램별 저장값을 초기화했습니다.");
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            ShowSettingsPersistenceFailure("프로그램 저장값 초기화 실패", exception);
+        }
+        catch (StartupRegistrationException exception)
+        {
+            ShowStartupRegistrationFailure(exception);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedSettingsFailure("프로그램 저장값 초기화 실패", exception);
+        }
+    }
+
     /// <summary>
     /// 로그 폴더를 파일 탐색기로 열어 사용자가 바로 첨부 파일을 찾을 수 있게 합니다.
     /// </summary>
@@ -136,5 +286,67 @@ public partial class SettingsWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
+    }
+
+    private void CompleteAppliedSettingsChange(string title, string message)
+    {
+        if (_viewModel.RequiresRestartToEnableDebugLogs)
+        {
+            AppLog.Info("SettingsWindow", "설정 관리 작업 후 디버그 로그 활성화로 앱 재시작 요청");
+            if (System.Windows.Application.Current is App app && app.TryScheduleRestartForDebugLogging())
+            {
+                return;
+            }
+
+            AppLog.Warn("SettingsWindow", "설정 관리 작업 후 디버그 로그 활성화 재시작 예약 실패");
+            System.Windows.MessageBox.Show(
+                this,
+                "설정은 적용됐지만 자동 재시작을 예약하지 못했습니다.\n처음부터 디버그 로그를 기록하려면 앱을 직접 다시 시작해 주세요.",
+                "디버그 로그 재시작 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
+        System.Windows.MessageBox.Show(
+            this,
+            message,
+            title,
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+        DialogResult = true;
+        Close();
+    }
+
+    private void ShowSettingsPersistenceFailure(string title, SettingsPersistenceException exception)
+    {
+        AppLog.Error("SettingsWindow", title, exception);
+        System.Windows.MessageBox.Show(
+            this,
+            $"{exception.Message}\n\n경로: {exception.SettingsFilePath}\n원인: {exception.InnerException?.Message ?? exception.Message}",
+            title,
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+    }
+
+    private void ShowStartupRegistrationFailure(StartupRegistrationException exception)
+    {
+        AppLog.Error("SettingsWindow", "자동 실행 레지스트리 반영 실패", exception);
+        System.Windows.MessageBox.Show(
+            this,
+            $"Windows 자동 실행 옵션을 적용하지 못했습니다.\n\n레지스트리 경로: {exception.RegistryPath}\n값 이름: {exception.ValueName}\n원인: {exception.InnerException?.Message ?? exception.Message}\n\n설정 파일은 변경됐으므로, 필요하면 자동 실행 옵션만 다시 저장해 주세요.",
+            "자동 실행 설정 실패",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+    }
+
+    private void ShowUnexpectedSettingsFailure(string title, Exception exception)
+    {
+        AppLog.Error("SettingsWindow", title, exception);
+        System.Windows.MessageBox.Show(
+            this,
+            $"설정 관리 작업 중 예상하지 못한 오류가 발생했습니다.\n\n원인: {exception.Message}",
+            title,
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
     }
 }

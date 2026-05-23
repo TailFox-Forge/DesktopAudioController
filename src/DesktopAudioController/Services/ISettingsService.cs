@@ -28,6 +28,16 @@ public interface ISettingsService
     void Save(AppSettings settings);
 
     /// <summary>
+    /// 외부 JSON 파일에서 설정을 읽어 검증된 설정 모델로 반환합니다.
+    /// </summary>
+    AppSettings ImportFromFile(string sourceFilePath);
+
+    /// <summary>
+    /// 지정한 설정 모델을 외부 JSON 파일로 내보냅니다.
+    /// </summary>
+    void ExportToFile(AppSettings settings, string destinationFilePath);
+
+    /// <summary>
     /// 직전 설정 로드 과정에서 발생한 경고를 한 번만 소비합니다.
     /// </summary>
     bool TryConsumeLoadWarning(out string warningMessage);

@@ -166,6 +166,39 @@
 
                 <TextBlock FontSize="15"
                            FontWeight="SemiBold"
+                           Text="설정 관리" />
+                <TextBlock Margin="0,8,0,16"
+                           Foreground="#666"
+                           Text="현재 설정을 파일로 내보내거나, 이전에 내보낸 설정으로 복구할 수 있습니다."
+                           TextWrapping="Wrap" />
+
+                <WrapPanel Margin="0,0,0,8">
+                    <Button Width="132"
+                            Margin="0,0,8,8"
+                            Click="ExportSettingsButton_OnClick"
+                            Content="설정 내보내기" />
+                    <Button Width="132"
+                            Margin="0,0,8,8"
+                            Click="ImportSettingsButton_OnClick"
+                            Content="설정 가져오기" />
+                    <Button Width="132"
+                            Margin="0,0,8,8"
+                            Click="ResetSettingsButton_OnClick"
+                            Content="설정 초기화" />
+                    <Button Width="168"
+                            Margin="0,0,8,8"
+                            Click="ClearProgramSettingsButton_OnClick"
+                            Content="프로그램 저장값 초기화" />
+                </WrapPanel>
+                <TextBlock Margin="0,-4,0,12"
+                           Foreground="#666"
+                           Text="가져오기, 초기화, 프로그램 저장값 초기화는 즉시 저장되고 메인 화면을 다시 불러옵니다."
+                           TextWrapping="Wrap" />
+
+                <Separator Margin="0,8,0,16" />
+
+                <TextBlock FontSize="15"
+                           FontWeight="SemiBold"
                            Text="실행 동작" />
                 <TextBlock Margin="0,8,0,16"
                            Foreground="#666"

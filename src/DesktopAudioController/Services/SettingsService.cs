@@ -65,7 +65,7 @@ public sealed class SettingsService : ISettingsService
             // JSON 파일을 읽어 현재 설정 모델로 역직렬화합니다.
             // 디스크에서 읽은 원본 JSON 문자열입니다.
             var json = File.ReadAllText(SettingsFilePath);
-            var settings = JsonSerializer.Deserialize<AppSettings>(json, SerializerOptions) ?? new AppSettings();
+            var settings = NormalizeSettings(JsonSerializer.Deserialize<AppSettings>(json, SerializerOptions) ?? new AppSettings());
             AppLog.Debug("SettingsService", $"Load 성공 visibleDevices={settings.VisibleDeviceIds.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
             return settings;
         }
@@ -85,36 +85,76 @@ public sealed class SettingsService : ISettingsService
     /// </summary>
     public void Save(AppSettings settings)
     {
+        settings = NormalizeSettings(settings);
         AppLog.Info("SettingsService", $"Save 시작 path={SettingsFilePath} visibleDevices={settings.VisibleDeviceIds.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
-        var tempFilePath = $"{SettingsFilePath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            // 상위 폴더가 없을 수 있으므로 먼저 생성합니다.
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsFilePath)!);
-
-            // 사람이 읽기 쉬운 들여쓰기 형태로 저장합니다.
-            // 저장 직전에 직렬화된 JSON 문자열입니다.
-            var json = JsonSerializer.Serialize(settings, SerializerOptions);
-            File.WriteAllText(tempFilePath, json);
-            if (File.Exists(SettingsFilePath))
-            {
-                File.Replace(tempFilePath, SettingsFilePath, destinationBackupFileName: null, ignoreMetadataErrors: true);
-            }
-            else
-            {
-                File.Move(tempFilePath, SettingsFilePath);
-            }
-
+            WriteSettingsFile(SettingsFilePath, settings);
             AppLog.Info("SettingsService", $"Save 성공 path={SettingsFilePath}");
         }
         catch (Exception exception)
         {
-            TryDeleteTemporarySettingsFile(tempFilePath);
             // 저장 실패는 UI에서 사용자에게 안내할 수 있도록 경로와 함께 명시적 예외로 래핑합니다.
             AppLog.Error("SettingsService", $"Save 실패 path={SettingsFilePath}", exception);
             throw new SettingsPersistenceException(
                 "설정 파일을 저장하지 못했습니다.",
                 SettingsFilePath,
+                exception);
+        }
+    }
+
+    /// <summary>
+    /// 외부 JSON 파일에서 설정을 읽어 검증된 설정 모델로 반환합니다.
+    /// </summary>
+    public AppSettings ImportFromFile(string sourceFilePath)
+    {
+        AppLog.Info("SettingsService", $"설정 가져오기 시작 source={sourceFilePath}");
+        try
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(sourceFilePath);
+            if (!File.Exists(sourceFilePath))
+            {
+                throw new FileNotFoundException("가져올 설정 파일을 찾을 수 없습니다.", sourceFilePath);
+            }
+
+            var json = File.ReadAllText(sourceFilePath);
+            var importedSettings = JsonSerializer.Deserialize<AppSettings>(json, SerializerOptions)
+                ?? throw new InvalidDataException("설정 파일이 비어 있거나 올바른 설정 JSON이 아닙니다.");
+
+            importedSettings = NormalizeSettings(importedSettings);
+            AppLog.Info(
+                "SettingsService",
+                $"설정 가져오기 성공 source={sourceFilePath} visibleDevices={importedSettings.VisibleDeviceIds.Count} programPreferences={importedSettings.ProgramAudioPreferences.Count}");
+            return importedSettings;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("SettingsService", $"설정 가져오기 실패 source={sourceFilePath}", exception);
+            throw new SettingsPersistenceException(
+                "설정 파일을 가져오지 못했습니다.",
+                sourceFilePath,
+                exception);
+        }
+    }
+
+    /// <summary>
+    /// 지정한 설정 모델을 외부 JSON 파일로 내보냅니다.
+    /// </summary>
+    public void ExportToFile(AppSettings settings, string destinationFilePath)
+    {
+        AppLog.Info("SettingsService", $"설정 내보내기 시작 destination={destinationFilePath}");
+        try
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(destinationFilePath);
+            WriteSettingsFile(destinationFilePath, settings);
+            AppLog.Info("SettingsService", $"설정 내보내기 성공 destination={destinationFilePath}");
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("SettingsService", $"설정 내보내기 실패 destination={destinationFilePath}", exception);
+            throw new SettingsPersistenceException(
+                "설정 파일을 내보내지 못했습니다.",
+                destinationFilePath,
                 exception);
         }
     }
@@ -156,6 +196,66 @@ public sealed class SettingsService : ISettingsService
             // 백업 실패는 원본 로드 실패보다 우선순위가 낮으므로 추가 예외를 만들지 않습니다.
             AppLog.Warn("SettingsService", $"손상된 설정 파일 백업 실패 backup={BackupSettingsFilePath}", exception);
         }
+    }
+
+    private static void WriteSettingsFile(string filePath, AppSettings settings)
+    {
+        var tempFilePath = $"{filePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            var directoryPath = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            // 사람이 읽기 쉬운 들여쓰기 형태로 저장합니다.
+            // 저장 직전에 직렬화된 JSON 문자열입니다.
+            var json = JsonSerializer.Serialize(NormalizeSettings(settings), SerializerOptions);
+            File.WriteAllText(tempFilePath, json);
+            if (File.Exists(filePath))
+            {
+                File.Replace(tempFilePath, filePath, destinationBackupFileName: null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(tempFilePath, filePath);
+            }
+        }
+        catch
+        {
+            TryDeleteTemporarySettingsFile(tempFilePath);
+            throw;
+        }
+    }
+
+    private static AppSettings NormalizeSettings(AppSettings settings)
+    {
+        if (settings.VisibleDeviceIds is null)
+        {
+            settings.VisibleDeviceIds = [];
+        }
+
+        if (settings.ProgramAudioPreferences is null)
+        {
+            settings.ProgramAudioPreferences = [];
+        }
+
+        var normalizedPreferences = new List<ProgramAudioPreference>();
+        foreach (var preference in settings.ProgramAudioPreferences)
+        {
+            if (preference is null)
+            {
+                continue;
+            }
+
+            preference.MatchKey ??= string.Empty;
+            preference.DisplayName ??= string.Empty;
+            normalizedPreferences.Add(preference);
+        }
+
+        settings.ProgramAudioPreferences = normalizedPreferences;
+        return settings;
     }
 
     private static void TryDeleteTemporarySettingsFile(string tempFilePath)

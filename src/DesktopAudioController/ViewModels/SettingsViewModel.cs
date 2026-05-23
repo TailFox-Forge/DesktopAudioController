@@ -195,18 +195,7 @@ public sealed class SettingsViewModel : ObservableObject
     {
         RequiresRestartToEnableDebugLogs = false;
         var currentSettings = _settingsService.Load();
-        var savePlan = SettingsSavePlanner.Build(
-            currentSettings,
-            [.. AvailableDevices.Select(device => new VisibleDeviceSelection(device.Id, device.IsSelected))],
-            StartMinimized,
-            RunAtWindowsStartup,
-            MinimizeToTray,
-            ShowOnlyConnectedDevices,
-            ShowSystemSounds,
-            ShowOnlyActiveSessions,
-            IncludePreReleaseUpdates,
-            EnableDebugLogs,
-            _preserveConfiguredVisibleDevicesOnEmptySave);
+        var savePlan = BuildSavePlan(currentSettings);
         if (savePlan.PreservedConfiguredVisibleDevices)
         {
             AppLog.Warn(
@@ -222,6 +211,41 @@ public sealed class SettingsViewModel : ObservableObject
         RequiresRestartToEnableDebugLogs = savePlan.RequiresRestartToEnableDebugLogs;
         _loadedEnableDebugLogs = EnableDebugLogs;
         OnPropertyChanged(nameof(ShowsDebugLogRestartWarning));
+    }
+
+    /// <summary>
+    /// 현재 설정창에 보이는 값을 외부 JSON 파일로 내보냅니다.
+    /// </summary>
+    public void ExportSettings(string destinationFilePath)
+    {
+        var savePlan = BuildSavePlan(_settingsService.Load());
+        _settingsService.ExportToFile(savePlan.Settings, destinationFilePath);
+    }
+
+    /// <summary>
+    /// 외부 JSON 설정 파일을 현재 앱 설정으로 저장하고 화면 상태에도 반영합니다.
+    /// </summary>
+    public void ImportSettings(string sourceFilePath)
+    {
+        ApplyPersistedSettings(_settingsService.ImportFromFile(sourceFilePath));
+    }
+
+    /// <summary>
+    /// 모든 설정을 기본값으로 초기화합니다.
+    /// </summary>
+    public void ResetSettings()
+    {
+        ApplyPersistedSettings(new AppSettings());
+    }
+
+    /// <summary>
+    /// 프로그램별 볼륨, 음소거, 사용자 지정 이름 저장값만 비웁니다.
+    /// </summary>
+    public void ClearProgramAudioPreferences()
+    {
+        var settings = _settingsService.Load();
+        settings.ProgramAudioPreferences = [];
+        ApplyPersistedSettings(settings);
     }
 
     /// <summary>
@@ -264,5 +288,38 @@ public sealed class SettingsViewModel : ObservableObject
         EnableDebugLogs = snapshot.Settings.EnableDebugLogs;
         OnPropertyChanged(nameof(ShowsDebugLogRestartWarning));
         RequiresRestartToEnableDebugLogs = false;
+    }
+
+    private SettingsSavePlan BuildSavePlan(AppSettings currentSettings)
+    {
+        return SettingsSavePlanner.Build(
+            currentSettings,
+            [.. AvailableDevices.Select(device => new VisibleDeviceSelection(device.Id, device.IsSelected))],
+            StartMinimized,
+            RunAtWindowsStartup,
+            MinimizeToTray,
+            ShowOnlyConnectedDevices,
+            ShowSystemSounds,
+            ShowOnlyActiveSessions,
+            IncludePreReleaseUpdates,
+            EnableDebugLogs,
+            _preserveConfiguredVisibleDevicesOnEmptySave);
+    }
+
+    private void ApplyPersistedSettings(AppSettings settings)
+    {
+        var previousSettings = _settingsService.Load();
+        var requiresRestartToEnableDebugLogs = !previousSettings.EnableDebugLogs && settings.EnableDebugLogs;
+
+        _settingsService.Save(settings);
+        _startupLaunchService.Apply(settings.RunAtWindowsStartup);
+        AppLog.ConfigureDebugLogging(settings.EnableDebugLogs);
+
+        ApplySnapshot(new SettingsSnapshot
+        {
+            Settings = settings,
+            Devices = _audioDeviceCatalogService.GetAvailableOutputDevices().ToList()
+        });
+        RequiresRestartToEnableDebugLogs = requiresRestartToEnableDebugLogs;
     }
 }

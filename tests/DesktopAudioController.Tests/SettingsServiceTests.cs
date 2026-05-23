@@ -168,6 +168,85 @@ public sealed class SettingsServiceTests
         Assert.Empty(tempFiles);
     }
 
+    [Fact]
+    public void ExportToFile_ThenImportFromFile_RoundTripsSettings()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var settingsFilePath = Path.Combine(tempDirectory.Path, "config", "settings.json");
+        var exportFilePath = Path.Combine(tempDirectory.Path, "backup", "exported-settings.json");
+        var service = new SettingsService(settingsFilePath);
+
+        service.ExportToFile(new AppSettings
+        {
+            VisibleDeviceIds = ["device-exported"],
+            RunAtWindowsStartup = true,
+            IncludePreReleaseUpdates = true,
+            ProgramAudioPreferences =
+            [
+                new ProgramAudioPreference
+                {
+                    MatchKey = "path:C:\\Apps\\player.exe",
+                    DisplayName = "Player",
+                    CustomDisplayName = "Music Player",
+                    Volume = 42
+                }
+            ]
+        }, exportFilePath);
+
+        var imported = service.ImportFromFile(exportFilePath);
+
+        Assert.Equal(["device-exported"], imported.VisibleDeviceIds);
+        Assert.True(imported.RunAtWindowsStartup);
+        Assert.True(imported.IncludePreReleaseUpdates);
+
+        var preference = Assert.Single(imported.ProgramAudioPreferences);
+        Assert.Equal("path:C:\\Apps\\player.exe", preference.MatchKey);
+        Assert.Equal("Music Player", preference.CustomDisplayName);
+        Assert.Equal(42, preference.Volume);
+    }
+
+    [Fact]
+    public void ImportFromFile_WhenJsonIsInvalid_ThrowsWithoutChangingCurrentSettings()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var settingsFilePath = Path.Combine(tempDirectory.Path, "config", "settings.json");
+        var importFilePath = Path.Combine(tempDirectory.Path, "broken.json");
+        var service = new SettingsService(settingsFilePath);
+        service.Save(new AppSettings
+        {
+            VisibleDeviceIds = ["device-current"]
+        });
+        File.WriteAllText(importFilePath, "{ invalid json");
+
+        var exception = Assert.Throws<SettingsPersistenceException>(() => service.ImportFromFile(importFilePath));
+
+        Assert.Equal(importFilePath, exception.SettingsFilePath);
+        Assert.Equal(["device-current"], service.Load().VisibleDeviceIds);
+    }
+
+    [Fact]
+    public void Load_WhenCollectionsAreNull_NormalizesToEmptyLists()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var settingsFilePath = Path.Combine(tempDirectory.Path, "config", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsFilePath)!);
+        File.WriteAllText(
+            settingsFilePath,
+            """
+            {
+              "VisibleDeviceIds": null,
+              "ProgramAudioPreferences": null
+            }
+            """);
+
+        var service = new SettingsService(settingsFilePath);
+
+        var loaded = service.Load();
+
+        Assert.Empty(loaded.VisibleDeviceIds);
+        Assert.Empty(loaded.ProgramAudioPreferences);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()
