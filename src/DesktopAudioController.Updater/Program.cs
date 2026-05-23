@@ -4,6 +4,10 @@ using System.IO.Compression;
 
 namespace DesktopAudioController.Updater;
 
+/// <summary>
+/// portable zip 업데이트를 실제 설치 폴더에 적용하는 별도 실행 파일입니다.
+/// 메인 앱이 종료된 뒤 zip을 풀고 파일을 덮어쓴 다음 새 버전 앱을 다시 시작합니다.
+/// </summary>
 internal static class Program
 {
     private const int MaxCopyAttempts = 20;
@@ -30,6 +34,7 @@ internal static class Program
 
     private static void RunUpdate(UpdaterOptions options)
     {
+        // 메인 앱 프로세스가 살아 있으면 exe/dll 파일이 잠겨 덮어쓰기가 실패할 수 있습니다.
         WaitForTargetProcessExit(options.ProcessId);
 
         var workDirectory = Path.GetDirectoryName(options.PackagePath)
@@ -50,6 +55,7 @@ internal static class Program
 
     private static string ResolvePayloadDirectory(string extractDirectory)
     {
+        // v0.13.13 이하 호환용 루트형 zip과 v0.13.14 이후 폴더형 zip을 모두 허용합니다.
         if (File.Exists(Path.Combine(extractDirectory, ApplicationExecutableName)))
         {
             return extractDirectory;
@@ -121,10 +127,12 @@ internal static class Program
             }
             catch (IOException) when (attempt < MaxCopyAttempts)
             {
+                // 백신/인덱서/종료 직후 파일 잠금이 잠깐 남는 경우가 있어 짧게 재시도합니다.
                 Thread.Sleep(CopyRetryDelay);
             }
             catch (UnauthorizedAccessException) when (attempt < MaxCopyAttempts)
             {
+                // 권한 오류도 파일 잠금으로 표면화될 때가 있어 동일하게 재시도합니다.
                 Thread.Sleep(CopyRetryDelay);
             }
         }

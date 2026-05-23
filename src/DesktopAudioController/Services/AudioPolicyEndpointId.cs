@@ -2,6 +2,7 @@ namespace DesktopAudioController.Services;
 
 /// <summary>
 /// Windows 앱별 출력 정책 API가 요구하는 렌더 엔드포인트 식별자 형식을 만듭니다.
+/// NAudio가 주는 일반 MMDevice ID를 그대로 넘기면 E_INVALIDARG가 나므로 SWD/MMDEVAPI device interface path로 포장합니다.
 /// </summary>
 internal static class AudioPolicyEndpointId
 {

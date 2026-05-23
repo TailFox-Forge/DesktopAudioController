@@ -193,6 +193,8 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             throw new InvalidOperationException("프로세스 ID가 없는 오디오 세션은 출력 장치를 변경할 수 없습니다.");
         }
 
+        // 정책 API는 "세션"이 아니라 "프로세스의 앱별 출력 정책"을 바꿉니다.
+        // 그래서 먼저 세션 PID를 찾고, 같은 exe를 쓰는 형제 PID까지 후보로 넓힙니다.
         var executablePath = ResolveExecutablePath(targetSession);
         var candidateProcessIds = GetCandidateProcessIds(processId, executablePath);
         var processFailures = new List<string>();

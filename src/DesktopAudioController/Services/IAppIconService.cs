@@ -8,7 +8,7 @@ namespace DesktopAudioController.Services;
 public interface IAppIconService
 {
     /// <summary>
-     /// 캐시에 이미 있는 앱 아이콘만 즉시 반환합니다.
+    /// 캐시에 이미 있는 앱 아이콘만 즉시 반환합니다.
     /// </summary>
     ImageSource? TryGetCachedIcon(string? iconSourcePath);
 

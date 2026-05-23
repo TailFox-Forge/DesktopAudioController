@@ -6,6 +6,7 @@ namespace DesktopAudioController.Services;
 
 /// <summary>
 /// 장치 열거는 별도 워커 프로세스로 분리하고, 장치 제어는 현재 프로세스에서 수행합니다.
+/// 부팅 직후 Core Audio 열거가 멈추거나 오래 걸려도 메인 앱 UI가 같이 멈추지 않게 하기 위한 경계입니다.
 /// </summary>
 public sealed class WorkerBackedAudioDeviceCatalogService : IAudioDeviceCatalogService, IDisposable
 {
@@ -28,6 +29,7 @@ public sealed class WorkerBackedAudioDeviceCatalogService : IAudioDeviceCatalogS
         _snapshotService = snapshotService;
         _controlService = controlService ?? new NativeAudioDeviceCatalogService();
 
+        // 첫 probe가 실패하거나 진행 중일 때도 화면을 비워 두지 않도록 마지막 성공 스냅샷을 메모리에 올려 둡니다.
         if (_snapshotService.TryLoad(out var snapshot))
         {
             _lastKnownDevices = snapshot.Devices
@@ -43,6 +45,7 @@ public sealed class WorkerBackedAudioDeviceCatalogService : IAudioDeviceCatalogS
         Task<IReadOnlyList<AudioDeviceInfo>> probeTask;
         var createdProbe = false;
 
+        // 동시에 여러 새로고침이 들어와도 실제 Core Audio 장치 열거 워커는 하나만 띄웁니다.
         lock (_probeSyncRoot)
         {
             if (_currentProbeTask is null || _currentProbeTask.IsCompleted)
@@ -56,6 +59,7 @@ public sealed class WorkerBackedAudioDeviceCatalogService : IAudioDeviceCatalogS
 
         if (!createdProbe && _hasLastKnownSnapshot)
         {
+            // 이미 probe가 돌고 있으면 기다리지 않고 캐시를 반환해 UI 응답성을 우선합니다.
             AppLog.Warn(
                 "WorkerBackedAudioDeviceCatalogService",
                 $"GetAvailableOutputDevices 생략: 워커 probe 진행 중 cachedCount={_lastKnownDevices.Count} elapsedMs={stopwatch.ElapsedMilliseconds}");
@@ -137,6 +141,7 @@ public sealed class WorkerBackedAudioDeviceCatalogService : IAudioDeviceCatalogS
                 WindowStyle = ProcessWindowStyle.Hidden,
                 WorkingDirectory = Path.GetDirectoryName(_executablePath) ?? Environment.CurrentDirectory
             };
+            // 별도 worker exe를 두지 않고 같은 exe를 --probe-audio 모드로 다시 실행합니다.
             AudioDeviceProbeCommand.Apply(startInfo, tempOutputPath, AppLog.IsDebugEnabled);
             AppLog.Debug(
                 "WorkerBackedAudioDeviceCatalogService",

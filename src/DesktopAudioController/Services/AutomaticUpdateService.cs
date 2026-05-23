@@ -9,6 +9,7 @@ namespace DesktopAudioController.Services;
 
 /// <summary>
 /// portable zip 업데이트를 다운로드하고 별도 updater 프로세스로 넘기는 서비스입니다.
+/// 실행 중인 exe는 자기 자신을 안정적으로 덮어쓸 수 없으므로, 여기서는 다운로드/검증/인수 전달까지만 담당합니다.
 /// </summary>
 public sealed class AutomaticUpdateService
 {
@@ -111,6 +112,8 @@ public sealed class AutomaticUpdateService
                 return AutomaticUpdateStartResult.Fail("다운로드한 업데이트 파일의 sha256 검증에 실패했습니다.");
             }
 
+            // updater도 현재 실행 폴더에서 직접 실행하지 않고 임시 폴더로 복사해 실행합니다.
+            // 그래야 updater 자신이 새 zip 안의 updater.exe로 교체되는 상황에서도 파일 잠금 충돌을 피할 수 있습니다.
             await RunProgressStepAsync(
                 progressChanged,
                 "업데이트 적용 준비 중...",
@@ -199,6 +202,8 @@ public sealed class AutomaticUpdateService
 
         await operation();
 
+        // 체크섬 읽기처럼 너무 빨리 끝나는 단계는 사용자가 상태 변화를 인지하기 어렵습니다.
+        // 단계별 최소 표시 시간을 보장해 진행 문구가 깜빡이지 않게 합니다.
         var remainingDelay = CalculateRemainingProgressDelay(
             Stopwatch.GetElapsedTime(startedTimestamp),
             minimumDuration);

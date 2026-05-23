@@ -7,6 +7,7 @@ namespace DesktopAudioController.Services;
 
 /// <summary>
 /// 세션 조회/볼륨 제어는 현재 프로세스에서 수행하고, 앱별 출력 변경만 워커 프로세스로 격리합니다.
+/// 출력 변경은 Windows 내부 정책 API를 호출하므로 실패/행/크래시가 메인 UI까지 번지지 않게 분리합니다.
 /// </summary>
 public sealed class WorkerBackedAudioSessionService : IAudioSessionService, IDisposable
 {
@@ -62,6 +63,7 @@ public sealed class WorkerBackedAudioSessionService : IAudioSessionService, IDis
                 tempOutputPath,
                 AppLog.IsDebugEnabled);
 
+            // 같은 exe를 --change-session-output 모드로 실행하고 JSON 결과 파일로 성공/실패를 받습니다.
             AppLog.Info(
                 "WorkerBackedAudioSessionService",
                 $"세션 출력 변경 워커 시작 deviceId={deviceId} sessionId={sessionId} targetDeviceId={targetDeviceId} timeoutMs={(int)OutputChangeTimeout.TotalMilliseconds}");

@@ -114,6 +114,9 @@ public partial class App : System.Windows.Application
         AppLog.ConfigureDebugLogging(AudioDeviceProbeCommand.HasDebugLogFlag(e.Args));
         AppLog.Info("App", $"Build info {AppBuildInfo.LogSummary}");
         AppLog.Info("App", $"OnStartup args=[{string.Join(", ", e.Args)}]");
+
+        // 이 exe는 일반 WPF 앱이면서 동시에 짧게 실행되는 워커 역할도 합니다.
+        // 워커 인수로 시작된 경우에는 창/단일 인스턴스/설정 UI를 만들지 않고 작업만 수행한 뒤 즉시 종료합니다.
         if (AudioDeviceProbeCommand.TryParse(e.Args, out var probeOutputPath))
         {
             Shutdown(AudioDeviceProbeWorker.Run(probeOutputPath));
@@ -249,6 +252,8 @@ public partial class App : System.Windows.Application
             return Task.FromResult(new StartupViewModelResult(mainViewModel, startupWarningMessage, RequiresBackgroundRefresh: false));
         }
 
+        // 장치 열거가 부팅 직후 느려질 수 있으므로, 이전 성공 스냅샷으로 먼저 화면을 구성합니다.
+        // 최신 상태 확인은 메인 창이 뜬 뒤 백그라운드에서 이어서 수행합니다.
         if (_audioDeviceStartupSnapshotService?.TryLoad(out var startupSnapshot) == true)
         {
             mainViewModel.LoadFromCachedDevices(startupSnapshot.Devices);

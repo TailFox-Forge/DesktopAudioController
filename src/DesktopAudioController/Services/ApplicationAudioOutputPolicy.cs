@@ -9,6 +9,7 @@ internal static class ApplicationAudioOutputPolicy
 {
     // 이 클래스는 공개 API가 없는 Windows.Media.Internal.AudioPolicyConfig를 직접 호출합니다.
     // .NET COM/WinRT RCW 변환 경로는 이 내부 인터페이스에서 막히므로 원시 vtable 포인터와 HSTRING을 사용합니다.
+    // 시그니처와 vtable slot은 Windows 내부 구현에 의존하므로 호출자는 반드시 워커 프로세스로 격리해야 합니다.
     private const string AudioPolicyConfigClassName = "Windows.Media.Internal.AudioPolicyConfig";
     private const int SetPersistedDefaultAudioEndpointVtableSlot = 25;
     private static readonly Guid AudioPolicyConfigFactoryIdFor21H2 = new("ab3d4648-e242-459f-b02f-541c70306324");
@@ -31,6 +32,7 @@ internal static class ApplicationAudioOutputPolicy
 
         var policyEndpointId = AudioPolicyEndpointId.ToRenderPolicyEndpointId(targetDeviceId);
 
+        // Windows 볼륨 믹서의 "앱별 출력 장치"는 role별로 저장되므로 세 역할을 모두 같은 장치로 맞춥니다.
         ApplyPolicyToRoles(
             role => ApplyProcessPolicyRole(processId, policyEndpointId, role),
             roleSuccessLog: role =>
@@ -50,6 +52,7 @@ internal static class ApplicationAudioOutputPolicy
         var endpointId = IntPtr.Zero;
         try
         {
+            // 이 내부 메서드는 LPWSTR가 아니라 HSTRING endpoint ID로 호출할 때 정상 동작하는 것으로 확인됐습니다.
             ThrowIfFailed(WindowsCreateString(policyEndpointId, (uint)policyEndpointId.Length, out endpointId));
             return factory.SetPersistedDefaultAudioEndpointForProcessHString(
                 processId,
@@ -227,6 +230,7 @@ internal static class ApplicationAudioOutputPolicy
 
             _nativePointer = nativePointer;
             var vtable = Marshal.ReadIntPtr(_nativePointer);
+            // IInspectable 기본 메서드 뒤쪽에 있는 내부 메서드를 slot 번호로 직접 가져옵니다.
             var methodPointer = Marshal.ReadIntPtr(
                 vtable,
                 SetPersistedDefaultAudioEndpointVtableSlot * IntPtr.Size);
