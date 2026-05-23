@@ -494,6 +494,15 @@ public partial class App : System.Windows.Application
             "제한 모드 재시작 복구 예약");
     }
 
+    internal bool TryScheduleRestartForDebugLogging()
+    {
+        return TryScheduleRestart(
+            reason: "debug_logging_enabled",
+            relaunchArguments: [AudioDeviceProbeCommand.DebugLogArgument],
+            delay: TimeSpan.FromSeconds(2),
+            logAction: "디버그 로그 활성화 재시작 예약");
+    }
+
     private bool TryScheduleRestart(
         string reason,
         IReadOnlyList<string> relaunchArguments,
@@ -502,14 +511,14 @@ public partial class App : System.Windows.Application
     {
         if (Interlocked.Exchange(ref _restartRecoveryScheduled, 1) != 0)
         {
-            AppLog.Warn("App", $"제한 모드 재시작 복구 생략: 이미 예약됨 reason={reason}");
+            AppLog.Warn("App", $"앱 재시작 예약 생략: 이미 예약됨 reason={reason}");
             return true;
         }
 
         var executablePath = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(executablePath))
         {
-            AppLog.Warn("App", $"제한 모드 재시작 복구 실패: 실행 파일 경로 없음 reason={reason}");
+            AppLog.Warn("App", $"앱 재시작 예약 실패: 실행 파일 경로 없음 reason={reason}");
             Interlocked.Exchange(ref _restartRecoveryScheduled, 0);
             return false;
         }
@@ -535,7 +544,7 @@ public partial class App : System.Windows.Application
         }
         catch (Exception exception)
         {
-            AppLog.Error("App", $"제한 모드 재시작 복구 실패 reason={reason}", exception);
+            AppLog.Error("App", $"앱 재시작 예약 실패 reason={reason}", exception);
             Interlocked.Exchange(ref _restartRecoveryScheduled, 0);
             return false;
         }

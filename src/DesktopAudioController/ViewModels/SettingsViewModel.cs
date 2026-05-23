@@ -148,6 +148,11 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 디버그 로그를 처음부터 기록하기 위해 저장 후 앱 재시작이 필요한지 여부입니다.
+    /// </summary>
+    public bool RequiresRestartToEnableDebugLogs { get; private set; }
+
+    /// <summary>
     /// 설정 파일과 장치 목록을 읽어 현재 설정 창 상태를 구성합니다.
     /// </summary>
     public void Load()
@@ -174,6 +179,7 @@ public sealed class SettingsViewModel : ObservableObject
     /// </summary>
     public void Save()
     {
+        RequiresRestartToEnableDebugLogs = false;
         var currentSettings = _settingsService.Load();
         var savePlan = SettingsSavePlanner.Build(
             currentSettings,
@@ -199,6 +205,7 @@ public sealed class SettingsViewModel : ObservableObject
         _settingsService.Save(savePlan.Settings);
         _startupLaunchService.Apply(RunAtWindowsStartup);
         AppLog.ConfigureDebugLogging(EnableDebugLogs);
+        RequiresRestartToEnableDebugLogs = savePlan.RequiresRestartToEnableDebugLogs;
     }
 
     /// <summary>
@@ -238,5 +245,6 @@ public sealed class SettingsViewModel : ObservableObject
         ShowOnlyActiveSessions = snapshot.Settings.ShowOnlyActiveSessions;
         IncludePreReleaseUpdates = snapshot.Settings.IncludePreReleaseUpdates;
         EnableDebugLogs = snapshot.Settings.EnableDebugLogs;
+        RequiresRestartToEnableDebugLogs = false;
     }
 }

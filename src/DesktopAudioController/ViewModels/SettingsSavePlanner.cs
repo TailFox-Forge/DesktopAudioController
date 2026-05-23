@@ -6,7 +6,8 @@ internal sealed record VisibleDeviceSelection(string Id, bool IsSelected);
 
 internal sealed record SettingsSavePlan(
     AppSettings Settings,
-    bool PreservedConfiguredVisibleDevices);
+    bool PreservedConfiguredVisibleDevices,
+    bool RequiresRestartToEnableDebugLogs);
 
 internal static class SettingsSavePlanner
 {
@@ -54,6 +55,12 @@ internal static class SettingsSavePlanner
                     .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
                     .ToList()
             },
-            preservedConfiguredVisibleDevices);
+            preservedConfiguredVisibleDevices,
+            RequiresRestartToEnableDebugLogs(currentSettings.EnableDebugLogs, enableDebugLogs));
+    }
+
+    private static bool RequiresRestartToEnableDebugLogs(bool currentEnableDebugLogs, bool requestedEnableDebugLogs)
+    {
+        return !currentEnableDebugLogs && requestedEnableDebugLogs;
     }
 }

@@ -49,6 +49,23 @@ public partial class SettingsWindow : Window
         {
             _viewModel.Save();
             AppLog.Info("SettingsWindow", "설정 저장 성공");
+            if (_viewModel.RequiresRestartToEnableDebugLogs)
+            {
+                AppLog.Info("SettingsWindow", "디버그 로그 활성화로 앱 재시작 요청");
+                if (System.Windows.Application.Current is App app && app.TryScheduleRestartForDebugLogging())
+                {
+                    return;
+                }
+
+                AppLog.Warn("SettingsWindow", "디버그 로그 활성화 재시작 예약 실패");
+                System.Windows.MessageBox.Show(
+                    this,
+                    "디버그 로그 설정은 저장됐지만 자동 재시작을 예약하지 못했습니다.\n처음부터 디버그 로그를 기록하려면 앱을 직접 다시 시작해 주세요.",
+                    "디버그 로그 재시작 실패",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
             DialogResult = true;
             Close();
         }

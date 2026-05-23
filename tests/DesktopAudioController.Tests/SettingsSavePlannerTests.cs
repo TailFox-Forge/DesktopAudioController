@@ -42,6 +42,7 @@ public sealed class SettingsSavePlannerTests
         Assert.True(savePlan.Settings.StartMinimized);
         Assert.False(savePlan.Settings.RunAtWindowsStartup);
         Assert.True(savePlan.Settings.EnableDebugLogs);
+        Assert.True(savePlan.RequiresRestartToEnableDebugLogs);
         Assert.Single(savePlan.Settings.ProgramAudioPreferences);
     }
 
@@ -70,6 +71,32 @@ public sealed class SettingsSavePlannerTests
             preserveConfiguredVisibleDevicesOnEmptySave: true);
 
         Assert.False(savePlan.PreservedConfiguredVisibleDevices);
+        Assert.False(savePlan.RequiresRestartToEnableDebugLogs);
         Assert.Equal(["device-a"], savePlan.Settings.VisibleDeviceIds);
+    }
+
+    [Fact]
+    public void Build_WhenDebugLogsAlreadyEnabled_DoesNotRequireRestart()
+    {
+        var currentSettings = new AppSettings
+        {
+            EnableDebugLogs = true
+        };
+
+        var savePlan = SettingsSavePlanner.Build(
+            currentSettings,
+            [],
+            startMinimized: false,
+            runAtWindowsStartup: false,
+            minimizeToTray: false,
+            showOnlyConnectedDevices: true,
+            showSystemSounds: false,
+            showOnlyActiveSessions: false,
+            includePreReleaseUpdates: false,
+            enableDebugLogs: true,
+            preserveConfiguredVisibleDevicesOnEmptySave: false);
+
+        Assert.True(savePlan.Settings.EnableDebugLogs);
+        Assert.False(savePlan.RequiresRestartToEnableDebugLogs);
     }
 }
