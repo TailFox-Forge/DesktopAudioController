@@ -47,6 +47,12 @@
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top">
+                <Button x:Name="CheckUpdateButton"
+                        Width="104"
+                        Margin="0,0,8,0"
+                        Click="CheckUpdateButton_OnClick"
+                        Content="업데이트 확인"
+                        ToolTip="GitHub 릴리즈에서 새 버전이 있는지 다시 확인합니다." />
                 <Button x:Name="UpdateButton"
                         Width="96"
                         Margin="0,0,8,0"

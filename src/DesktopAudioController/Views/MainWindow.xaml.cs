@@ -76,6 +76,12 @@ public partial class MainWindow : Window
     // 프로그램 세션 목록만 가볍게 주기 갱신하기 위한 타이머입니다.
     private readonly DispatcherTimer _sessionRefreshTimer;
 
+    // 앱이 켜져 있는 동안 새 릴리즈를 주기적으로 확인하기 위한 타이머입니다.
+    private readonly DispatcherTimer _updateCheckTimer;
+
+    // 업데이트 확인 요청이 겹치지 않도록 직렬화합니다.
+    private readonly SemaphoreSlim _updateCheckSemaphore = new(1, 1);
+
     // 같은 틱에서 중복 새로고침 요청이 들어올 때 한 번으로 합치기 위한 플래그입니다.
     private bool _isNotificationRefreshQueued;
 
@@ -112,6 +118,12 @@ public partial class MainWindow : Window
     // 세션 전용 갱신은 장치 열거를 하지 않으므로 짧게 제한합니다.
     private static readonly TimeSpan SessionRefreshOperationTimeout = TimeSpan.FromSeconds(1);
 
+    // 수동 업데이트 확인 버튼 연타 시 네트워크 요청을 막는 최소 간격입니다.
+    private static readonly TimeSpan ManualUpdateCheckThrottle = TimeSpan.FromSeconds(30);
+
+    // 앱이 켜져 있는 동안 새 릴리즈를 가볍게 재확인하는 간격입니다.
+    private static readonly TimeSpan PeriodicUpdateCheckInterval = TimeSpan.FromHours(6);
+
     // 설정창 장치 로딩도 COM 조회이므로 메인 UI를 막지 않게 비동기로 열고, 실패 시 에러로 돌립니다.
     private static readonly TimeSpan SettingsLoadTimeout = TimeSpan.FromSeconds(6);
 
@@ -144,6 +156,9 @@ public partial class MainWindow : Window
 
     // 자동 업데이트 시작이 중복 실행되지 않도록 막는 플래그입니다.
     private bool _isAutomaticUpdateStarting;
+
+    // 사용자가 업데이트 확인을 연타할 때 GitHub API 호출을 제한하기 위한 마지막 확인 시각입니다.
+    private DateTimeOffset _lastUpdateCheckAttemptUtc = DateTimeOffset.MinValue;
 
     // 부팅 직후 장치 스택이 늦게 올라오는 환경을 위해 시작 직후 백그라운드 재시도 간격을 둡니다.
     private static readonly TimeSpan[] StartupBackgroundRefreshRetryDelays =
@@ -182,6 +197,11 @@ public partial class MainWindow : Window
         _notifyIcon = CreateNotifyIcon();
         _sessionRefreshTimer = new DispatcherTimer();
         _sessionRefreshTimer.Tick += SessionRefreshTimer_OnTick;
+        _updateCheckTimer = new DispatcherTimer
+        {
+            Interval = PeriodicUpdateCheckInterval
+        };
+        _updateCheckTimer.Tick += UpdateCheckTimer_OnTick;
         RefreshTrayMenu(force: true);
         DataContext = _viewModel;
         ApplyPrimaryMonitorBounds();
@@ -230,6 +250,17 @@ public partial class MainWindow : Window
     private void SettingsButton_OnClick(object sender, RoutedEventArgs e)
     {
         _ = OpenSettingsInternalAsync();
+    }
+
+    /// <summary>
+    /// 상단 업데이트 확인 버튼 클릭 시 GitHub 릴리즈를 즉시 다시 확인합니다.
+    /// </summary>
+    private async void CheckUpdateButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        await CheckForUpdateInBackgroundAsync(
+            showNoUpdateStatus: true,
+            force: false,
+            reason: "manual");
     }
 
     /// <summary>
@@ -296,6 +327,7 @@ public partial class MainWindow : Window
 
         _isAutomaticUpdateStarting = true;
         UpdateButton.IsEnabled = false;
+        CheckUpdateButton.IsEnabled = false;
         UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
         UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion} 다운로드 및 적용 준비 중...";
         UpdateStatusText.Visibility = Visibility.Visible;
@@ -327,6 +359,7 @@ public partial class MainWindow : Window
             {
                 _isAutomaticUpdateStarting = false;
                 UpdateButton.IsEnabled = true;
+                CheckUpdateButton.IsEnabled = true;
             }
         }
     }
@@ -460,7 +493,7 @@ public partial class MainWindow : Window
                 _minimizeToTray = settingsViewModel.MinimizeToTray;
                 _includePreReleaseUpdates = settingsViewModel.IncludePreReleaseUpdates;
                 await ReloadViewModelAsync("settings_saved");
-                await CheckForUpdateInBackgroundAsync();
+                await CheckForUpdateInBackgroundAsync(force: true, reason: "settings_saved");
             }
         }
         catch (OperationCanceledException exception)
@@ -625,7 +658,8 @@ public partial class MainWindow : Window
         _includePreReleaseUpdates = settings.IncludePreReleaseUpdates;
 
         // 창 표시 이후에 백그라운드 업데이트 확인을 시작해, 오프라인 상태여도 UI가 멈추지 않게 합니다.
-        _ = CheckForUpdateInBackgroundAsync();
+        _ = CheckForUpdateInBackgroundAsync(force: true, reason: "startup");
+        StartPeriodicUpdateCheck();
         if (_requiresStartupBackgroundRefresh)
         {
             _ = RunStartupBackgroundRefreshLoopAsync();
@@ -706,6 +740,7 @@ public partial class MainWindow : Window
         if (_isExitRequested || !ShouldMinimizeToTray())
         {
             StopAutomaticSessionRefresh();
+            StopPeriodicUpdateCheck();
             _viewModel.FlushPendingProgramPreferenceSave();
             return;
         }
@@ -865,7 +900,14 @@ public partial class MainWindow : Window
         _audioNotificationService.Changed -= AudioNotificationService_OnChanged;
         Loaded -= MainWindow_OnLoaded;
         StateChanged -= MainWindow_OnStateChanged;
+        Activated -= MainWindow_OnActivationChanged;
+        Deactivated -= MainWindow_OnActivationChanged;
+        IsVisibleChanged -= MainWindow_OnIsVisibleChanged;
         Closing -= MainWindow_OnClosing;
+        _sessionRefreshTimer.Stop();
+        _sessionRefreshTimer.Tick -= SessionRefreshTimer_OnTick;
+        _updateCheckTimer.Stop();
+        _updateCheckTimer.Tick -= UpdateCheckTimer_OnTick;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         base.OnClosed(e);
@@ -1297,64 +1339,161 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// GitHub 릴리즈 기준 새 버전이 있는지 백그라운드에서 확인하고, 있을 때만 안내 문구를 표시합니다.
+    /// GitHub 릴리즈 기준 새 버전이 있는지 확인하고, 결과에 맞춰 상단 업데이트 UI를 갱신합니다.
     /// </summary>
-    private async Task CheckForUpdateInBackgroundAsync()
+    private async Task CheckForUpdateInBackgroundAsync(
+        bool showNoUpdateStatus = false,
+        bool force = true,
+        string reason = "background")
     {
+        var now = DateTimeOffset.UtcNow;
+        if (!force && now - _lastUpdateCheckAttemptUtc < ManualUpdateCheckThrottle)
+        {
+            if (showNoUpdateStatus)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x66, 0x66, 0x66));
+                    UpdateStatusText.Text = "방금 업데이트를 확인했습니다. 잠시 후 다시 시도해 주세요.";
+                    UpdateStatusText.Visibility = Visibility.Visible;
+                });
+            }
+
+            return;
+        }
+
+        if (!await _updateCheckSemaphore.WaitAsync(0))
+        {
+            if (showNoUpdateStatus)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
+                    UpdateStatusText.Text = "업데이트 확인 중...";
+                    UpdateStatusText.Visibility = Visibility.Visible;
+                });
+            }
+
+            return;
+        }
+
         // currentVersion은 현재 실행 중인 앱 버전 문자열입니다.
         var currentVersion = GetApplicationVersionText();
 
-        await Dispatcher.InvokeAsync(() =>
-        {
-            UpdateStatusText.Visibility = Visibility.Collapsed;
-            UpdateStatusText.Text = string.Empty;
-            UpdateButton.Visibility = Visibility.Collapsed;
-        });
-
-        UpdateCheckResult updateCheckResult;
         try
         {
-            // updateCheckResult는 새 버전 존재 여부와 최신 버전 문자열을 담은 결과입니다.
-            updateCheckResult = await _updateCheckService.CheckForUpdateAsync(currentVersion, _includePreReleaseUpdates);
-            _latestUpdateCheckResult = updateCheckResult;
-        }
-        catch (Exception exception)
-        {
-            AppLog.Warn("MainWindow", "업데이트 확인 실패", exception);
-            updateCheckResult = new UpdateCheckResult
-            {
-                HadError = true,
-                StatusMessage = "업데이트 확인에 실패했습니다."
-            };
-        }
+            _lastUpdateCheckAttemptUtc = now;
+            AppLog.Debug("MainWindow", $"업데이트 확인 시작 reason={reason} includePreRelease={_includePreReleaseUpdates}");
 
-        await Dispatcher.InvokeAsync(() =>
-        {
-            if (updateCheckResult.HadError)
+            await Dispatcher.InvokeAsync(() =>
             {
-                UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB3, 0x5A, 0x00));
-                UpdateStatusText.Text = updateCheckResult.StatusMessage ?? "업데이트 확인에 실패했습니다.";
+                CheckUpdateButton.IsEnabled = false;
+                if (showNoUpdateStatus)
+                {
+                    UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
+                    UpdateStatusText.Text = "업데이트 확인 중...";
+                    UpdateStatusText.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                if (_latestUpdateCheckResult is null)
+                {
+                    UpdateStatusText.Visibility = Visibility.Collapsed;
+                    UpdateStatusText.Text = string.Empty;
+                    UpdateButton.Visibility = Visibility.Collapsed;
+                }
+            });
+
+            UpdateCheckResult updateCheckResult;
+            try
+            {
+                // updateCheckResult는 새 버전 존재 여부와 최신 버전 문자열을 담은 결과입니다.
+                updateCheckResult = await _updateCheckService.CheckForUpdateAsync(currentVersion, _includePreReleaseUpdates);
+                _latestUpdateCheckResult = updateCheckResult;
+            }
+            catch (Exception exception)
+            {
+                AppLog.Warn("MainWindow", "업데이트 확인 실패", exception);
+                updateCheckResult = new UpdateCheckResult
+                {
+                    HadError = true,
+                    StatusMessage = "업데이트 확인에 실패했습니다."
+                };
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (updateCheckResult.HadError)
+                {
+                    UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB3, 0x5A, 0x00));
+                    UpdateStatusText.Text = updateCheckResult.StatusMessage ?? "업데이트 확인에 실패했습니다.";
+                    UpdateStatusText.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                if (!updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
+                {
+                    UpdateButton.Visibility = Visibility.Collapsed;
+                    if (showNoUpdateStatus)
+                    {
+                        UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x66, 0x66, 0x66));
+                        UpdateStatusText.Text = "현재 최신 버전입니다.";
+                        UpdateStatusText.Visibility = Visibility.Visible;
+                        return;
+                    }
+
+                    UpdateStatusText.Visibility = Visibility.Collapsed;
+                    UpdateStatusText.Text = string.Empty;
+                    return;
+                }
+
+                UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0xAA, 0x66));
+                var publishedDateText = updateCheckResult.PublishedAtUtc.HasValue
+                    ? $" · {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd} 공개"
+                    : string.Empty;
+                var preReleaseText = updateCheckResult.IsPreRelease ? " (프리릴리즈)" : string.Empty;
+                UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion}{preReleaseText} 업데이트 가능{publishedDateText}";
                 UpdateStatusText.Visibility = Visibility.Visible;
-                return;
-            }
-
-            if (!updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
+                UpdateButton.Visibility = Visibility.Visible;
+            });
+        }
+        finally
+        {
+            await Dispatcher.InvokeAsync(() =>
             {
-                UpdateStatusText.Visibility = Visibility.Collapsed;
-                UpdateStatusText.Text = string.Empty;
-                UpdateButton.Visibility = Visibility.Collapsed;
-                return;
-            }
+                if (!_isAutomaticUpdateStarting)
+                {
+                    CheckUpdateButton.IsEnabled = true;
+                }
+            });
+            _updateCheckSemaphore.Release();
+        }
+    }
 
-            UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0xAA, 0x66));
-            var publishedDateText = updateCheckResult.PublishedAtUtc.HasValue
-                ? $" · {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd} 공개"
-                : string.Empty;
-            var preReleaseText = updateCheckResult.IsPreRelease ? " (프리릴리즈)" : string.Empty;
-            UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion}{preReleaseText} 업데이트 가능{publishedDateText}";
-            UpdateStatusText.Visibility = Visibility.Visible;
-            UpdateButton.Visibility = Visibility.Visible;
-        });
+    private void StartPeriodicUpdateCheck()
+    {
+        if (!_updateCheckTimer.IsEnabled)
+        {
+            _updateCheckTimer.Start();
+        }
+    }
+
+    private void StopPeriodicUpdateCheck()
+    {
+        _updateCheckTimer.Stop();
+    }
+
+    private void UpdateCheckTimer_OnTick(object? sender, EventArgs e)
+    {
+        if (_isAutomaticUpdateStarting)
+        {
+            return;
+        }
+
+        _ = CheckForUpdateInBackgroundAsync(
+            showNoUpdateStatus: false,
+            force: false,
+            reason: "periodic");
     }
 
     /// <summary>
