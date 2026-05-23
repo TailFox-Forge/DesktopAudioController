@@ -8,6 +8,7 @@ namespace DesktopAudioController.Services;
 internal static class ApplicationAudioOutputPolicy
 {
     private const string AudioPolicyConfigClassName = "Windows.Media.Internal.AudioPolicyConfig";
+    private const int SetPersistedDefaultAudioEndpointVtableSlot = 25;
     private static readonly Guid AudioPolicyConfigFactoryIdFor21H2 = new("ab3d4648-e242-459f-b02f-541c70306324");
     private static readonly Guid AudioPolicyConfigFactoryIdForDownlevel = new("2a59116d-6c4f-45e0-a74f-707e3fef9258");
 
@@ -23,14 +24,14 @@ internal static class ApplicationAudioOutputPolicy
             throw new ArgumentException("대상 출력 장치 ID가 비어 있습니다.", nameof(targetDeviceId));
         }
 
-        var factory = CreateFactory();
+        using var factory = CreateFactory();
         var endpointId = IntPtr.Zero;
         try
         {
             ThrowIfFailed(WindowsCreateString(targetDeviceId, (uint)targetDeviceId.Length, out endpointId));
             foreach (var role in GetPolicyRoles())
             {
-                SetPersistedDefaultAudioEndpoint(factory, processId, AudioDataFlow.Render, role, endpointId);
+                factory.SetPersistedDefaultAudioEndpoint(processId, AudioDataFlow.Render, role, endpointId);
             }
         }
         finally
@@ -42,12 +43,12 @@ internal static class ApplicationAudioOutputPolicy
         }
     }
 
-    private static object CreateFactory()
+    private static AudioPolicyConfigFactory CreateFactory()
     {
         try
         {
             var iid = AudioPolicyConfigFactoryIdFor21H2;
-            return (IAudioPolicyConfigFactoryFor21H2)GetActivationFactory(iid);
+            return GetActivationFactory(iid);
         }
         catch (COMException exception)
         {
@@ -56,11 +57,11 @@ internal static class ApplicationAudioOutputPolicy
                 "21H2 AudioPolicyConfigFactory 활성화 실패, downlevel 팩토리로 재시도",
                 exception);
             var iid = AudioPolicyConfigFactoryIdForDownlevel;
-            return (IAudioPolicyConfigFactoryForDownlevel)GetActivationFactory(iid);
+            return GetActivationFactory(iid);
         }
     }
 
-    private static object GetActivationFactory(Guid iid)
+    private static AudioPolicyConfigFactory GetActivationFactory(Guid iid)
     {
         var className = IntPtr.Zero;
         var factory = IntPtr.Zero;
@@ -68,7 +69,9 @@ internal static class ApplicationAudioOutputPolicy
         {
             ThrowIfFailed(WindowsCreateString(AudioPolicyConfigClassName, (uint)AudioPolicyConfigClassName.Length, out className));
             ThrowIfFailed(RoGetActivationFactory(className, ref iid, out factory));
-            return Marshal.GetObjectForIUnknown(factory);
+            var result = new AudioPolicyConfigFactory(factory);
+            factory = IntPtr.Zero;
+            return result;
         }
         finally
         {
@@ -82,24 +85,6 @@ internal static class ApplicationAudioOutputPolicy
                 WindowsDeleteString(className);
             }
         }
-    }
-
-    private static void SetPersistedDefaultAudioEndpoint(
-        object factory,
-        uint processId,
-        AudioDataFlow flow,
-        AudioRole role,
-        IntPtr endpointId)
-    {
-        var hresult = factory switch
-        {
-            IAudioPolicyConfigFactoryFor21H2 factoryFor21H2 =>
-                factoryFor21H2.SetPersistedDefaultAudioEndpoint(processId, flow, role, endpointId),
-            IAudioPolicyConfigFactoryForDownlevel downlevelFactory =>
-                downlevelFactory.SetPersistedDefaultAudioEndpoint(processId, flow, role, endpointId),
-            _ => throw new InvalidOperationException("지원하지 않는 AudioPolicyConfigFactory 형식입니다.")
-        };
-        ThrowIfFailed(hresult);
     }
 
     private static IEnumerable<AudioRole> GetPolicyRoles()
@@ -154,125 +139,54 @@ internal static class ApplicationAudioOutputPolicy
         Communications = 2
     }
 
-    [ComImport]
-    [Guid("ab3d4648-e242-459f-b02f-541c70306324")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
-    private interface IAudioPolicyConfigFactoryFor21H2
+    private sealed class AudioPolicyConfigFactory : IDisposable
     {
-        int AddCtxVolumeChanged();
+        private readonly SetPersistedDefaultAudioEndpointDelegate _setPersistedDefaultAudioEndpoint;
+        private IntPtr _nativePointer;
 
-        int RemoveCtxVolumeChanged();
+        public AudioPolicyConfigFactory(IntPtr nativePointer)
+        {
+            if (nativePointer == IntPtr.Zero)
+            {
+                throw new ArgumentNullException(nameof(nativePointer));
+            }
 
-        int AddRingerVibrateStateChanged();
+            _nativePointer = nativePointer;
+            var vtable = Marshal.ReadIntPtr(_nativePointer);
+            var methodPointer = Marshal.ReadIntPtr(
+                vtable,
+                SetPersistedDefaultAudioEndpointVtableSlot * IntPtr.Size);
+            _setPersistedDefaultAudioEndpoint =
+                Marshal.GetDelegateForFunctionPointer<SetPersistedDefaultAudioEndpointDelegate>(methodPointer);
+        }
 
-        int RemoveRingerVibrateStateChanged();
-
-        int SetVolumeGroupGainForId();
-
-        int GetVolumeGroupGainForId();
-
-        int GetActiveVolumeGroupForEndpointId();
-
-        int GetVolumeGroupsForEndpoint();
-
-        int GetCurrentVolumeContext();
-
-        int SetVolumeGroupMuteForId();
-
-        int GetVolumeGroupMuteForId();
-
-        int SetRingerVibrateState();
-
-        int GetRingerVibrateState();
-
-        int SetPreferredChatApplication();
-
-        int ResetPreferredChatApplication();
-
-        int GetPreferredChatApplication();
-
-        int GetCurrentChatApplications();
-
-        int AddChatContextChanged();
-
-        int RemoveChatContextChanged();
-
-        [PreserveSig]
-        uint SetPersistedDefaultAudioEndpoint(
+        public void SetPersistedDefaultAudioEndpoint(
             uint processId,
             AudioDataFlow flow,
             AudioRole role,
-            IntPtr deviceId);
+            IntPtr endpointId)
+        {
+            ObjectDisposedException.ThrowIf(_nativePointer == IntPtr.Zero, this);
+            ThrowIfFailed(_setPersistedDefaultAudioEndpoint(_nativePointer, processId, flow, role, endpointId));
+        }
 
-        [PreserveSig]
-        uint GetPersistedDefaultAudioEndpoint(
-            uint processId,
-            AudioDataFlow flow,
-            AudioRole role,
-            out IntPtr deviceId);
+        public void Dispose()
+        {
+            if (_nativePointer == IntPtr.Zero)
+            {
+                return;
+            }
 
-        [PreserveSig]
-        uint ClearAllPersistedApplicationDefaultEndpoints();
+            Marshal.Release(_nativePointer);
+            _nativePointer = IntPtr.Zero;
+        }
     }
 
-    [ComImport]
-    [Guid("2a59116d-6c4f-45e0-a74f-707e3fef9258")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
-    private interface IAudioPolicyConfigFactoryForDownlevel
-    {
-        int AddCtxVolumeChanged();
-
-        int RemoveCtxVolumeChanged();
-
-        int AddRingerVibrateStateChanged();
-
-        int RemoveRingerVibrateStateChanged();
-
-        int SetVolumeGroupGainForId();
-
-        int GetVolumeGroupGainForId();
-
-        int GetActiveVolumeGroupForEndpointId();
-
-        int GetVolumeGroupsForEndpoint();
-
-        int GetCurrentVolumeContext();
-
-        int SetVolumeGroupMuteForId();
-
-        int GetVolumeGroupMuteForId();
-
-        int SetRingerVibrateState();
-
-        int GetRingerVibrateState();
-
-        int SetPreferredChatApplication();
-
-        int ResetPreferredChatApplication();
-
-        int GetPreferredChatApplication();
-
-        int GetCurrentChatApplications();
-
-        int AddChatContextChanged();
-
-        int RemoveChatContextChanged();
-
-        [PreserveSig]
-        uint SetPersistedDefaultAudioEndpoint(
-            uint processId,
-            AudioDataFlow flow,
-            AudioRole role,
-            IntPtr deviceId);
-
-        [PreserveSig]
-        uint GetPersistedDefaultAudioEndpoint(
-            uint processId,
-            AudioDataFlow flow,
-            AudioRole role,
-            out IntPtr deviceId);
-
-        [PreserveSig]
-        uint ClearAllPersistedApplicationDefaultEndpoints();
-    }
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate uint SetPersistedDefaultAudioEndpointDelegate(
+        IntPtr self,
+        uint processId,
+        AudioDataFlow flow,
+        AudioRole role,
+        IntPtr endpointId);
 }
