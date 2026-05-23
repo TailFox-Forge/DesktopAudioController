@@ -166,7 +166,6 @@ public sealed class CachedAppIconService : IAppIconService
     /// <summary>
     /// 세션 아이콘 경로나 실행 파일 경로에서 실제 파일 경로만 추출합니다.
     /// 예: "C:\Path\App.exe,-123" -> "C:\Path\App.exe"
-    /// 파일 경로가 아닌 UWP 리소스 URI는 현재 지원하지 않으므로 null을 반환합니다.
     /// </summary>
     internal static string? NormalizeIconSourcePath(string? iconSourcePath)
     {
@@ -175,16 +174,7 @@ public sealed class CachedAppIconService : IAppIconService
             return null;
         }
 
-        var expandedPath = Environment.ExpandEnvironmentVariables(iconSourcePath.Trim());
-        foreach (var candidate in EnumeratePathCandidates(expandedPath))
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
+        return IconSourcePathResolver.NormalizeFileIconSourcePath(iconSourcePath);
     }
 
     /// <summary>
@@ -250,30 +240,6 @@ public sealed class CachedAppIconService : IAppIconService
         {
             // 권한 문제나 특수 경로 문제로 아이콘을 읽지 못하면 실패 캐시 대상이 됩니다.
             return null;
-        }
-    }
-
-    private static IEnumerable<string> EnumeratePathCandidates(string rawPath)
-    {
-        var trimmedPath = rawPath.Trim().Trim('"');
-        if (!string.IsNullOrWhiteSpace(trimmedPath))
-        {
-            if (trimmedPath.StartsWith('@'))
-            {
-                trimmedPath = trimmedPath[1..].Trim().Trim('"');
-            }
-
-            yield return trimmedPath;
-
-            var commaIndex = trimmedPath.IndexOf(',');
-            if (commaIndex > 0)
-            {
-                var beforeIndexSuffix = trimmedPath[..commaIndex].Trim().Trim('"');
-                if (!string.IsNullOrWhiteSpace(beforeIndexSuffix))
-                {
-                    yield return beforeIndexSuffix;
-                }
-            }
         }
     }
 

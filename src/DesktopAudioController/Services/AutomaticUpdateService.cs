@@ -35,6 +35,7 @@ public sealed class AutomaticUpdateService
         string applicationDirectory,
         string applicationExecutablePath,
         int currentProcessId,
+        Action<string>? progressChanged = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(updateCheckResult.DownloadUrl))
@@ -72,10 +73,14 @@ public sealed class AutomaticUpdateService
 
         try
         {
+            progressChanged?.Invoke("업데이트 파일 다운로드 중...");
             AppLog.Info("AutomaticUpdate", $"업데이트 패키지 다운로드 시작 version={updateCheckResult.LatestVersion}");
             await DownloadFileAsync(updateCheckResult.DownloadUrl, packagePath, cancellationToken);
+
+            progressChanged?.Invoke("체크섬 다운로드 중...");
             await DownloadFileAsync(updateCheckResult.ChecksumDownloadUrl, checksumPath, cancellationToken);
 
+            progressChanged?.Invoke("업데이트 파일 검증 중...");
             var checksumText = await File.ReadAllTextAsync(checksumPath, cancellationToken);
             if (!TryParseSha256Hash(checksumText, out var expectedHash))
             {
@@ -89,6 +94,7 @@ public sealed class AutomaticUpdateService
                 return AutomaticUpdateStartResult.Fail("다운로드한 업데이트 파일의 sha256 검증에 실패했습니다.");
             }
 
+            progressChanged?.Invoke("업데이트 적용 준비 중...");
             File.Copy(sourceUpdaterPath, tempUpdaterPath, overwrite: true);
             StartUpdaterProcess(
                 tempUpdaterPath,

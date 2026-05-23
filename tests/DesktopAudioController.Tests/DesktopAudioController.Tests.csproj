@@ -35,6 +35,7 @@
     <Compile Include="..\..\src\DesktopAudioController\Services\AppRunStateService.cs" Link="Source\Services\AppRunStateService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AutomaticUpdateService.cs" Link="Source\Services\AutomaticUpdateService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\GitHubReleaseUpdateCheckService.cs" Link="Source\Services\GitHubReleaseUpdateCheckService.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\IconSourcePathResolver.cs" Link="Source\Services\IconSourcePathResolver.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ISettingsService.cs" Link="Source\Services\ISettingsService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\IUpdateCheckService.cs" Link="Source\Services\IUpdateCheckService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\PendingRecoveryTaskGate.cs" Link="Source\Services\PendingRecoveryTaskGate.cs" />

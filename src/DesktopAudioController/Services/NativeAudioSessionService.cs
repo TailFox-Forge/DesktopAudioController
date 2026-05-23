@@ -75,7 +75,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
 
                     var displayName = ResolveDisplayName(session);
                     var executablePath = ResolveExecutablePath(session);
-                    var iconSourcePath = ResolveIconSourcePath(session);
+                    var iconSourcePath = ResolveIconSourcePath(session, executablePath);
 
                     results.Add(new AudioSessionInfo
                     {
@@ -228,16 +228,16 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     }
 
     /// <summary>
-    /// 세션이 따로 제공하는 아이콘 경로가 있으면 우선 사용하고, 없으면 실행 파일 경로로 폴백합니다.
-    /// UWP 리소스 URI처럼 파일 경로가 아닌 값은 후속 단계에서 걸러집니다.
+    /// 세션이 따로 제공하는 파일 아이콘 경로가 있으면 우선 사용하고, 없으면 실행 파일 경로로 폴백합니다.
     /// </summary>
-    private string? ResolveIconSourcePath(AudioSessionControl session)
+    private static string? ResolveIconSourcePath(AudioSessionControl session, string? executablePath)
     {
+        string? sessionIconPath = null;
         try
         {
             if (!string.IsNullOrWhiteSpace(session.IconPath))
             {
-                return session.IconPath;
+                sessionIconPath = session.IconPath;
             }
         }
         catch
@@ -245,7 +245,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             // 일부 세션은 아이콘 경로 조회 자체가 실패할 수 있으므로 실행 파일 경로 폴백으로 진행합니다.
         }
 
-        return ResolveExecutablePath(session);
+        return IconSourcePathResolver.ResolvePreferredIconSourcePath(sessionIconPath, executablePath);
     }
 
     /// <summary>

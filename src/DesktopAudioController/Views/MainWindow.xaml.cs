@@ -327,9 +327,7 @@ public partial class MainWindow : Window
         _isAutomaticUpdateStarting = true;
         UpdateButton.IsEnabled = false;
         CheckUpdateButton.IsEnabled = false;
-        UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
-        UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion} 업데이트 준비 중...";
-        UpdateStatusText.Visibility = Visibility.Visible;
+        ShowAutomaticUpdateProgress(updateCheckResult.LatestVersion, "업데이트 준비 중...");
 
         try
         {
@@ -339,6 +337,7 @@ public partial class MainWindow : Window
                 applicationDirectory,
                 executablePath,
                 Environment.ProcessId,
+                progressMessage => ShowAutomaticUpdateProgress(updateCheckResult.LatestVersion, progressMessage),
                 cancellationTokenSource.Token);
 
             if (!startResult.Started)
@@ -350,6 +349,7 @@ public partial class MainWindow : Window
             }
 
             AppLog.Info("MainWindow", "자동 업데이트 적용을 위해 앱 종료");
+            ShowAutomaticUpdateProgress(updateCheckResult.LatestVersion, "앱을 다시 시작해 업데이트 적용 중...");
             BeginExitForAutomaticUpdate();
         }
         finally
@@ -1186,6 +1186,16 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
+    }
+
+    private void ShowAutomaticUpdateProgress(string latestVersion, string progressMessage)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
+            UpdateStatusText.Text = $"새 버전 {latestVersion}: {progressMessage}";
+            UpdateStatusText.Visibility = Visibility.Visible;
+        });
     }
 
     /// <summary>
