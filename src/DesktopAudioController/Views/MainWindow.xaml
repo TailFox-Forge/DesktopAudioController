@@ -215,6 +215,11 @@
                                                                                         </Style>
                                                                                     </TextBlock.Style>
                                                                                 </TextBlock>
+                                                                                <TextBlock FontSize="11"
+                                                                                           Foreground="#555"
+                                                                                           TextTrimming="CharacterEllipsis"
+                                                                                           ToolTip="{Binding CurrentOutputDeviceName}"
+                                                                                           Text="{Binding CurrentOutputDeviceName, StringFormat=현재 출력: {0}}" />
                                                                             </StackPanel>
                                                                         </StackPanel>
                                                                         <StackPanel DockPanel.Dock="Right"

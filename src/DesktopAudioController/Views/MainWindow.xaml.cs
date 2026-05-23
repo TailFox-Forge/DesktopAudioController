@@ -680,24 +680,38 @@ public partial class MainWindow : Window
         {
             ShowMainStatus($"{session.DisplayName} 출력 장치를 {targetDevice.Name}(으)로 변경하는 중...");
             await _viewModel.SetSessionOutputDeviceAsync(session.DeviceId, session.Id, targetDevice.Id);
-            ShowMainStatus($"{session.DisplayName} 출력 장치 변경 요청을 보냈습니다. 앱에 따라 재생을 다시 시작해야 반영될 수 있습니다.");
+            ShowMainStatus(
+                $"{session.DisplayName} 출력 변경 요청 완료: {targetDevice.Name}. 바로 이동하지 않으면 앱 재생을 다시 시작하세요.");
             await Task.Delay(300);
             _ = RefreshSessionViewAsync($"session_output_device_changed sessionId={session.Id}");
         }
         catch (Exception exception)
         {
-            ShowMainStatus("출력 장치 변경에 실패했습니다.", isError: true);
+            ShowMainStatus(
+                $"{session.DisplayName} 출력 변경 실패: {targetDevice.Name}. 앱 재생과 대상 장치 상태를 확인하세요.",
+                isError: true);
             AppLog.Warn(
                 "MainWindow",
                 $"세션 출력 장치 변경 실패 deviceId={session.DeviceId} sessionId={session.Id} targetDeviceId={targetDevice.Id}",
                 exception);
             System.Windows.MessageBox.Show(
                 this,
-                "출력 장치를 변경하지 못했습니다.\n일부 앱은 재생을 다시 시작하거나 앱을 재실행해야 변경할 수 있습니다.",
+                BuildSessionOutputChangeFailureMessage(session, targetDevice),
                 "출력 변경 실패",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
+    }
+
+    private static string BuildSessionOutputChangeFailureMessage(AudioSessionViewModel session, AudioDeviceInfo targetDevice)
+    {
+        return
+            $"{session.DisplayName} 출력 장치를 {targetDevice.Name}(으)로 변경하지 못했습니다.\n\n" +
+            "확인할 내용:\n" +
+            "- 대상 출력 장치가 연결되어 있는지 확인해 주세요.\n" +
+            "- 프로그램이 계속 소리를 재생 중인지 확인해 주세요.\n" +
+            "- 일부 앱은 재생을 다시 시작하거나 앱을 재실행해야 변경할 수 있습니다.\n\n" +
+            "자세한 원인은 로그에 기록했습니다.";
     }
 
     private static string FormatOutputDeviceMenuHeader(AudioDeviceInfo device, string currentDeviceId)

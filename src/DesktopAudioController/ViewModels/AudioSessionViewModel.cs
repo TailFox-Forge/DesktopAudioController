@@ -22,6 +22,9 @@ public sealed class AudioSessionViewModel : ObservableObject
     // 동일 이름 세션을 구분하기 위한 보조 텍스트입니다.
     private string? _disambiguationText;
 
+    // 이 세션이 현재 속한 출력 장치 이름입니다.
+    private string _currentOutputDeviceName;
+
     // 세션 앱 실행 파일 경로입니다. 비동기 아이콘 로딩 결과가 현재 세션과 맞는지 확인할 때 사용합니다.
     private string? _executablePath;
 
@@ -61,6 +64,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         string? matchKey,
         string displayName,
         string? disambiguationText,
+        string currentOutputDeviceName,
         string? executablePath,
         string? iconSourcePath,
         ImageSource? iconImage,
@@ -75,6 +79,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         _matchKey = matchKey;
         _displayName = displayName;
         _disambiguationText = disambiguationText;
+        _currentOutputDeviceName = currentOutputDeviceName;
         _executablePath = executablePath;
         _iconSourcePath = iconSourcePath;
         _iconImage = iconImage;
@@ -125,6 +130,15 @@ public sealed class AudioSessionViewModel : ObservableObject
     {
         get => _disambiguationText;
         private set => SetProperty(ref _disambiguationText, value);
+    }
+
+    /// <summary>
+    /// 현재 이 세션이 실제로 표시되는 출력 장치 이름입니다.
+    /// </summary>
+    public string CurrentOutputDeviceName
+    {
+        get => _currentOutputDeviceName;
+        private set => SetProperty(ref _currentOutputDeviceName, value);
     }
 
     /// <summary>
@@ -230,6 +244,7 @@ public sealed class AudioSessionViewModel : ObservableObject
         string? matchKey,
         string displayName,
         string? disambiguationText,
+        string currentOutputDeviceName,
         string? executablePath,
         string? iconSourcePath,
         ImageSource? iconImage,
@@ -245,6 +260,7 @@ public sealed class AudioSessionViewModel : ObservableObject
             MatchKey = matchKey;
             DisplayName = displayName;
             DisambiguationText = disambiguationText;
+            CurrentOutputDeviceName = currentOutputDeviceName;
             ExecutablePath = executablePath;
             IconSourcePath = iconSourcePath;
             IconImage = iconImage;
