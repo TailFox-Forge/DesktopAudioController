@@ -26,12 +26,41 @@ internal static class ApplicationAudioOutputPolicy
 
         using var factory = CreateFactory();
         var endpointId = IntPtr.Zero;
+        var successfulRoles = new List<AudioRole>();
+        var failedRoles = new List<string>();
         try
         {
             ThrowIfFailed(WindowsCreateString(targetDeviceId, (uint)targetDeviceId.Length, out endpointId));
             foreach (var role in GetPolicyRoles())
             {
-                factory.SetPersistedDefaultAudioEndpoint(processId, AudioDataFlow.Render, role, endpointId);
+                var hresult = factory.SetPersistedDefaultAudioEndpoint(processId, AudioDataFlow.Render, role, endpointId);
+                if (IsSuccess(hresult))
+                {
+                    successfulRoles.Add(role);
+                    AppLog.Info(
+                        "ApplicationAudioOutputPolicy",
+                        $"앱별 출력 정책 변경 성공 processId={processId} role={role} targetDeviceId={targetDeviceId}");
+                    continue;
+                }
+
+                var formattedResult = FormatHResult(hresult);
+                failedRoles.Add($"{role}:{formattedResult}");
+                AppLog.Warn(
+                    "ApplicationAudioOutputPolicy",
+                    $"앱별 출력 정책 변경 실패 processId={processId} role={role} targetDeviceId={targetDeviceId} hresult={formattedResult}");
+            }
+
+            if (successfulRoles.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"앱별 출력 장치 정책 변경에 실패했습니다. roleResults=[{string.Join(", ", failedRoles)}]");
+            }
+
+            if (failedRoles.Count > 0)
+            {
+                AppLog.Warn(
+                    "ApplicationAudioOutputPolicy",
+                    $"앱별 출력 정책 일부 role 실패 processId={processId} successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
             }
         }
         finally
@@ -89,9 +118,19 @@ internal static class ApplicationAudioOutputPolicy
 
     private static IEnumerable<AudioRole> GetPolicyRoles()
     {
-        yield return AudioRole.Console;
         yield return AudioRole.Multimedia;
+        yield return AudioRole.Console;
         yield return AudioRole.Communications;
+    }
+
+    private static bool IsSuccess(uint hresult)
+    {
+        return hresult < 0x80000000;
+    }
+
+    private static string FormatHResult(uint hresult)
+    {
+        return $"0x{hresult:X8}";
     }
 
     private static void ThrowIfFailed(uint hresult)
@@ -160,14 +199,14 @@ internal static class ApplicationAudioOutputPolicy
                 Marshal.GetDelegateForFunctionPointer<SetPersistedDefaultAudioEndpointDelegate>(methodPointer);
         }
 
-        public void SetPersistedDefaultAudioEndpoint(
+        public uint SetPersistedDefaultAudioEndpoint(
             uint processId,
             AudioDataFlow flow,
             AudioRole role,
             IntPtr endpointId)
         {
             ObjectDisposedException.ThrowIf(_nativePointer == IntPtr.Zero, this);
-            ThrowIfFailed(_setPersistedDefaultAudioEndpoint(_nativePointer, processId, flow, role, endpointId));
+            return _setPersistedDefaultAudioEndpoint(_nativePointer, processId, flow, role, endpointId);
         }
 
         public void Dispose()
