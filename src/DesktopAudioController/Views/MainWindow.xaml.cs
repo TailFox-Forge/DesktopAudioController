@@ -43,6 +43,9 @@ public partial class MainWindow : Window
     // GitHub 릴리즈 기준 새 버전 존재 여부를 확인하는 서비스입니다.
     private readonly IUpdateCheckService _updateCheckService;
 
+    // 새 버전 zip을 다운로드하고 updater 프로세스를 시작하는 서비스입니다.
+    private readonly AutomaticUpdateService _automaticUpdateService = new();
+
     // 마지막 업데이트 확인 결과를 보관해 수동 다운로드 버튼과 상태 문구에 재사용합니다.
     private UpdateCheckResult? _latestUpdateCheckResult;
 
@@ -138,6 +141,9 @@ public partial class MainWindow : Window
 
     // 세션 자동 갱신 실패가 반복될 때 주기를 늦추기 위한 카운터입니다.
     private int _consecutiveSessionRefreshFailures;
+
+    // 자동 업데이트 시작이 중복 실행되지 않도록 막는 플래그입니다.
+    private bool _isAutomaticUpdateStarting;
 
     // 부팅 직후 장치 스택이 늦게 올라오는 환경을 위해 시작 직후 백그라운드 재시도 간격을 둡니다.
     private static readonly TimeSpan[] StartupBackgroundRefreshRetryDelays =
@@ -243,10 +249,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 상단 업데이트 버튼 클릭 시 최신 zip 다운로드 링크를 열고 수동 덮어쓰기 절차를 안내합니다.
+    /// 상단 업데이트 버튼 클릭 시 최신 zip을 다운로드하고 updater 프로세스로 자동 적용합니다.
     /// </summary>
-    private void UpdateButton_OnClick(object sender, RoutedEventArgs e)
+    private async void UpdateButton_OnClick(object sender, RoutedEventArgs e)
     {
+        if (_isAutomaticUpdateStarting)
+        {
+            return;
+        }
+
         var updateCheckResult = _latestUpdateCheckResult;
         if (updateCheckResult is null || !updateCheckResult.IsUpdateAvailable || string.IsNullOrWhiteSpace(updateCheckResult.LatestVersion))
         {
@@ -262,31 +273,61 @@ public partial class MainWindow : Window
             return;
         }
 
-        var currentVersion = GetApplicationVersionText();
         var targetUrl = string.IsNullOrWhiteSpace(updateCheckResult.DownloadUrl)
             ? updateCheckResult.ReleasePageUrl
             : updateCheckResult.DownloadUrl;
 
-        var result = System.Windows.MessageBox.Show(
-            this,
-            $"현재 버전: {currentVersion}\n새 버전: {updateCheckResult.LatestVersion}\n\n이 앱은 설치 프로그램 대신 zip 덮어쓰기 방식으로 업데이트합니다.\n1. 새 zip 다운로드\n2. 실행 중인 앱 종료\n3. 압축 해제 후 기존 실행 폴더에 덮어쓰기\n4. DesktopAudioController.exe 다시 실행\n\n지금 다운로드 페이지를 열까요?",
-            "업데이트 안내",
-            System.Windows.MessageBoxButton.OKCancel,
-            System.Windows.MessageBoxImage.Information);
-
-        if (result != System.Windows.MessageBoxResult.OK)
+        if (!TryGetCurrentExecutablePath(out var executablePath))
         {
+            HandleAutomaticUpdateFailure(
+                "현재 실행 파일 경로를 확인하지 못했습니다.",
+                targetUrl);
             return;
         }
 
-        if (!TryOpenReleasePage(targetUrl))
+        var applicationDirectory = Path.GetDirectoryName(executablePath);
+        if (string.IsNullOrWhiteSpace(applicationDirectory))
         {
-            System.Windows.MessageBox.Show(
-                this,
-                "브라우저에서 다운로드 페이지를 열지 못했습니다.",
-                "다운로드 페이지 열기 실패",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            HandleAutomaticUpdateFailure(
+                "현재 실행 폴더를 확인하지 못했습니다.",
+                targetUrl);
+            return;
+        }
+
+        _isAutomaticUpdateStarting = true;
+        UpdateButton.IsEnabled = false;
+        UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
+        UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion} 다운로드 및 적용 준비 중...";
+        UpdateStatusText.Visibility = Visibility.Visible;
+
+        try
+        {
+            using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            var startResult = await _automaticUpdateService.StartUpdateAsync(
+                updateCheckResult,
+                applicationDirectory,
+                executablePath,
+                Environment.ProcessId,
+                cancellationTokenSource.Token);
+
+            if (!startResult.Started)
+            {
+                HandleAutomaticUpdateFailure(
+                    startResult.ErrorMessage ?? "자동 업데이트를 시작하지 못했습니다.",
+                    targetUrl);
+                return;
+            }
+
+            AppLog.Info("MainWindow", "자동 업데이트 적용을 위해 앱 종료");
+            BeginExitForAutomaticUpdate();
+        }
+        finally
+        {
+            if (!_isExitRequested)
+            {
+                _isAutomaticUpdateStarting = false;
+                UpdateButton.IsEnabled = true;
+            }
         }
     }
 
@@ -1067,6 +1108,45 @@ public partial class MainWindow : Window
         });
     }
 
+    private void BeginExitForAutomaticUpdate()
+    {
+        if (_isExitRequested)
+        {
+            return;
+        }
+
+        _isExitRequested = true;
+        _viewModel.FlushPendingProgramPreferenceSave();
+        _notifyIcon.Visible = false;
+        StopAutomaticSessionRefresh();
+        Close();
+    }
+
+    private void HandleAutomaticUpdateFailure(string message, string? fallbackUrl)
+    {
+        AppLog.Warn("MainWindow", $"자동 업데이트 시작 실패 message={message}");
+        UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB3, 0x5A, 0x00));
+        UpdateStatusText.Text = $"자동 업데이트 실패: {message}";
+        UpdateStatusText.Visibility = Visibility.Visible;
+
+        var result = System.Windows.MessageBox.Show(
+            this,
+            $"{message}\n\n수동 다운로드 페이지를 열까요?",
+            "자동 업데이트 실패",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+
+        if (result == MessageBoxResult.OK && !TryOpenReleasePage(fallbackUrl))
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "브라우저에서 다운로드 페이지를 열지 못했습니다.",
+                "다운로드 페이지 열기 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
     /// <summary>
     /// 현재 설정상 최소화/닫기 동작을 트레이로 보내야 하는지 계산합니다.
     /// </summary>
@@ -1271,7 +1351,7 @@ public partial class MainWindow : Window
                 ? $" · {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd} 공개"
                 : string.Empty;
             var preReleaseText = updateCheckResult.IsPreRelease ? " (프리릴리즈)" : string.Empty;
-            UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion}{preReleaseText} 다운로드 가능{publishedDateText}";
+            UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion}{preReleaseText} 업데이트 가능{publishedDateText}";
             UpdateStatusText.Visibility = Visibility.Visible;
             UpdateButton.Visibility = Visibility.Visible;
         });
@@ -1300,6 +1380,26 @@ public partial class MainWindow : Window
         }
 
         return assembly.GetName().Version?.ToString() ?? "알 수 없음";
+    }
+
+    private static bool TryGetCurrentExecutablePath(out string executablePath)
+    {
+        executablePath = Environment.ProcessPath ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(executablePath) && File.Exists(executablePath))
+        {
+            return true;
+        }
+
+        try
+        {
+            executablePath = Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
+        }
+        catch
+        {
+            executablePath = string.Empty;
+        }
+
+        return !string.IsNullOrWhiteSpace(executablePath) && File.Exists(executablePath);
     }
 
     /// <summary>

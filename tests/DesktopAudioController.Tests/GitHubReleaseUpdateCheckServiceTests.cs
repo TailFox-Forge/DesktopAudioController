@@ -46,6 +46,7 @@ public sealed class GitHubReleaseUpdateCheckServiceTests
         Assert.Equal("0.10.0", result.LatestVersion);
         Assert.Equal("https://example/releases/v0.10.0", result.ReleasePageUrl);
         Assert.Equal("https://example/download/v0.10.0/app.zip", result.DownloadUrl);
+        Assert.Equal("https://example/download/v0.10.0/app.zip.sha256", result.ChecksumDownloadUrl);
         Assert.True(result.IsPreRelease);
         Assert.Equal(new DateTimeOffset(2026, 6, 1, 2, 3, 4, TimeSpan.Zero), result.PublishedAtUtc);
     }
@@ -76,6 +77,7 @@ public sealed class GitHubReleaseUpdateCheckServiceTests
         Assert.False(result.IsUpdateAvailable);
         Assert.Equal("1.0.0", result.LatestVersion);
         Assert.Equal("https://example/download/v1.0.0/app.zip", result.DownloadUrl);
+        Assert.Null(result.ChecksumDownloadUrl);
         Assert.False(result.IsPreRelease);
     }
 
@@ -105,6 +107,7 @@ public sealed class GitHubReleaseUpdateCheckServiceTests
         Assert.True(result.IsUpdateAvailable);
         Assert.Equal("0.10.0", result.LatestVersion);
         Assert.Null(result.DownloadUrl);
+        Assert.Null(result.ChecksumDownloadUrl);
         Assert.Equal("https://example/releases/v0.10.0", result.ReleasePageUrl);
     }
 

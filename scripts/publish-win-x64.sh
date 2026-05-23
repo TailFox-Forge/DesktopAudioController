@@ -7,9 +7,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csproj"
+UPDATER_PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController.Updater/DesktopAudioController.Updater.csproj"
 
 # 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.13.9-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+VERSION="${1:-v0.13.10-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 
 # 우선순위:
 # 1. DOTNET_BIN 환경 변수
@@ -30,6 +31,7 @@ fi
 RUNTIME_ID="win-x64"
 PUBLISH_ROOT="${REPO_ROOT}/artifacts/release/${RUNTIME_ID}/${VERSION}"
 PUBLISH_DIR="${PUBLISH_ROOT}/publish"
+UPDATER_PUBLISH_DIR="${PUBLISH_ROOT}/updater"
 PACKAGE_DIR="${REPO_ROOT}/artifacts/release/packages"
 PACKAGE_BASENAME="DesktopAudioController-${VERSION}-${RUNTIME_ID}"
 PACKAGE_PATH="${PACKAGE_DIR}/${PACKAGE_BASENAME}.zip"
@@ -38,7 +40,7 @@ CHECKSUM_PATH="${PACKAGE_PATH}.sha256"
 # 이전 실행 산출물이 남아 있으면 혼동되므로 같은 버전의 publish 폴더와 패키지를 정리합니다.
 rm -rf "${PUBLISH_ROOT}"
 rm -f "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
-mkdir -p "${PUBLISH_DIR}" "${PACKAGE_DIR}"
+mkdir -p "${PUBLISH_DIR}" "${UPDATER_PUBLISH_DIR}" "${PACKAGE_DIR}"
 
 create_zip() {
     local source_dir="$1"
@@ -59,11 +61,13 @@ with zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED) as archi
 PY
 }
 
-echo "[1/3] publish 시작: ${VERSION}"
+echo "[1/4] publish 시작: ${VERSION}"
 echo "  - RID restore 수행: ${RUNTIME_ID}"
 "${DOTNET_BIN}" restore "${PROJECT_PATH}" \
     -r "${RUNTIME_ID}" \
     -p:EnableWindowsTargeting=true
+"${DOTNET_BIN}" restore "${UPDATER_PROJECT_PATH}" \
+    -r "${RUNTIME_ID}"
 
 "${DOTNET_BIN}" publish "${PROJECT_PATH}" \
     -c Release \
@@ -77,10 +81,23 @@ echo "  - RID restore 수행: ${RUNTIME_ID}"
     -p:EnableWindowsTargeting=true \
     -o "${PUBLISH_DIR}"
 
-echo "[2/3] zip 생성: ${PACKAGE_PATH}"
+"${DOTNET_BIN}" publish "${UPDATER_PROJECT_PATH}" \
+    -c Release \
+    -r "${RUNTIME_ID}" \
+    --self-contained true \
+    --no-restore \
+    -p:PublishSingleFile=true \
+    -p:DebugType=None \
+    -p:DebugSymbols=false \
+    -o "${UPDATER_PUBLISH_DIR}"
+
+echo "[2/4] updater 포함"
+cp "${UPDATER_PUBLISH_DIR}/DesktopAudioController.Updater.exe" "${PUBLISH_DIR}/DesktopAudioController.Updater.exe"
+
+echo "[3/4] zip 생성: ${PACKAGE_PATH}"
 create_zip "${PUBLISH_DIR}" "${PACKAGE_PATH}"
 
-echo "[3/3] sha256 생성: ${CHECKSUM_PATH}"
+echo "[4/4] sha256 생성: ${CHECKSUM_PATH}"
 (
     cd "${PACKAGE_DIR}"
     sha256sum "${PACKAGE_BASENAME}.zip" > "${CHECKSUM_PATH}"

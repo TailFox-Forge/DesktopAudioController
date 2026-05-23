@@ -83,6 +83,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
                     LatestVersion = releaseCandidate.VersionText,
                     ReleasePageUrl = releaseCandidate.ReleasePageUrl,
                     DownloadUrl = releaseCandidate.DownloadUrl,
+                    ChecksumDownloadUrl = releaseCandidate.ChecksumDownloadUrl,
                     PublishedAtUtc = releaseCandidate.PublishedAtUtc,
                     IsPreRelease = releaseCandidate.IsPreRelease
                 };
@@ -94,6 +95,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
                 LatestVersion = releaseCandidate.VersionText,
                 ReleasePageUrl = releaseCandidate.ReleasePageUrl,
                 DownloadUrl = releaseCandidate.DownloadUrl,
+                ChecksumDownloadUrl = releaseCandidate.ChecksumDownloadUrl,
                 PublishedAtUtc = releaseCandidate.PublishedAtUtc,
                 IsPreRelease = releaseCandidate.IsPreRelease
             };
@@ -154,7 +156,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             var releasePageUrl = releaseElement.TryGetProperty("html_url", out var htmlUrlProperty)
                 ? htmlUrlProperty.GetString() ?? string.Empty
                 : string.Empty;
-            var downloadUrl = TryGetPortableZipDownloadUrl(releaseElement);
+            var (downloadUrl, checksumDownloadUrl) = TryGetPortableZipAssets(releaseElement);
             var publishedAtUtc = TryGetPublishedAtUtc(releaseElement);
             var isPreRelease = releaseElement.TryGetProperty("prerelease", out var prereleaseProperty)
                 && prereleaseProperty.GetBoolean();
@@ -168,6 +170,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
                 comparableVersion,
                 releasePageUrl,
                 downloadUrl,
+                checksumDownloadUrl,
                 publishedAtUtc,
                 isPreRelease);
 
@@ -233,14 +236,17 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
         return client;
     }
 
-    private static string? TryGetPortableZipDownloadUrl(JsonElement releaseElement)
+    private static (string? DownloadUrl, string? ChecksumDownloadUrl) TryGetPortableZipAssets(JsonElement releaseElement)
     {
         if (!releaseElement.TryGetProperty("assets", out var assetsElement) || assetsElement.ValueKind != JsonValueKind.Array)
         {
-            return null;
+            return (null, null);
         }
 
+        string? exactZipUrl = null;
+        string? exactChecksumUrl = null;
         string? fallbackZipUrl = null;
+        string? fallbackChecksumUrl = null;
 
         foreach (var assetElement in assetsElement.EnumerateArray())
         {
@@ -250,7 +256,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             }
 
             var assetName = nameProperty.GetString();
-            if (string.IsNullOrWhiteSpace(assetName) || assetName.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(assetName))
             {
                 continue;
             }
@@ -266,9 +272,22 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
                 continue;
             }
 
+            if (assetName.EndsWith($"{PortableZipSuffix}.sha256", StringComparison.OrdinalIgnoreCase))
+            {
+                exactChecksumUrl = assetUrl;
+                continue;
+            }
+
             if (assetName.EndsWith(PortableZipSuffix, StringComparison.OrdinalIgnoreCase))
             {
-                return assetUrl;
+                exactZipUrl = assetUrl;
+                continue;
+            }
+
+            if (assetName.EndsWith(".zip.sha256", StringComparison.OrdinalIgnoreCase) && fallbackChecksumUrl is null)
+            {
+                fallbackChecksumUrl = assetUrl;
+                continue;
             }
 
             if (assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && fallbackZipUrl is null)
@@ -277,7 +296,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
             }
         }
 
-        return fallbackZipUrl;
+        return (exactZipUrl ?? fallbackZipUrl, exactChecksumUrl ?? fallbackChecksumUrl);
     }
 
     private static DateTimeOffset? TryGetPublishedAtUtc(JsonElement releaseElement)
@@ -360,6 +379,7 @@ public sealed class GitHubReleaseUpdateCheckService : IUpdateCheckService
         ComparableVersion Version,
         string ReleasePageUrl,
         string? DownloadUrl,
+        string? ChecksumDownloadUrl,
         DateTimeOffset? PublishedAtUtc,
         bool IsPreRelease) : IComparable<ReleaseCandidate>
     {

@@ -27,6 +27,12 @@ public sealed class UpdateCheckResult
     public string? DownloadUrl { get; init; }
 
     /// <summary>
+    /// zip 배포 파일의 sha256 체크섬 다운로드 URL입니다.
+    /// 없으면 자동 업데이트 대신 수동 다운로드로 안내합니다.
+    /// </summary>
+    public string? ChecksumDownloadUrl { get; init; }
+
+    /// <summary>
     /// 감지된 최신 릴리즈의 공개 시각입니다.
     /// </summary>
     public DateTimeOffset? PublishedAtUtc { get; init; }

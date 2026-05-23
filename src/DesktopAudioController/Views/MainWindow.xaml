@@ -51,8 +51,8 @@
                         Width="96"
                         Margin="0,0,8,0"
                         Click="UpdateButton_OnClick"
-                        Content="다운로드"
-                        ToolTip="새 zip을 내려받은 뒤 기존 실행 폴더에 덮어씁니다."
+                        Content="업데이트"
+                        ToolTip="새 zip을 자동 다운로드한 뒤 기존 실행 폴더에 덮어씁니다."
                         Visibility="Collapsed" />
                 <Button Width="104"
                         Margin="0,0,8,0"
