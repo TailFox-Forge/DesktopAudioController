@@ -94,7 +94,7 @@ public partial class MainWindow : Window
     // 사용자를 GitHub 릴리즈 목록으로 보내는 고정 URL입니다.
     private static readonly string ReleasesPageUrl = "https://github.com/TailFox-Forge/DesktopAudioController/releases";
 
-    // 상태 이벤트 폭주 시 즉시 재열거하지 않도록 짧게 모아두는 지연 시간입니다.
+    // 상태 이벤트 폭주 시 즉시 세션 갱신하지 않도록 짧게 모아두는 지연 시간입니다.
     private static readonly TimeSpan StateRefreshCoalescingDelay = TimeSpan.FromMilliseconds(120);
 
     // 일부 가상 장치는 기본 장치 변경 후 기본 장치 이벤트를 늦게 보내거나 보내지 않아, 짧게 기다린 뒤 상태를 한 번 더 맞춥니다.
@@ -1338,7 +1338,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                await RefreshStateViewAsync();
+                await RefreshNotificationStateViewAsync();
             }
 
             lock (_notificationRefreshSyncRoot)
@@ -1350,6 +1350,16 @@ public partial class MainWindow : Window
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 오디오 상태 이벤트는 장치 재열거 없이, 사용자가 열어둔 프로그램 세션 목록만 갱신합니다.
+    /// </summary>
+    private Task<bool> RefreshNotificationStateViewAsync()
+    {
+        return _viewModel.HasExpandedSessionDevices
+            ? RefreshSessionViewAsync("notification_state_event")
+            : Task.FromResult(true);
     }
 
     /// <summary>
