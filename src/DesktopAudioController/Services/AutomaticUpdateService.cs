@@ -126,7 +126,8 @@ public sealed class AutomaticUpdateService
                         currentProcessId,
                         applicationDirectory,
                         applicationExecutablePath,
-                        packagePath);
+                        packagePath,
+                        updateCheckResult.LatestVersion);
 
                     return Task.CompletedTask;
                 },
@@ -225,7 +226,8 @@ public sealed class AutomaticUpdateService
         int currentProcessId,
         string applicationDirectory,
         string applicationExecutablePath,
-        string packagePath)
+        string packagePath,
+        string? version)
     {
         var startInfo = new ProcessStartInfo(updaterPath)
         {
@@ -241,6 +243,11 @@ public sealed class AutomaticUpdateService
         startInfo.ArgumentList.Add(applicationExecutablePath);
         startInfo.ArgumentList.Add("--package");
         startInfo.ArgumentList.Add(packagePath);
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            startInfo.ArgumentList.Add("--version");
+            startInfo.ArgumentList.Add(version);
+        }
 
         _ = Process.Start(startInfo)
             ?? throw new InvalidOperationException("업데이트 적용 프로세스를 시작하지 못했습니다.");

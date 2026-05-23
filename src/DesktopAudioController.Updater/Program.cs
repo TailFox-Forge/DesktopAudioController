@@ -10,14 +10,14 @@ namespace DesktopAudioController.Updater;
 /// </summary>
 internal static class Program
 {
-    private const int MaxCopyAttempts = 20;
     private const string ApplicationExecutableName = "DesktopAudioController.exe";
     private const string PreferredPayloadDirectoryName = "DesktopAudioController";
     private static readonly TimeSpan ProcessExitTimeout = TimeSpan.FromSeconds(45);
-    private static readonly TimeSpan CopyRetryDelay = TimeSpan.FromMilliseconds(300);
 
     public static int Main(string[] args)
     {
+        UpdaterLog.TryInitialize();
+
         try
         {
             var options = UpdaterOptions.Parse(args);
@@ -34,23 +34,48 @@ internal static class Program
 
     private static void RunUpdate(UpdaterOptions options)
     {
+        UpdaterLog.Info($"업데이트 적용 시작 version={options.Version ?? "unknown"} target={options.TargetDirectory}");
+
         // 메인 앱 프로세스가 살아 있으면 exe/dll 파일이 잠겨 덮어쓰기가 실패할 수 있습니다.
         WaitForTargetProcessExit(options.ProcessId);
 
         var workDirectory = Path.GetDirectoryName(options.PackagePath)
             ?? Path.Combine(Path.GetTempPath(), "DesktopAudioController", "updates");
         var extractDirectory = Path.Combine(workDirectory, "extracted");
+        var backupDirectory = Path.Combine(workDirectory, "backup");
 
         if (Directory.Exists(extractDirectory))
         {
             Directory.Delete(extractDirectory, recursive: true);
         }
 
+        if (Directory.Exists(backupDirectory))
+        {
+            Directory.Delete(backupDirectory, recursive: true);
+        }
+
         Directory.CreateDirectory(extractDirectory);
         ZipFile.ExtractToDirectory(options.PackagePath, extractDirectory, overwriteFiles: true);
         var payloadDirectory = ResolvePayloadDirectory(extractDirectory);
-        CopyDirectory(payloadDirectory, options.TargetDirectory);
+
+        var backup = UpdaterFileSystem.CreateBackup(options.TargetDirectory, backupDirectory);
+        UpdaterLog.Info(
+            $"기존 파일 백업 완료 files={backup.RelativeFilePaths.Count} directories={backup.RelativeDirectoryPaths.Count}");
+
+        try
+        {
+            UpdaterFileSystem.CopyDirectory(payloadDirectory, options.TargetDirectory);
+        }
+        catch (Exception exception)
+        {
+            UpdaterLog.Error("업데이트 파일 교체 실패. 백업 복구를 시도합니다.", exception);
+            TryRollback(backup, options.TargetDirectory, payloadDirectory);
+            throw;
+        }
+
+        UpdaterLog.Info("업데이트 파일 교체 완료");
         StartApplication(options.ApplicationExecutablePath, options.TargetDirectory);
+        UpdaterLog.Info("업데이트된 앱 재실행 요청 완료");
     }
 
     private static string ResolvePayloadDirectory(string extractDirectory)
@@ -97,49 +122,6 @@ internal static class Program
         }
     }
 
-    private static void CopyDirectory(string sourceDirectory, string targetDirectory)
-    {
-        Directory.CreateDirectory(targetDirectory);
-
-        foreach (var directoryPath in Directory.EnumerateDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
-        {
-            var relativePath = Path.GetRelativePath(sourceDirectory, directoryPath);
-            Directory.CreateDirectory(Path.Combine(targetDirectory, relativePath));
-        }
-
-        foreach (var sourceFilePath in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
-        {
-            var relativePath = Path.GetRelativePath(sourceDirectory, sourceFilePath);
-            var targetFilePath = Path.Combine(targetDirectory, relativePath);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetFilePath)!);
-            CopyFileWithRetry(sourceFilePath, targetFilePath);
-        }
-    }
-
-    private static void CopyFileWithRetry(string sourceFilePath, string targetFilePath)
-    {
-        for (var attempt = 1; attempt <= MaxCopyAttempts; attempt++)
-        {
-            try
-            {
-                File.Copy(sourceFilePath, targetFilePath, overwrite: true);
-                return;
-            }
-            catch (IOException) when (attempt < MaxCopyAttempts)
-            {
-                // 백신/인덱서/종료 직후 파일 잠금이 잠깐 남는 경우가 있어 짧게 재시도합니다.
-                Thread.Sleep(CopyRetryDelay);
-            }
-            catch (UnauthorizedAccessException) when (attempt < MaxCopyAttempts)
-            {
-                // 권한 오류도 파일 잠금으로 표면화될 때가 있어 동일하게 재시도합니다.
-                Thread.Sleep(CopyRetryDelay);
-            }
-        }
-
-        File.Copy(sourceFilePath, targetFilePath, overwrite: true);
-    }
-
     private static void StartApplication(string applicationExecutablePath, string targetDirectory)
     {
         Process.Start(new ProcessStartInfo(applicationExecutablePath)
@@ -149,8 +131,27 @@ internal static class Program
         });
     }
 
+    private static void TryRollback(DirectoryBackup backup, string targetDirectory, string payloadDirectory)
+    {
+        try
+        {
+            UpdaterFileSystem.RestoreBackup(backup, targetDirectory, payloadDirectory);
+            UpdaterLog.Info("백업 복구 완료");
+        }
+        catch (Exception rollbackException)
+        {
+            UpdaterLog.Error("백업 복구 실패", rollbackException);
+        }
+    }
+
     private static void TryWriteFailureLog(Exception exception)
     {
+        if (UpdaterLog.IsInitialized)
+        {
+            UpdaterLog.Error("업데이트 적용 실패", exception);
+            return;
+        }
+
         try
         {
             var logDirectory = Path.Combine(
@@ -190,7 +191,8 @@ internal sealed record UpdaterOptions(
     int ProcessId,
     string TargetDirectory,
     string ApplicationExecutablePath,
-    string PackagePath)
+    string PackagePath,
+    string? Version)
 {
     public static UpdaterOptions Parse(string[] args)
     {
@@ -214,6 +216,7 @@ internal sealed record UpdaterOptions(
         var targetDirectory = Path.GetFullPath(Require(values, "--target-dir"));
         var applicationExecutablePath = Path.GetFullPath(Require(values, "--app-exe"));
         var packagePath = Path.GetFullPath(Require(values, "--package"));
+        values.TryGetValue("--version", out var version);
 
         if (!Directory.Exists(targetDirectory))
         {
@@ -225,7 +228,12 @@ internal sealed record UpdaterOptions(
             throw new FileNotFoundException("업데이트 zip 파일을 찾지 못했습니다.", packagePath);
         }
 
-        return new UpdaterOptions(processId, targetDirectory, applicationExecutablePath, packagePath);
+        return new UpdaterOptions(
+            processId,
+            targetDirectory,
+            applicationExecutablePath,
+            packagePath,
+            string.IsNullOrWhiteSpace(version) ? null : version);
     }
 
     private static string Require(IReadOnlyDictionary<string, string> values, string key)

@@ -47,6 +47,7 @@
     <Compile Include="..\..\src\DesktopAudioController\Services\SettingsPersistenceException.cs" Link="Source\Services\SettingsPersistenceException.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\SettingsService.cs" Link="Source\Services\SettingsService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\UpdateCheckResult.cs" Link="Source\Services\UpdateCheckResult.cs" />
+    <Compile Include="..\..\src\DesktopAudioController.Updater\UpdaterFileSystem.cs" Link="Source\Updater\UpdaterFileSystem.cs" />
   </ItemGroup>
 
 </Project>

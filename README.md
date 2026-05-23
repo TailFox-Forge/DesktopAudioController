@@ -4,7 +4,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 기본 Windows 볼륨 믹서보다 좁은 목적에 맞춰 만들어졌습니다. 사용자가 고른 출력 장치만 메인 화면에 표시하고, 각 장치에서 실제로 소리를 내는 프로그램 세션을 장치 카드 안에서 바로 조절합니다.
 
-- 최신 버전: `v0.15.1`
+- 최신 버전: `v0.15.2`
 - 배포 형태: `win-x64` portable zip
 - 실행 환경: Windows 10/11 x64
 - 릴리즈 페이지: <https://github.com/TailFox-Forge/DesktopAudioController/releases>
@@ -23,7 +23,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 ## 빠른 시작
 
-1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.15.1-win-x64.zip`을 다운로드합니다.
+1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.15.2-win-x64.zip`을 다운로드합니다.
 2. 원하는 위치에 압축을 풉니다.
 
 ```text
@@ -161,11 +161,15 @@ Strinova-Win64-Shipping.exe -> Strinova
 3. 업데이트 파일 무결성 확인
 4. DesktopAudioController.Updater.exe 실행
 5. 본 앱 종료 대기
-6. 기존 실행 폴더에 새 파일 덮어쓰기
-7. 새 버전 앱 재실행 시도
+6. 기존 실행 폴더 백업
+7. 기존 실행 폴더에 새 파일 덮어쓰기
+8. 실패 시 백업본으로 복구 시도
+9. 새 버전 앱 재실행 시도
 ```
 
 `v0.13.10` 이전 버전에는 updater가 없으므로 한 번은 수동으로 zip을 덮어써야 합니다. `v0.13.10` 이후 버전부터는 앱 안의 업데이트 버튼을 사용할 수 있습니다.
+
+업데이트 적용 과정은 updater 전용 로그에도 기록됩니다. 파일 교체 중 실패하면 가능한 범위에서 기존 파일을 백업본으로 되돌린 뒤 앱을 다시 실행합니다.
 
 ### 수동 업데이트
 
@@ -207,6 +211,7 @@ Strinova-Win64-Shipping.exe -> Strinova
 
 ```text
 %LocalAppData%\DesktopAudioController\logs\DesktopAudioController-YYYYMMDD.log
+%LocalAppData%\DesktopAudioController\logs\DesktopAudioController-Updater-YYYYMMDDHHMMSS.log
 ```
 
 로그 보관 방식:
@@ -420,7 +425,7 @@ dotnet build src/DesktopAudioController.Updater/DesktopAudioController.Updater.c
 ### 배포 zip 생성
 
 ```bash
-bash scripts/publish-win-x64.sh v0.15.1-local
+bash scripts/publish-win-x64.sh v0.15.2-local
 ```
 
 생성되는 파일:
