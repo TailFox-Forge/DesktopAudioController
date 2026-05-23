@@ -24,22 +24,105 @@ internal static class ApplicationAudioOutputPolicy
             throw new ArgumentException("대상 출력 장치 ID가 비어 있습니다.", nameof(targetDeviceId));
         }
 
-        using var factory = CreateFactory();
-        var endpointId = IntPtr.Zero;
+        ApplyPolicyToRoles(
+            targetDeviceId,
+            role => factoryCall(role),
+            roleSuccessLog: role =>
+                $"앱별 출력 정책 변경 성공 processId={processId} role={role} targetDeviceId={targetDeviceId}",
+            roleFailureLog: (role, hresult) =>
+                $"앱별 출력 정책 변경 실패 processId={processId} role={role} targetDeviceId={targetDeviceId} hresult={hresult}",
+            partialFailureLog: (successfulRoles, failedRoles) =>
+                $"앱별 출력 정책 일부 role 실패 processId={processId} successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
+        return;
+
+        uint factoryCall(AudioRole role)
+        {
+            using var factory = CreateFactory();
+            var endpointId = IntPtr.Zero;
+            try
+            {
+                ThrowIfFailed(WindowsCreateString(targetDeviceId, (uint)targetDeviceId.Length, out endpointId));
+                return factory.SetPersistedDefaultAudioEndpoint(processId, AudioDataFlow.Render, role, endpointId);
+            }
+            finally
+            {
+                if (endpointId != IntPtr.Zero)
+                {
+                    WindowsDeleteString(endpointId);
+                }
+            }
+        }
+    }
+
+    public static void SetPersistedDefaultOutputDeviceForAppIdentifier(string appIdentifier, string targetDeviceId)
+    {
+        if (string.IsNullOrWhiteSpace(appIdentifier))
+        {
+            throw new ArgumentException("앱 식별자가 비어 있습니다.", nameof(appIdentifier));
+        }
+
+        if (string.IsNullOrWhiteSpace(targetDeviceId))
+        {
+            throw new ArgumentException("대상 출력 장치 ID가 비어 있습니다.", nameof(targetDeviceId));
+        }
+
+        ApplyPolicyToRoles(
+            targetDeviceId,
+            role => factoryCall(role),
+            roleSuccessLog: role =>
+                $"앱별 출력 정책 변경 성공 appIdentifierSource=audio-session role={role} targetDeviceId={targetDeviceId}",
+            roleFailureLog: (role, hresult) =>
+                $"앱별 출력 정책 변경 실패 appIdentifierSource=audio-session role={role} targetDeviceId={targetDeviceId} hresult={hresult}",
+            partialFailureLog: (successfulRoles, failedRoles) =>
+                $"앱별 출력 정책 일부 role 실패 appIdentifierSource=audio-session successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
+        return;
+
+        uint factoryCall(AudioRole role)
+        {
+            using var factory = CreateFactory();
+            var appIdentifierId = IntPtr.Zero;
+            var endpointId = IntPtr.Zero;
+            try
+            {
+                ThrowIfFailed(WindowsCreateString(appIdentifier, (uint)appIdentifier.Length, out appIdentifierId));
+                ThrowIfFailed(WindowsCreateString(targetDeviceId, (uint)targetDeviceId.Length, out endpointId));
+                return factory.SetPersistedDefaultAudioEndpoint(appIdentifierId, AudioDataFlow.Render, role, endpointId);
+            }
+            finally
+            {
+                if (endpointId != IntPtr.Zero)
+                {
+                    WindowsDeleteString(endpointId);
+                }
+
+                if (appIdentifierId != IntPtr.Zero)
+                {
+                    WindowsDeleteString(appIdentifierId);
+                }
+            }
+        }
+    }
+
+    private static void ApplyPolicyToRoles(
+        string targetDeviceId,
+        Func<AudioRole, uint> applyRole,
+        Func<AudioRole, string> roleSuccessLog,
+        Func<AudioRole, string, string> roleFailureLog,
+        Func<IReadOnlyCollection<AudioRole>, IReadOnlyCollection<string>, string> partialFailureLog)
+    {
         var successfulRoles = new List<AudioRole>();
         var failedRoles = new List<string>();
         try
         {
-            ThrowIfFailed(WindowsCreateString(targetDeviceId, (uint)targetDeviceId.Length, out endpointId));
             foreach (var role in GetPolicyRoles())
             {
-                var hresult = factory.SetPersistedDefaultAudioEndpoint(processId, AudioDataFlow.Render, role, endpointId);
+                var hresult = applyRole(role);
                 if (IsSuccess(hresult))
                 {
                     successfulRoles.Add(role);
                     AppLog.Info(
                         "ApplicationAudioOutputPolicy",
-                        $"앱별 출력 정책 변경 성공 processId={processId} role={role} targetDeviceId={targetDeviceId}");
+                        roleSuccessLog(role));
                     continue;
                 }
 
@@ -47,7 +130,7 @@ internal static class ApplicationAudioOutputPolicy
                 failedRoles.Add($"{role}:{formattedResult}");
                 AppLog.Warn(
                     "ApplicationAudioOutputPolicy",
-                    $"앱별 출력 정책 변경 실패 processId={processId} role={role} targetDeviceId={targetDeviceId} hresult={formattedResult}");
+                    roleFailureLog(role, formattedResult));
             }
 
             if (successfulRoles.Count == 0)
@@ -60,15 +143,12 @@ internal static class ApplicationAudioOutputPolicy
             {
                 AppLog.Warn(
                     "ApplicationAudioOutputPolicy",
-                    $"앱별 출력 정책 일부 role 실패 processId={processId} successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
+                    partialFailureLog(successfulRoles, failedRoles));
             }
         }
-        finally
+        catch (Exception exception) when (!string.IsNullOrWhiteSpace(targetDeviceId))
         {
-            if (endpointId != IntPtr.Zero)
-            {
-                WindowsDeleteString(endpointId);
-            }
+            throw new InvalidOperationException(exception.Message, exception);
         }
     }
 
@@ -180,7 +260,8 @@ internal static class ApplicationAudioOutputPolicy
 
     private sealed class AudioPolicyConfigFactory : IDisposable
     {
-        private readonly SetPersistedDefaultAudioEndpointDelegate _setPersistedDefaultAudioEndpoint;
+        private readonly SetPersistedDefaultAudioEndpointForProcessDelegate _setPersistedDefaultAudioEndpointForProcess;
+        private readonly SetPersistedDefaultAudioEndpointForAppIdentifierDelegate _setPersistedDefaultAudioEndpointForAppIdentifier;
         private IntPtr _nativePointer;
 
         public AudioPolicyConfigFactory(IntPtr nativePointer)
@@ -195,8 +276,10 @@ internal static class ApplicationAudioOutputPolicy
             var methodPointer = Marshal.ReadIntPtr(
                 vtable,
                 SetPersistedDefaultAudioEndpointVtableSlot * IntPtr.Size);
-            _setPersistedDefaultAudioEndpoint =
-                Marshal.GetDelegateForFunctionPointer<SetPersistedDefaultAudioEndpointDelegate>(methodPointer);
+            _setPersistedDefaultAudioEndpointForProcess =
+                Marshal.GetDelegateForFunctionPointer<SetPersistedDefaultAudioEndpointForProcessDelegate>(methodPointer);
+            _setPersistedDefaultAudioEndpointForAppIdentifier =
+                Marshal.GetDelegateForFunctionPointer<SetPersistedDefaultAudioEndpointForAppIdentifierDelegate>(methodPointer);
         }
 
         public uint SetPersistedDefaultAudioEndpoint(
@@ -206,7 +289,17 @@ internal static class ApplicationAudioOutputPolicy
             IntPtr endpointId)
         {
             ObjectDisposedException.ThrowIf(_nativePointer == IntPtr.Zero, this);
-            return _setPersistedDefaultAudioEndpoint(_nativePointer, processId, flow, role, endpointId);
+            return _setPersistedDefaultAudioEndpointForProcess(_nativePointer, processId, flow, role, endpointId);
+        }
+
+        public uint SetPersistedDefaultAudioEndpoint(
+            IntPtr appIdentifier,
+            AudioDataFlow flow,
+            AudioRole role,
+            IntPtr endpointId)
+        {
+            ObjectDisposedException.ThrowIf(_nativePointer == IntPtr.Zero, this);
+            return _setPersistedDefaultAudioEndpointForAppIdentifier(_nativePointer, appIdentifier, flow, role, endpointId);
         }
 
         public void Dispose()
@@ -222,9 +315,17 @@ internal static class ApplicationAudioOutputPolicy
     }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate uint SetPersistedDefaultAudioEndpointDelegate(
+    private delegate uint SetPersistedDefaultAudioEndpointForProcessDelegate(
         IntPtr self,
         uint processId,
+        AudioDataFlow flow,
+        AudioRole role,
+        IntPtr endpointId);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate uint SetPersistedDefaultAudioEndpointForAppIdentifierDelegate(
+        IntPtr self,
+        IntPtr appIdentifier,
         AudioDataFlow flow,
         AudioRole role,
         IntPtr endpointId);
