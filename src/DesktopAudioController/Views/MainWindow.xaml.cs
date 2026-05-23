@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
@@ -1501,24 +1500,7 @@ public partial class MainWindow : Window
     /// </summary>
     private static string GetApplicationVersionText()
     {
-        // assembly는 현재 실행 중인 WPF 앱의 진입 어셈블리입니다.
-        var assembly = Assembly.GetExecutingAssembly();
-
-        // informationalVersion은 prerelease 접미사를 포함한 사람이 읽기 좋은 버전 문자열입니다.
-        var informationalVersion = assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion;
-
-        if (!string.IsNullOrWhiteSpace(informationalVersion))
-        {
-            // SourceLink 등이 붙여준 build metadata는 화면에 불필요하므로 '+' 뒤는 잘라냅니다.
-            var metadataSeparatorIndex = informationalVersion.IndexOf('+');
-            return metadataSeparatorIndex >= 0
-            ? informationalVersion[..metadataSeparatorIndex]
-                : informationalVersion;
-        }
-
-        return assembly.GetName().Version?.ToString() ?? "알 수 없음";
+        return AppBuildInfo.Version;
     }
 
     private static bool TryGetCurrentExecutablePath(out string executablePath)

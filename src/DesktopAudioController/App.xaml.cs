@@ -111,6 +111,7 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
         AppLog.Initialize();
+        AppLog.Info("App", $"Build info {AppBuildInfo.LogSummary}");
         AppLog.Info("App", $"OnStartup args=[{string.Join(", ", e.Args)}]");
         if (AudioDeviceProbeCommand.TryParse(e.Args, out var probeOutputPath))
         {

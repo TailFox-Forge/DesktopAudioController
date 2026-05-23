@@ -10,7 +10,11 @@ PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csp
 UPDATER_PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController.Updater/DesktopAudioController.Updater.csproj"
 
 # 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.13.14-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+VERSION="${1:-v0.13.15-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || true)"
+if [[ -z "${GIT_COMMIT}" ]]; then
+    GIT_COMMIT="unknown"
+fi
 
 # 우선순위:
 # 1. DOTNET_BIN 환경 변수
@@ -64,6 +68,7 @@ PY
 }
 
 echo "[1/4] publish 시작: ${VERSION}"
+echo "  - sourceRevision: ${GIT_COMMIT}"
 echo "  - RID restore 수행: ${RUNTIME_ID}"
 "${DOTNET_BIN}" restore "${PROJECT_PATH}" \
     -r "${RUNTIME_ID}" \
@@ -81,6 +86,7 @@ echo "  - RID restore 수행: ${RUNTIME_ID}"
     -p:DebugType=None \
     -p:DebugSymbols=false \
     -p:EnableWindowsTargeting=true \
+    -p:SourceRevisionId="${GIT_COMMIT}" \
     -o "${PUBLISH_DIR}"
 
 "${DOTNET_BIN}" publish "${UPDATER_PROJECT_PATH}" \

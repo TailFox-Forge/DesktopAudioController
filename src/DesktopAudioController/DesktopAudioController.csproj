@@ -2,7 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <Version>0.13.14</Version>
+    <Version>0.13.15</Version>
+    <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">unknown</SourceRevisionId>
+    <InformationalVersion>$(Version)+$(SourceRevisionId)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -13,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyMetadata Include="GitCommit" Value="$(SourceRevisionId)" />
     <!-- Windows Core Audio API 래퍼: 장치 열거, 볼륨/음소거, 세션 조회에 사용합니다. -->
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
