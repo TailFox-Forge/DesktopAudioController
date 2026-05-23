@@ -47,8 +47,7 @@ internal static class ApplicationAudioOutputPolicy
         try
         {
             var iid = AudioPolicyConfigFactoryIdFor21H2;
-            RoGetActivationFactory(AudioPolicyConfigClassName, ref iid, out var factory);
-            return (IAudioPolicyConfigFactoryFor21H2)factory;
+            return (IAudioPolicyConfigFactoryFor21H2)GetActivationFactory(iid);
         }
         catch (COMException exception)
         {
@@ -57,8 +56,31 @@ internal static class ApplicationAudioOutputPolicy
                 "21H2 AudioPolicyConfigFactory 활성화 실패, downlevel 팩토리로 재시도",
                 exception);
             var iid = AudioPolicyConfigFactoryIdForDownlevel;
-            RoGetActivationFactory(AudioPolicyConfigClassName, ref iid, out var factory);
-            return (IAudioPolicyConfigFactoryForDownlevel)factory;
+            return (IAudioPolicyConfigFactoryForDownlevel)GetActivationFactory(iid);
+        }
+    }
+
+    private static object GetActivationFactory(Guid iid)
+    {
+        var className = IntPtr.Zero;
+        var factory = IntPtr.Zero;
+        try
+        {
+            ThrowIfFailed(WindowsCreateString(AudioPolicyConfigClassName, (uint)AudioPolicyConfigClassName.Length, out className));
+            ThrowIfFailed(RoGetActivationFactory(className, ref iid, out factory));
+            return Marshal.GetObjectForIUnknown(factory);
+        }
+        finally
+        {
+            if (factory != IntPtr.Zero)
+            {
+                Marshal.Release(factory);
+            }
+
+            if (className != IntPtr.Zero)
+            {
+                WindowsDeleteString(className);
+            }
         }
     }
 
@@ -103,11 +125,11 @@ internal static class ApplicationAudioOutputPolicy
         }
     }
 
-    [DllImport("combase.dll", PreserveSig = false)]
-    private static extern void RoGetActivationFactory(
-        [MarshalAs(UnmanagedType.HString)] string activatableClassId,
-        [In] ref Guid iid,
-        [MarshalAs(UnmanagedType.IInspectable)] out object factory);
+    [DllImport("combase.dll", ExactSpelling = true, PreserveSig = true)]
+    private static extern int RoGetActivationFactory(
+        IntPtr activatableClassId,
+        ref Guid iid,
+        out IntPtr factory);
 
     [DllImport("combase.dll", ExactSpelling = true, PreserveSig = true)]
     private static extern int WindowsCreateString(
@@ -187,7 +209,7 @@ internal static class ApplicationAudioOutputPolicy
             uint processId,
             AudioDataFlow flow,
             AudioRole role,
-            [Out, MarshalAs(UnmanagedType.HString)] out string deviceId);
+            out IntPtr deviceId);
 
         [PreserveSig]
         uint ClearAllPersistedApplicationDefaultEndpoints();
@@ -248,7 +270,7 @@ internal static class ApplicationAudioOutputPolicy
             uint processId,
             AudioDataFlow flow,
             AudioRole role,
-            [Out, MarshalAs(UnmanagedType.HString)] out string deviceId);
+            out IntPtr deviceId);
 
         [PreserveSig]
         uint ClearAllPersistedApplicationDefaultEndpoints();
