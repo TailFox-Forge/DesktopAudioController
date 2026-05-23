@@ -1112,6 +1112,31 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 세션 출력 변경 메뉴에 표시할 출력 장치 목록을 최신 상태로 가져옵니다.
+    /// </summary>
+    public async Task<IReadOnlyList<AudioDeviceInfo>> GetAvailableOutputDevicesForSessionRoutingAsync()
+    {
+        var devices = await Task.Run(_audioDeviceCatalogService.GetAvailableOutputDevices);
+        return devices
+            .Where(device => device.IsConnected)
+            .OrderByDescending(device => device.IsDefault)
+            .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// 지정한 프로그램 세션의 앱별 출력 장치 정책을 변경합니다.
+    /// </summary>
+    public Task SetSessionOutputDeviceAsync(string deviceId, string sessionId, string targetDeviceId)
+    {
+        AppLog.Info(
+            "MainViewModel",
+            $"세션 출력 장치 변경 서비스 전달 deviceId={deviceId} sessionId={sessionId} targetDeviceId={targetDeviceId}");
+
+        return Task.Run(() => _audioSessionService.SetSessionOutputDevice(deviceId, sessionId, targetDeviceId));
+    }
+
+    /// <summary>
     /// 세션 볼륨 변경을 서비스 계층으로 전달합니다.
     /// </summary>
     private void OnSessionVolumeChanged(string deviceId, string sessionId, int volume)

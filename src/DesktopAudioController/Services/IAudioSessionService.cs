@@ -21,4 +21,9 @@ public interface IAudioSessionService
     /// 지정한 장치의 특정 세션 음소거 상태를 설정합니다.
     /// </summary>
     void SetSessionMuted(string deviceId, string sessionId, bool muted);
+
+    /// <summary>
+    /// 지정한 세션을 소유한 앱의 출력 장치 정책을 변경합니다.
+    /// </summary>
+    void SetSessionOutputDevice(string deviceId, string sessionId, string targetDeviceId);
 }

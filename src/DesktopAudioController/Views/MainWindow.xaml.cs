@@ -5,12 +5,17 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
+using DesktopAudioController.Models;
 using DesktopAudioController.Services;
 using DesktopAudioController.ViewModels;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
+using WpfButton = System.Windows.Controls.Button;
+using WpfContextMenu = System.Windows.Controls.ContextMenu;
+using WpfMenuItem = System.Windows.Controls.MenuItem;
+using WpfPlacementMode = System.Windows.Controls.Primitives.PlacementMode;
 
 namespace DesktopAudioController.Views;
 
@@ -618,6 +623,101 @@ public partial class MainWindow : Window
         await ReloadViewModelAsync("custom_session_name_saved");
     }
 
+    /// <summary>
+    /// 세션을 소유한 앱의 출력 장치를 선택할 수 있는 메뉴를 엽니다.
+    /// </summary>
+    private async void ChangeSessionOutputButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not WpfButton button || button.DataContext is not AudioSessionViewModel session)
+        {
+            return;
+        }
+
+        button.IsEnabled = false;
+        try
+        {
+            ShowMainStatus("출력 장치 목록을 불러오는 중...");
+            var devices = await _viewModel.GetAvailableOutputDevicesForSessionRoutingAsync();
+            if (devices.Count == 0)
+            {
+                ShowMainStatus("변경 가능한 출력 장치가 없습니다.", isError: true);
+                button.IsEnabled = true;
+                return;
+            }
+
+            var contextMenu = new WpfContextMenu
+            {
+                PlacementTarget = button,
+                Placement = WpfPlacementMode.Bottom
+            };
+
+            foreach (var device in devices)
+            {
+                var menuItem = new WpfMenuItem
+                {
+                    Header = FormatOutputDeviceMenuHeader(device, session.DeviceId),
+                    IsEnabled = !string.Equals(device.Id, session.DeviceId, StringComparison.Ordinal)
+                };
+                menuItem.Click += async (_, _) => await SetSessionOutputDeviceFromMenuAsync(session, device);
+                contextMenu.Items.Add(menuItem);
+            }
+
+            contextMenu.Closed += (_, _) => button.IsEnabled = true;
+            button.ContextMenu = contextMenu;
+            contextMenu.IsOpen = true;
+        }
+        catch (Exception exception)
+        {
+            button.IsEnabled = true;
+            ShowMainStatus("출력 장치 목록을 불러오지 못했습니다.", isError: true);
+            AppLog.Warn("MainWindow", $"세션 출력 장치 메뉴 로딩 실패 sessionId={session.Id}", exception);
+        }
+    }
+
+    private async Task SetSessionOutputDeviceFromMenuAsync(AudioSessionViewModel session, AudioDeviceInfo targetDevice)
+    {
+        try
+        {
+            ShowMainStatus($"{session.DisplayName} 출력 장치를 {targetDevice.Name}(으)로 변경하는 중...");
+            await _viewModel.SetSessionOutputDeviceAsync(session.DeviceId, session.Id, targetDevice.Id);
+            ShowMainStatus($"{session.DisplayName} 출력 장치를 {targetDevice.Name}(으)로 변경했습니다. 앱에 따라 재생을 다시 시작해야 반영될 수 있습니다.");
+            await Task.Delay(300);
+            _ = RefreshSessionViewAsync($"session_output_device_changed sessionId={session.Id}");
+        }
+        catch (Exception exception)
+        {
+            ShowMainStatus("출력 장치 변경에 실패했습니다.", isError: true);
+            AppLog.Warn(
+                "MainWindow",
+                $"세션 출력 장치 변경 실패 deviceId={session.DeviceId} sessionId={session.Id} targetDeviceId={targetDevice.Id}",
+                exception);
+            System.Windows.MessageBox.Show(
+                this,
+                "출력 장치를 변경하지 못했습니다.\n일부 앱은 재생을 다시 시작하거나 앱을 재실행해야 변경할 수 있습니다.",
+                "출력 변경 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private static string FormatOutputDeviceMenuHeader(AudioDeviceInfo device, string currentDeviceId)
+    {
+        var suffixes = new List<string>();
+        if (string.Equals(device.Id, currentDeviceId, StringComparison.Ordinal))
+        {
+            suffixes.Add("현재");
+        }
+
+        if (device.IsDefault)
+        {
+            suffixes.Add("기본");
+        }
+
+        return suffixes.Count == 0
+            ? device.Name
+            : $"{device.Name} ({string.Join(", ", suffixes)})";
+    }
+
     private async void SessionToggleButton_OnChecked(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: VisibleDeviceViewModel device })
@@ -1196,6 +1296,15 @@ public partial class MainWindow : Window
             UpdateStatusText.Text = $"새 버전 {latestVersion}: {progressMessage}";
             UpdateStatusText.Visibility = Visibility.Visible;
         });
+    }
+
+    private void ShowMainStatus(string message, bool isError = false)
+    {
+        UpdateStatusText.Foreground = isError
+            ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB3, 0x5A, 0x00))
+            : new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
+        UpdateStatusText.Text = message;
+        UpdateStatusText.Visibility = Visibility.Visible;
     }
 
     /// <summary>

@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <Version>0.13.20</Version>
+    <Version>0.14.0</Version>
     <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">unknown</SourceRevisionId>
     <InformationalVersion>$(Version)+$(SourceRevisionId)</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>

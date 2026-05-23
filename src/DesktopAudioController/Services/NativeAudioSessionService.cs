@@ -168,6 +168,37 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
     }
 
     /// <summary>
+    /// 지정한 세션을 소유한 앱의 Windows 앱별 출력 장치 정책을 변경합니다.
+    /// </summary>
+    public void SetSessionOutputDevice(string deviceId, string sessionId, string targetDeviceId)
+    {
+        AppLog.Info(
+            "NativeAudioSessionService",
+            $"SetSessionOutputDevice 시작 deviceId={deviceId} sessionId={sessionId} targetDeviceId={targetDeviceId}");
+
+        using var enumerator = new MMDeviceEnumerator();
+        using var sourceDevice = enumerator.GetDevice(deviceId);
+        using var targetDevice = enumerator.GetDevice(targetDeviceId);
+        using var targetSession = FindSession(sourceDevice.AudioSessionManager.Sessions, sessionId);
+        if (targetSession is null)
+        {
+            AppLog.Warn("NativeAudioSessionService", $"SetSessionOutputDevice 대상 세션 없음 deviceId={deviceId} sessionId={sessionId}");
+            return;
+        }
+
+        var processId = targetSession.GetProcessID;
+        if (processId == 0)
+        {
+            throw new InvalidOperationException("프로세스 ID가 없는 오디오 세션은 출력 장치를 변경할 수 없습니다.");
+        }
+
+        ApplicationAudioOutputPolicy.SetPersistedDefaultOutputDevice((uint)processId, targetDeviceId);
+        AppLog.Info(
+            "NativeAudioSessionService",
+            $"SetSessionOutputDevice 완료 processId={processId} targetDevice={targetDevice.FriendlyName}");
+    }
+
+    /// <summary>
     /// 세션 컬렉션에서 지정한 식별자와 일치하는 세션을 찾습니다.
     /// </summary>
     private static AudioSessionControl? FindSession(SessionCollection sessions, string sessionId)

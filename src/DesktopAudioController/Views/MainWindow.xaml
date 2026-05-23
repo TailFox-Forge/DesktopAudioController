@@ -226,6 +226,12 @@
                                                                                     VerticalAlignment="Center"
                                                                                     Click="RenameSessionButton_OnClick"
                                                                                     Content="이름 변경" />
+                                                                            <Button Margin="0,0,8,0"
+                                                                                    Padding="8,2"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Click="ChangeSessionOutputButton_OnClick"
+                                                                                    Content="출력 변경"
+                                                                                    ToolTip="이 프로그램의 앱별 출력 장치를 변경합니다." />
                                                                             <CheckBox Margin="8,0,0,0"
                                                                                       VerticalAlignment="Center"
                                                                                       VerticalContentAlignment="Center"

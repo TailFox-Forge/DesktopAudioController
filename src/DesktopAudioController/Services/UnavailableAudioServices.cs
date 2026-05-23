@@ -66,6 +66,11 @@ internal static class UnavailableAudioServices
         {
             throw CreateUnavailableException();
         }
+
+        public void SetSessionOutputDevice(string deviceId, string sessionId, string targetDeviceId)
+        {
+            throw CreateUnavailableException();
+        }
     }
 
     private sealed class NotificationService : IAudioNotificationService
