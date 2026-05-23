@@ -55,6 +55,9 @@ public sealed class SettingsViewModel : ObservableObject
     // 상세 디버그 로그를 파일에 기록할지 여부의 내부 필드입니다.
     private bool _enableDebugLogs;
 
+    // 설정창을 열었을 때 저장돼 있던 디버그 로그 상태입니다.
+    private bool _loadedEnableDebugLogs;
+
     /// <summary>
     /// 설정 창에서 사용할 서비스들을 주입받습니다.
     /// </summary>
@@ -144,8 +147,19 @@ public sealed class SettingsViewModel : ObservableObject
     public bool EnableDebugLogs
     {
         get => _enableDebugLogs;
-        set => SetProperty(ref _enableDebugLogs, value);
+        set
+        {
+            if (SetProperty(ref _enableDebugLogs, value))
+            {
+                OnPropertyChanged(nameof(ShowsDebugLogRestartWarning));
+            }
+        }
     }
+
+    /// <summary>
+    /// 디버그 로그를 OFF에서 ON으로 바꾼 상태라 저장 후 재시작 안내가 필요한지 여부입니다.
+    /// </summary>
+    public bool ShowsDebugLogRestartWarning => !_loadedEnableDebugLogs && EnableDebugLogs;
 
     /// <summary>
     /// 디버그 로그를 처음부터 기록하기 위해 저장 후 앱 재시작이 필요한지 여부입니다.
@@ -206,6 +220,8 @@ public sealed class SettingsViewModel : ObservableObject
         _startupLaunchService.Apply(RunAtWindowsStartup);
         AppLog.ConfigureDebugLogging(EnableDebugLogs);
         RequiresRestartToEnableDebugLogs = savePlan.RequiresRestartToEnableDebugLogs;
+        _loadedEnableDebugLogs = EnableDebugLogs;
+        OnPropertyChanged(nameof(ShowsDebugLogRestartWarning));
     }
 
     /// <summary>
@@ -244,7 +260,9 @@ public sealed class SettingsViewModel : ObservableObject
         ShowSystemSounds = snapshot.Settings.ShowSystemSounds;
         ShowOnlyActiveSessions = snapshot.Settings.ShowOnlyActiveSessions;
         IncludePreReleaseUpdates = snapshot.Settings.IncludePreReleaseUpdates;
+        _loadedEnableDebugLogs = snapshot.Settings.EnableDebugLogs;
         EnableDebugLogs = snapshot.Settings.EnableDebugLogs;
+        OnPropertyChanged(nameof(ShowsDebugLogRestartWarning));
         RequiresRestartToEnableDebugLogs = false;
     }
 }

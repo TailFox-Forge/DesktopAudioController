@@ -146,6 +146,21 @@
                            Foreground="#666"
                            Text="켜면 장치 열거, 세션 조회, 새로고침 단계 같은 DEBUG 로그를 함께 기록합니다."
                            TextWrapping="Wrap" />
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#B35A00"
+                           Text="저장하면 처음부터 디버그 로그를 기록하기 위해 앱이 자동으로 재시작됩니다."
+                           TextWrapping="Wrap">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowsDebugLogRestartWarning}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
 
                 <Separator Margin="0,8,0,16" />
 
