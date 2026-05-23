@@ -1,0 +1,157 @@
+using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
+using DesktopAudioController.Models;
+
+namespace DesktopAudioController.Services;
+
+/// <summary>
+/// 세션 조회/볼륨 제어는 현재 프로세스에서 수행하고, 앱별 출력 변경만 워커 프로세스로 격리합니다.
+/// </summary>
+public sealed class WorkerBackedAudioSessionService : IAudioSessionService, IDisposable
+{
+    private static readonly TimeSpan OutputChangeTimeout = TimeSpan.FromSeconds(3);
+    private readonly string _executablePath;
+    private readonly NativeAudioSessionService _nativeSessionService;
+
+    public WorkerBackedAudioSessionService(
+        string executablePath,
+        NativeAudioSessionService nativeSessionService)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
+        _executablePath = executablePath;
+        _nativeSessionService = nativeSessionService;
+    }
+
+    public IReadOnlyList<AudioSessionInfo> GetSessions(string deviceId, bool includeSystemSounds = false)
+    {
+        return _nativeSessionService.GetSessions(deviceId, includeSystemSounds);
+    }
+
+    public void SetSessionVolume(string deviceId, string sessionId, int volume)
+    {
+        _nativeSessionService.SetSessionVolume(deviceId, sessionId, volume);
+    }
+
+    public void SetSessionMuted(string deviceId, string sessionId, bool muted)
+    {
+        _nativeSessionService.SetSessionMuted(deviceId, sessionId, muted);
+    }
+
+    public void SetSessionOutputDevice(string deviceId, string sessionId, string targetDeviceId)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var tempOutputPath = Path.Combine(
+            Path.GetTempPath(),
+            $"DesktopAudioController-session-output-{Guid.NewGuid():N}.json");
+
+        try
+        {
+            var startInfo = new ProcessStartInfo(_executablePath)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = Path.GetDirectoryName(_executablePath) ?? Environment.CurrentDirectory
+            };
+            AudioSessionOutputChangeCommand.Apply(
+                startInfo,
+                deviceId,
+                sessionId,
+                targetDeviceId,
+                tempOutputPath,
+                AppLog.IsDebugEnabled);
+
+            AppLog.Info(
+                "WorkerBackedAudioSessionService",
+                $"세션 출력 변경 워커 시작 deviceId={deviceId} sessionId={sessionId} targetDeviceId={targetDeviceId} timeoutMs={(int)OutputChangeTimeout.TotalMilliseconds}");
+
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("세션 출력 변경 워커 프로세스를 시작하지 못했습니다.");
+
+            if (!process.WaitForExit((int)OutputChangeTimeout.TotalMilliseconds))
+            {
+                TryKill(process);
+                throw new TimeoutException("세션 출력 변경 워커가 제한 시간 안에 끝나지 않았습니다.");
+            }
+
+            var result = TryReadResult(tempOutputPath);
+            if (process.ExitCode != 0)
+            {
+                var message = result?.ErrorMessage;
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    message = $"세션 출력 변경 워커가 비정상 종료했습니다. exitCode={process.ExitCode}";
+                }
+
+                throw new InvalidOperationException(message);
+            }
+
+            if (result is { Success: false })
+            {
+                throw new InvalidOperationException(result.ErrorMessage ?? "세션 출력 변경 워커가 실패했습니다.");
+            }
+
+            AppLog.Info(
+                "WorkerBackedAudioSessionService",
+                $"세션 출력 변경 워커 완료 elapsedMs={stopwatch.ElapsedMilliseconds}");
+        }
+        finally
+        {
+            TryDelete(tempOutputPath);
+        }
+    }
+
+    public void Dispose()
+    {
+        _nativeSessionService.Dispose();
+    }
+
+    private static AudioSessionOutputChangeResult? TryReadResult(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            return JsonSerializer.Deserialize<AudioSessionOutputChangeResult>(File.ReadAllText(path));
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("WorkerBackedAudioSessionService", $"세션 출력 변경 결과 읽기 실패 path={path}", exception);
+            return null;
+        }
+    }
+
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // 타임아웃 경로의 보조 정리이므로 여기서 추가 예외는 만들지 않습니다.
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // 임시 결과 파일 삭제 실패는 기능보다 우선순위가 낮습니다.
+        }
+    }
+}

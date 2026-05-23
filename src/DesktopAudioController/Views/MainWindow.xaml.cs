@@ -680,7 +680,7 @@ public partial class MainWindow : Window
         {
             ShowMainStatus($"{session.DisplayName} 출력 장치를 {targetDevice.Name}(으)로 변경하는 중...");
             await _viewModel.SetSessionOutputDeviceAsync(session.DeviceId, session.Id, targetDevice.Id);
-            ShowMainStatus($"{session.DisplayName} 출력 장치를 {targetDevice.Name}(으)로 변경했습니다. 앱에 따라 재생을 다시 시작해야 반영될 수 있습니다.");
+            ShowMainStatus($"{session.DisplayName} 출력 장치 변경 요청을 보냈습니다. 앱에 따라 재생을 다시 시작해야 반영될 수 있습니다.");
             await Task.Delay(300);
             _ = RefreshSessionViewAsync($"session_output_device_changed sessionId={session.Id}");
         }

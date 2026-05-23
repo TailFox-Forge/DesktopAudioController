@@ -120,6 +120,12 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (AudioSessionOutputChangeCommand.TryParse(e.Args, out var outputChangeCommand))
+        {
+            Shutdown(AudioSessionOutputChangeWorker.Run(outputChangeCommand));
+            return;
+        }
+
         if (!TryEnsurePrimaryInstance())
         {
             Shutdown();
@@ -670,7 +676,9 @@ public partial class App : System.Windows.Application
                 executablePath,
                 _audioDeviceStartupSnapshotService ?? new AudioDeviceStartupSnapshotService());
             processMetadataCacheService = new CachedProcessMetadataService();
-            audioSessionService = new NativeAudioSessionService(processMetadataCacheService!);
+            audioSessionService = new WorkerBackedAudioSessionService(
+                executablePath,
+                new NativeAudioSessionService(processMetadataCacheService!));
             audioNotificationService = new NativeAudioNotificationService();
             if (startNotificationService)
             {
