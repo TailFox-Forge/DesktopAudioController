@@ -52,6 +52,9 @@ public sealed class SettingsViewModel : ObservableObject
     // prerelease 릴리즈까지 업데이트 대상으로 포함할지 여부의 내부 필드입니다.
     private bool _includePreReleaseUpdates;
 
+    // 상세 디버그 로그를 파일에 기록할지 여부의 내부 필드입니다.
+    private bool _enableDebugLogs;
+
     /// <summary>
     /// 설정 창에서 사용할 서비스들을 주입받습니다.
     /// </summary>
@@ -136,6 +139,15 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 장치/세션 조회 같은 상세 디버그 로그를 기록할지 여부입니다.
+    /// </summary>
+    public bool EnableDebugLogs
+    {
+        get => _enableDebugLogs;
+        set => SetProperty(ref _enableDebugLogs, value);
+    }
+
+    /// <summary>
     /// 설정 파일과 장치 목록을 읽어 현재 설정 창 상태를 구성합니다.
     /// </summary>
     public void Load()
@@ -173,6 +185,7 @@ public sealed class SettingsViewModel : ObservableObject
             ShowSystemSounds,
             ShowOnlyActiveSessions,
             IncludePreReleaseUpdates,
+            EnableDebugLogs,
             _preserveConfiguredVisibleDevicesOnEmptySave);
         if (savePlan.PreservedConfiguredVisibleDevices)
         {
@@ -185,6 +198,7 @@ public sealed class SettingsViewModel : ObservableObject
         // 구성된 설정 모델을 파일에 저장합니다.
         _settingsService.Save(savePlan.Settings);
         _startupLaunchService.Apply(RunAtWindowsStartup);
+        AppLog.ConfigureDebugLogging(EnableDebugLogs);
     }
 
     /// <summary>
@@ -223,5 +237,6 @@ public sealed class SettingsViewModel : ObservableObject
         ShowSystemSounds = snapshot.Settings.ShowSystemSounds;
         ShowOnlyActiveSessions = snapshot.Settings.ShowOnlyActiveSessions;
         IncludePreReleaseUpdates = snapshot.Settings.IncludePreReleaseUpdates;
+        EnableDebugLogs = snapshot.Settings.EnableDebugLogs;
     }
 }

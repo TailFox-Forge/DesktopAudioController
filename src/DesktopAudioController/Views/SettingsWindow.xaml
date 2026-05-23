@@ -132,6 +132,25 @@
 
                 <TextBlock FontSize="15"
                            FontWeight="SemiBold"
+                           Text="진단 로그" />
+                <TextBlock Margin="0,8,0,16"
+                           Foreground="#666"
+                           Text="문제 분석이 필요할 때만 상세 로그를 켭니다. 일반 사용 중에는 끄면 세션 조회 같은 반복 로그가 줄어듭니다."
+                           TextWrapping="Wrap" />
+
+                <CheckBox Margin="0,0,0,8"
+                          IsChecked="{Binding EnableDebugLogs}">
+                    <TextBlock Text="디버그 로그 기록" />
+                </CheckBox>
+                <TextBlock Margin="24,-4,0,12"
+                           Foreground="#666"
+                           Text="켜면 장치 열거, 세션 조회, 새로고침 단계 같은 DEBUG 로그를 함께 기록합니다."
+                           TextWrapping="Wrap" />
+
+                <Separator Margin="0,8,0,16" />
+
+                <TextBlock FontSize="15"
+                           FontWeight="SemiBold"
                            Text="실행 동작" />
                 <TextBlock Margin="0,8,0,16"
                            Foreground="#666"

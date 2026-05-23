@@ -15,15 +15,16 @@
         <!-- 상단 헤더와 공통 액션 버튼 영역입니다. -->
         <Grid DockPanel.Dock="Top"
               Margin="0,0,0,16">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-            <StackPanel Grid.Column="0">
+            <StackPanel Grid.Row="0">
                 <TextBlock VerticalAlignment="Center"
                            FontSize="20"
                            FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
                            Text="DesktopAudioController" />
                 <TextBlock x:Name="VersionText"
                            Margin="0,4,0,0"
@@ -32,47 +33,45 @@
                 <TextBlock x:Name="UpdateStatusText"
                            Margin="0,4,0,0"
                            Foreground="#0A6"
-                           MaxWidth="420"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
                 <TextBlock x:Name="StartupStatusText"
                            Margin="0,4,0,0"
                            Foreground="#B35A00"
-                           MaxWidth="420"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
             </StackPanel>
 
-            <StackPanel Grid.Column="1"
-                        Orientation="Horizontal"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top">
+            <WrapPanel Grid.Row="1"
+                       Margin="0,12,0,0"
+                       HorizontalAlignment="Right">
                 <Button x:Name="CheckUpdateButton"
                         Width="104"
-                        Margin="0,0,8,0"
+                        Margin="0,0,8,8"
                         Click="CheckUpdateButton_OnClick"
                         Content="업데이트 확인"
                         ToolTip="GitHub 릴리즈에서 새 버전이 있는지 다시 확인합니다." />
                 <Button x:Name="UpdateButton"
                         Width="96"
-                        Margin="0,0,8,0"
+                        Margin="0,0,8,8"
                         Click="UpdateButton_OnClick"
                         Content="업데이트"
                         ToolTip="새 zip을 자동 다운로드한 뒤 기존 실행 폴더에 덮어씁니다."
                         Visibility="Collapsed" />
                 <Button Width="104"
-                        Margin="0,0,8,0"
+                        Margin="0,0,8,8"
                         Click="OpenReleasePageButton_OnClick"
                         Content="릴리즈 노트"
                         ToolTip="GitHub 릴리즈 페이지를 엽니다." />
                 <Button Width="88"
-                        Margin="0,0,8,0"
+                        Margin="0,0,8,8"
                         Click="RefreshButton_OnClick"
                         Content="새로고침" />
                 <Button Width="88"
+                        Margin="0,0,0,8"
                         Click="SettingsButton_OnClick"
                         Content="설정" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
 
         <!-- 본문 영역은 빈 상태 안내와 장치 카드 목록을 같은 영역에서 전환합니다. -->

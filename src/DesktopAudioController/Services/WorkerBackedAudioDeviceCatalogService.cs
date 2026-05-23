@@ -137,7 +137,7 @@ public sealed class WorkerBackedAudioDeviceCatalogService : IAudioDeviceCatalogS
                 WindowStyle = ProcessWindowStyle.Hidden,
                 WorkingDirectory = Path.GetDirectoryName(_executablePath) ?? Environment.CurrentDirectory
             };
-            AudioDeviceProbeCommand.Apply(startInfo, tempOutputPath);
+            AudioDeviceProbeCommand.Apply(startInfo, tempOutputPath, AppLog.IsDebugEnabled);
             AppLog.Debug(
                 "WorkerBackedAudioDeviceCatalogService",
                 $"워커 probe 시작 executablePath={_executablePath} outputPath={tempOutputPath} timeoutMs={(int)ProbeTimeout.TotalMilliseconds}");

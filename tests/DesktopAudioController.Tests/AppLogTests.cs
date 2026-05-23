@@ -157,6 +157,43 @@ public sealed class AppLogTests
         }
     }
 
+    [Fact]
+    public void Debug_WritesOnlyWhenDebugLoggingIsEnabled()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var currentLogPath = Path.Combine(
+            tempDirectory.DirectoryPath,
+            $"DesktopAudioController-{DateTime.Now:yyyyMMdd}.log");
+        var field = typeof(AppLog).GetField("_logFilePath", BindingFlags.Static | BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        var originalLogPath = (string?)field!.GetValue(null);
+        var originalDebugEnabled = AppLog.IsDebugEnabled;
+
+        try
+        {
+            field.SetValue(null, currentLogPath);
+            AppLog.ConfigureDebugLogging(false);
+            AppLog.Initialize();
+
+            AppLog.Debug("AppLogTests", "hidden-debug-entry");
+
+            var disabledContent = File.ReadAllText(currentLogPath);
+            Assert.DoesNotContain("hidden-debug-entry", disabledContent, StringComparison.Ordinal);
+
+            AppLog.ConfigureDebugLogging(true);
+            AppLog.Debug("AppLogTests", "visible-debug-entry");
+
+            var enabledContent = File.ReadAllText(currentLogPath);
+            Assert.Contains("visible-debug-entry", enabledContent, StringComparison.Ordinal);
+        }
+        finally
+        {
+            AppLog.ConfigureDebugLogging(originalDebugEnabled);
+            field.SetValue(null, originalLogPath);
+        }
+    }
+
     private static void CreateLogFile(string filePath, long length, DateTime lastWriteTimeUtc)
     {
         using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))

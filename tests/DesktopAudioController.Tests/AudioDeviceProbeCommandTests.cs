@@ -11,6 +11,7 @@ public sealed class AudioDeviceProbeCommandTests
         var args = new[]
         {
             "--probe-audio",
+            "--debug-log",
             "--probe-output-path",
             "C:\\temp\\probe.json"
         };
@@ -46,5 +47,18 @@ public sealed class AudioDeviceProbeCommandTests
         Assert.Equal(
             ["--probe-audio", "--probe-output-path", "probe.json"],
             startInfo.ArgumentList.ToArray());
+    }
+
+    [Fact]
+    public void Apply_WhenDebugLogIsEnabled_AppendsDebugLogArgument()
+    {
+        var startInfo = new ProcessStartInfo("DesktopAudioController.exe");
+
+        AudioDeviceProbeCommand.Apply(startInfo, "probe.json", debugLogEnabled: true);
+
+        Assert.Equal(
+            ["--probe-audio", "--debug-log", "--probe-output-path", "probe.json"],
+            startInfo.ArgumentList.ToArray());
+        Assert.True(AudioDeviceProbeCommand.HasDebugLogFlag(startInfo.ArgumentList.ToArray()));
     }
 }

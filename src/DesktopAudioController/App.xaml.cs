@@ -111,6 +111,7 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
         AppLog.Initialize();
+        AppLog.ConfigureDebugLogging(AudioDeviceProbeCommand.HasDebugLogFlag(e.Args));
         AppLog.Info("App", $"Build info {AppBuildInfo.LogSummary}");
         AppLog.Info("App", $"OnStartup args=[{string.Join(", ", e.Args)}]");
         if (AudioDeviceProbeCommand.TryParse(e.Args, out var probeOutputPath))
@@ -151,10 +152,12 @@ public partial class App : System.Windows.Application
         _appIconService = new CachedAppIconService();
         _audioDeviceStartupSnapshotService = new AudioDeviceStartupSnapshotService();
 
+        var startupSettings = _settingsService.Load();
+        AppLog.ConfigureDebugLogging(startupSettings.EnableDebugLogs);
+
         var startupWarningMessage = TryInitializeAudioServices();
 
         // zip 배포 특성상 실행 경로가 바뀔 수 있으므로, 자동 실행이 켜져 있으면 현재 exe 경로로 재동기화합니다.
-        var startupSettings = _settingsService.Load();
         if (startupSettings.RunAtWindowsStartup)
         {
             try

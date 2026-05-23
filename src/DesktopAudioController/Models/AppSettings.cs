@@ -47,6 +47,11 @@ public sealed class AppSettings
     public bool IncludePreReleaseUpdates { get; set; }
 
     /// <summary>
+    /// 장치/세션 조회 같은 상세 디버그 로그를 파일에 기록할지 여부입니다.
+    /// </summary>
+    public bool EnableDebugLogs { get; set; }
+
+    /// <summary>
     /// 사용자가 조정한 프로그램별 볼륨/음소거 값을 다음 실행에서도 복원하기 위한 목록입니다.
     /// </summary>
     public List<ProgramAudioPreference> ProgramAudioPreferences { get; set; } = [];

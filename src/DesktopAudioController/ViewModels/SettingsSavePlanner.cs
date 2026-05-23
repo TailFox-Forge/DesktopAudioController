@@ -20,6 +20,7 @@ internal static class SettingsSavePlanner
         bool showSystemSounds,
         bool showOnlyActiveSessions,
         bool includePreReleaseUpdates,
+        bool enableDebugLogs,
         bool preserveConfiguredVisibleDevicesOnEmptySave)
     {
         var selectedVisibleDeviceIds = availableDevices
@@ -48,6 +49,7 @@ internal static class SettingsSavePlanner
                 ShowSystemSounds = showSystemSounds,
                 ShowOnlyActiveSessions = showOnlyActiveSessions,
                 IncludePreReleaseUpdates = includePreReleaseUpdates,
+                EnableDebugLogs = enableDebugLogs,
                 ProgramAudioPreferences = currentSettings.ProgramAudioPreferences
                     .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
                     .ToList()

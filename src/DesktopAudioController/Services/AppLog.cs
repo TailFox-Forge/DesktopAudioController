@@ -33,6 +33,11 @@ public static class AppLog
     // 현재 실행에서 사용할 로그 파일 경로입니다.
     private static string? _logFilePath;
 
+    // 상세 진단 로그는 설정에서 명시적으로 켰을 때만 남깁니다.
+    private static bool _isDebugEnabled;
+
+    public static bool IsDebugEnabled => _isDebugEnabled;
+
     /// <summary>
     /// 현재 세션의 로그 파일 경로입니다.
     /// </summary>
@@ -74,7 +79,17 @@ public static class AppLog
     /// </summary>
     public static void Debug(string category, string message)
     {
+        if (!_isDebugEnabled)
+        {
+            return;
+        }
+
         Write("DEBUG", category, message, null);
+    }
+
+    public static void ConfigureDebugLogging(bool enabled)
+    {
+        _isDebugEnabled = enabled;
     }
 
     /// <summary>

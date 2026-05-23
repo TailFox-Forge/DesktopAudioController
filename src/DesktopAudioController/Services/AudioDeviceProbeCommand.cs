@@ -9,6 +9,7 @@ internal static class AudioDeviceProbeCommand
 {
     public const string ProbeAudioArgument = "--probe-audio";
     public const string ProbeOutputPathArgument = "--probe-output-path";
+    public const string DebugLogArgument = "--debug-log";
 
     public static bool TryParse(IReadOnlyList<string> args, out string outputPath)
     {
@@ -41,9 +42,19 @@ internal static class AudioDeviceProbeCommand
         return hasProbeFlag && !string.IsNullOrWhiteSpace(outputPath);
     }
 
-    public static void Apply(ProcessStartInfo startInfo, string outputPath)
+    public static bool HasDebugLogFlag(IReadOnlyList<string> args)
+    {
+        return args.Any(argument => string.Equals(argument, DebugLogArgument, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static void Apply(ProcessStartInfo startInfo, string outputPath, bool debugLogEnabled = false)
     {
         startInfo.ArgumentList.Add(ProbeAudioArgument);
+        if (debugLogEnabled)
+        {
+            startInfo.ArgumentList.Add(DebugLogArgument);
+        }
+
         startInfo.ArgumentList.Add(ProbeOutputPathArgument);
         startInfo.ArgumentList.Add(outputPath);
     }

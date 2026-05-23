@@ -34,12 +34,14 @@ public sealed class SettingsSavePlannerTests
             showSystemSounds: false,
             showOnlyActiveSessions: false,
             includePreReleaseUpdates: false,
+            enableDebugLogs: true,
             preserveConfiguredVisibleDevicesOnEmptySave: true);
 
         Assert.True(savePlan.PreservedConfiguredVisibleDevices);
         Assert.Equal(["device-a", "device-b"], savePlan.Settings.VisibleDeviceIds);
         Assert.True(savePlan.Settings.StartMinimized);
         Assert.False(savePlan.Settings.RunAtWindowsStartup);
+        Assert.True(savePlan.Settings.EnableDebugLogs);
         Assert.Single(savePlan.Settings.ProgramAudioPreferences);
     }
 
@@ -64,6 +66,7 @@ public sealed class SettingsSavePlannerTests
             showSystemSounds: false,
             showOnlyActiveSessions: false,
             includePreReleaseUpdates: false,
+            enableDebugLogs: false,
             preserveConfiguredVisibleDevicesOnEmptySave: true);
 
         Assert.False(savePlan.PreservedConfiguredVisibleDevices);

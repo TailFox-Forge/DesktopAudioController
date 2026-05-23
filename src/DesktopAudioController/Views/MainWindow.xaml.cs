@@ -328,7 +328,7 @@ public partial class MainWindow : Window
         UpdateButton.IsEnabled = false;
         CheckUpdateButton.IsEnabled = false;
         UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0x66, 0xAA));
-        UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion} 다운로드 및 적용 준비 중...";
+        UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion} 업데이트 준비 중...";
         UpdateStatusText.Visibility = Visibility.Visible;
 
         try
