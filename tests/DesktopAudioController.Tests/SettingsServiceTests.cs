@@ -33,6 +33,28 @@ public sealed class SettingsServiceTests
                     Volume = 37,
                     IsMuted = true
                 }
+            ],
+            AudioProfiles =
+            [
+                new AudioProfile
+                {
+                    Id = "profile-game",
+                    Name = "게임",
+                    VisibleDeviceIds = ["device-2"],
+                    ShowOnlyConnectedDevices = false,
+                    ShowSystemSounds = true,
+                    ProgramAudioPreferences =
+                    [
+                        new ProgramAudioPreference
+                        {
+                            MatchKey = "path:C:\\Apps\\game.exe",
+                            DisplayName = "Game",
+                            CustomDisplayName = "게임",
+                            Volume = 25,
+                            IsMuted = true
+                        }
+                    ]
+                }
             ]
         };
 
@@ -55,6 +77,14 @@ public sealed class SettingsServiceTests
         Assert.Equal(37, preference.Volume);
         Assert.True(preference.IsMuted);
 
+        var profile = Assert.Single(loaded.AudioProfiles);
+        Assert.Equal("profile-game", profile.Id);
+        Assert.Equal("게임", profile.Name);
+        Assert.Equal(["device-2"], profile.VisibleDeviceIds);
+        Assert.False(profile.ShowOnlyConnectedDevices);
+        Assert.True(profile.ShowSystemSounds);
+        Assert.Equal("게임", Assert.Single(profile.ProgramAudioPreferences).CustomDisplayName);
+
         Assert.False(service.TryConsumeLoadWarning(out _));
     }
 
@@ -76,6 +106,7 @@ public sealed class SettingsServiceTests
         Assert.False(loaded.ShowOnlyActiveSessions);
         Assert.False(loaded.EnableDebugLogs);
         Assert.Empty(loaded.ProgramAudioPreferences);
+        Assert.Empty(loaded.AudioProfiles);
         Assert.False(File.Exists(settingsFilePath));
         Assert.False(service.TryConsumeLoadWarning(out _));
     }
@@ -101,6 +132,7 @@ public sealed class SettingsServiceTests
         Assert.False(loaded.ShowOnlyActiveSessions);
         Assert.False(loaded.EnableDebugLogs);
         Assert.Empty(loaded.ProgramAudioPreferences);
+        Assert.Empty(loaded.AudioProfiles);
 
         Assert.True(File.Exists(service.BackupSettingsFilePath));
         Assert.Equal("{ invalid json", File.ReadAllText(service.BackupSettingsFilePath));
@@ -235,7 +267,19 @@ public sealed class SettingsServiceTests
             """
             {
               "VisibleDeviceIds": null,
-              "ProgramAudioPreferences": null
+              "ProgramAudioPreferences": null,
+              "AudioProfiles": [
+                {
+                  "Id": null,
+                  "Name": " 작업 ",
+                  "VisibleDeviceIds": null,
+                  "ProgramAudioPreferences": null
+                },
+                {
+                  "Id": "blank-name",
+                  "Name": " "
+                }
+              ]
             }
             """);
 
@@ -245,6 +289,11 @@ public sealed class SettingsServiceTests
 
         Assert.Empty(loaded.VisibleDeviceIds);
         Assert.Empty(loaded.ProgramAudioPreferences);
+        var profile = Assert.Single(loaded.AudioProfiles);
+        Assert.False(string.IsNullOrWhiteSpace(profile.Id));
+        Assert.Equal("작업", profile.Name);
+        Assert.Empty(profile.VisibleDeviceIds);
+        Assert.Empty(profile.ProgramAudioPreferences);
     }
 
     private sealed class TemporaryDirectory : IDisposable

@@ -55,4 +55,9 @@ public sealed class AppSettings
     /// 사용자가 조정한 프로그램별 볼륨/음소거 값을 다음 실행에서도 복원하기 위한 목록입니다.
     /// </summary>
     public List<ProgramAudioPreference> ProgramAudioPreferences { get; set; } = [];
+
+    /// <summary>
+    /// 사용자가 명시적으로 저장하고 적용할 수 있는 수동 오디오 프로필 목록입니다.
+    /// </summary>
+    public List<AudioProfile> AudioProfiles { get; set; } = [];
 }

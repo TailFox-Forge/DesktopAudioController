@@ -21,6 +21,15 @@ public sealed class SettingsSavePlannerTests
                     DisplayName = "Music",
                     Volume = 35
                 }
+            ],
+            AudioProfiles =
+            [
+                new AudioProfile
+                {
+                    Id = "profile-id",
+                    Name = "게임",
+                    VisibleDeviceIds = ["device-a"]
+                }
             ]
         };
 
@@ -44,6 +53,7 @@ public sealed class SettingsSavePlannerTests
         Assert.True(savePlan.Settings.EnableDebugLogs);
         Assert.True(savePlan.RequiresRestartToEnableDebugLogs);
         Assert.Single(savePlan.Settings.ProgramAudioPreferences);
+        Assert.Single(savePlan.Settings.AudioProfiles);
     }
 
     [Fact]

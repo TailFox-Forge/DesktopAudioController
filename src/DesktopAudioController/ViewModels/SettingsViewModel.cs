@@ -55,6 +55,9 @@ public sealed class SettingsViewModel : ObservableObject
     // 상세 디버그 로그를 파일에 기록할지 여부의 내부 필드입니다.
     private bool _enableDebugLogs;
 
+    // 설정창에서 선택한 수동 프로필입니다.
+    private AudioProfileSelectionViewModel? _selectedAudioProfile;
+
     // 설정창을 열었을 때 저장돼 있던 디버그 로그 상태입니다.
     private bool _loadedEnableDebugLogs;
 
@@ -77,6 +80,11 @@ public sealed class SettingsViewModel : ObservableObject
     /// 사용자가 선택할 수 있는 전체 출력 장치 목록입니다.
     /// </summary>
     public ObservableCollection<AudioDeviceSelectionViewModel> AvailableDevices { get; } = [];
+
+    /// <summary>
+    /// 사용자가 직접 저장한 수동 오디오 프로필 목록입니다.
+    /// </summary>
+    public ObservableCollection<AudioProfileSelectionViewModel> AudioProfiles { get; } = [];
 
     /// <summary>
     /// Windows 자동 실행 시 최소화 여부입니다.
@@ -167,6 +175,31 @@ public sealed class SettingsViewModel : ObservableObject
     public bool RequiresRestartToEnableDebugLogs { get; private set; }
 
     /// <summary>
+    /// 현재 설정창에서 선택한 수동 오디오 프로필입니다.
+    /// </summary>
+    public AudioProfileSelectionViewModel? SelectedAudioProfile
+    {
+        get => _selectedAudioProfile;
+        set
+        {
+            if (SetProperty(ref _selectedAudioProfile, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedAudioProfile));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 저장된 수동 프로필이 하나 이상 있는지 여부입니다.
+    /// </summary>
+    public bool HasAudioProfiles => AudioProfiles.Count > 0;
+
+    /// <summary>
+    /// 현재 적용 또는 삭제할 수동 프로필이 선택되어 있는지 여부입니다.
+    /// </summary>
+    public bool HasSelectedAudioProfile => SelectedAudioProfile is not null;
+
+    /// <summary>
     /// 설정 파일과 장치 목록을 읽어 현재 설정 창 상태를 구성합니다.
     /// </summary>
     public void Load()
@@ -231,6 +264,68 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 현재 설정창 상태와 저장된 프로그램별 값을 새 수동 프로필로 저장합니다.
+    /// </summary>
+    public void CreateAudioProfile(string profileName)
+    {
+        var currentSettings = _settingsService.Load();
+        var profileSourceSettings = BuildSavePlan(currentSettings).Settings;
+        var uniqueName = AudioProfileStore.BuildUniqueProfileName(profileName, currentSettings.AudioProfiles);
+        var profile = AudioProfileStore.Capture(uniqueName, profileSourceSettings);
+
+        currentSettings.AudioProfiles.Add(profile);
+        _settingsService.Save(currentSettings);
+        RefreshAudioProfiles(currentSettings.AudioProfiles, profile.Id);
+        AppLog.Info(
+            "SettingsViewModel",
+            $"수동 프로필 생성 profileId={profile.Id} name={profile.Name} visibleDevices={profile.VisibleDeviceIds.Count} programPreferences={profile.ProgramAudioPreferences.Count}");
+    }
+
+    /// <summary>
+    /// 선택한 수동 프로필을 현재 설정에 명시적으로 적용합니다.
+    /// </summary>
+    public void ApplySelectedAudioProfile()
+    {
+        if (SelectedAudioProfile is null)
+        {
+            throw new InvalidOperationException("적용할 프로필이 선택되지 않았습니다.");
+        }
+
+        var persistedSettings = _settingsService.Load();
+        var profile = persistedSettings.AudioProfiles.FirstOrDefault(item => item.Id == SelectedAudioProfile.Id)
+            ?? throw new InvalidOperationException("선택한 프로필을 설정 파일에서 찾지 못했습니다.");
+        var currentUiSettings = BuildSavePlan(persistedSettings).Settings;
+
+        AppLog.Info(
+            "SettingsViewModel",
+            $"수동 프로필 적용 profileId={profile.Id} name={profile.Name} visibleDevices={profile.VisibleDeviceIds.Count} programPreferences={profile.ProgramAudioPreferences.Count}");
+        ApplyPersistedSettings(AudioProfileStore.ApplyProfile(currentUiSettings, profile));
+    }
+
+    /// <summary>
+    /// 선택한 수동 프로필만 삭제하고 현재 적용된 설정은 유지합니다.
+    /// </summary>
+    public void DeleteSelectedAudioProfile()
+    {
+        if (SelectedAudioProfile is null)
+        {
+            throw new InvalidOperationException("삭제할 프로필이 선택되지 않았습니다.");
+        }
+
+        var deletedProfileId = SelectedAudioProfile.Id;
+        var currentSettings = _settingsService.Load();
+        var removedCount = currentSettings.AudioProfiles.RemoveAll(profile => profile.Id == deletedProfileId);
+        if (removedCount == 0)
+        {
+            throw new InvalidOperationException("선택한 프로필을 설정 파일에서 찾지 못했습니다.");
+        }
+
+        _settingsService.Save(currentSettings);
+        RefreshAudioProfiles(currentSettings.AudioProfiles);
+        AppLog.Info("SettingsViewModel", $"수동 프로필 삭제 profileId={deletedProfileId}");
+    }
+
+    /// <summary>
     /// 모든 설정을 기본값으로 초기화합니다.
     /// </summary>
     public void ResetSettings()
@@ -286,6 +381,7 @@ public sealed class SettingsViewModel : ObservableObject
         IncludePreReleaseUpdates = snapshot.Settings.IncludePreReleaseUpdates;
         _loadedEnableDebugLogs = snapshot.Settings.EnableDebugLogs;
         EnableDebugLogs = snapshot.Settings.EnableDebugLogs;
+        RefreshAudioProfiles(snapshot.Settings.AudioProfiles, SelectedAudioProfile?.Id);
         OnPropertyChanged(nameof(ShowsDebugLogRestartWarning));
         RequiresRestartToEnableDebugLogs = false;
     }
@@ -321,5 +417,21 @@ public sealed class SettingsViewModel : ObservableObject
             Devices = _audioDeviceCatalogService.GetAvailableOutputDevices().ToList()
         });
         RequiresRestartToEnableDebugLogs = requiresRestartToEnableDebugLogs;
+    }
+
+    private void RefreshAudioProfiles(IReadOnlyList<AudioProfile> profiles, string? preferredSelectedProfileId = null)
+    {
+        var selectedProfileId = preferredSelectedProfileId ?? SelectedAudioProfile?.Id;
+
+        AudioProfiles.Clear();
+        foreach (var profile in profiles.OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            AudioProfiles.Add(new AudioProfileSelectionViewModel(profile.Id, profile.Name));
+        }
+
+        SelectedAudioProfile = AudioProfiles.FirstOrDefault(profile => profile.Id == selectedProfileId)
+            ?? AudioProfiles.FirstOrDefault();
+        OnPropertyChanged(nameof(HasAudioProfiles));
+        OnPropertyChanged(nameof(HasSelectedAudioProfile));
     }
 }

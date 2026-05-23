@@ -113,6 +113,38 @@
 
                 <TextBlock FontSize="15"
                            FontWeight="SemiBold"
+                           Text="수동 프로필" />
+                <TextBlock Margin="0,8,0,16"
+                           Foreground="#666"
+                           Text="현재 장치 표시 설정과 프로그램별 볼륨, 음소거, 이름 저장값을 묶어 저장합니다. 자동으로 적용되지 않고 버튼을 누를 때만 적용됩니다."
+                           TextWrapping="Wrap" />
+
+                <WrapPanel Margin="0,0,0,8">
+                    <ComboBox Width="220"
+                              Margin="0,0,8,8"
+                              DisplayMemberPath="Name"
+                              ItemsSource="{Binding AudioProfiles}"
+                              SelectedItem="{Binding SelectedAudioProfile}" />
+                    <Button Width="132"
+                            Margin="0,0,8,8"
+                            Click="CreateAudioProfileButton_OnClick"
+                            Content="프로필 만들기" />
+                    <Button Width="132"
+                            Margin="0,0,8,8"
+                            Click="ApplyAudioProfileButton_OnClick"
+                            Content="프로필 적용"
+                            IsEnabled="{Binding HasSelectedAudioProfile}" />
+                    <Button Width="132"
+                            Margin="0,0,8,8"
+                            Click="DeleteAudioProfileButton_OnClick"
+                            Content="프로필 삭제"
+                            IsEnabled="{Binding HasSelectedAudioProfile}" />
+                </WrapPanel>
+
+                <Separator Margin="0,8,0,16" />
+
+                <TextBlock FontSize="15"
+                           FontWeight="SemiBold"
                            Text="업데이트 확인" />
                 <TextBlock Margin="0,8,0,16"
                            Foreground="#666"

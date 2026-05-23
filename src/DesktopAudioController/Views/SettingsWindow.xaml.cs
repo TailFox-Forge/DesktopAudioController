@@ -16,6 +16,9 @@ public partial class SettingsWindow : Window
     // 설정 창에 바인딩되는 뷰모델입니다.
     private readonly SettingsViewModel _viewModel;
 
+    // 프로필 생성/삭제처럼 즉시 저장된 변경이 있어 메인 화면 reload가 필요한지 여부입니다.
+    private bool _hasPersistedSettingsChange;
+
     /// <summary>
     /// 설정 창을 초기화하고 뷰모델을 연결합니다.
     /// </summary>
@@ -25,6 +28,7 @@ public partial class SettingsWindow : Window
         ApplyScreenBounds();
         _viewModel = viewModel;
         DataContext = _viewModel;
+        Closing += SettingsWindow_OnClosing;
     }
 
     private void ApplyScreenBounds()
@@ -107,8 +111,16 @@ public partial class SettingsWindow : Window
     private void CancelButton_OnClick(object sender, RoutedEventArgs e)
     {
         AppLog.Info("SettingsWindow", "설정 저장 취소");
-        DialogResult = false;
+        DialogResult = _hasPersistedSettingsChange;
         Close();
+    }
+
+    private void SettingsWindow_OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_hasPersistedSettingsChange && DialogResult != true)
+        {
+            DialogResult = true;
+        }
     }
 
     private void ExportSettingsButton_OnClick(object sender, RoutedEventArgs e)
@@ -192,6 +204,108 @@ public partial class SettingsWindow : Window
         catch (Exception exception)
         {
             ShowUnexpectedSettingsFailure("설정 가져오기 실패", exception);
+        }
+    }
+
+    private void CreateAudioProfileButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ProfileNameWindow
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.CreateAudioProfile(dialog.ProfileName);
+            _hasPersistedSettingsChange = true;
+            AppLog.Info("SettingsWindow", "수동 프로필 생성 성공");
+            System.Windows.MessageBox.Show(
+                this,
+                "현재 설정창 상태를 새 프로필로 저장했습니다.",
+                "프로필 생성 완료",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            ShowSettingsPersistenceFailure("프로필 생성 실패", exception);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedSettingsFailure("프로필 생성 실패", exception);
+        }
+    }
+
+    private void ApplyAudioProfileButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            "선택한 프로필의 장치 표시 설정과 프로그램 저장값을 현재 설정에 적용합니다.\n\n계속할까요?",
+            "프로필 적용",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.ApplySelectedAudioProfile();
+            AppLog.Info("SettingsWindow", "수동 프로필 적용 성공");
+            CompleteAppliedSettingsChange("프로필 적용 완료", "선택한 프로필을 적용했습니다.");
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            ShowSettingsPersistenceFailure("프로필 적용 실패", exception);
+        }
+        catch (StartupRegistrationException exception)
+        {
+            ShowStartupRegistrationFailure(exception);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedSettingsFailure("프로필 적용 실패", exception);
+        }
+    }
+
+    private void DeleteAudioProfileButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            "선택한 프로필을 삭제합니다.\n현재 적용된 설정은 바뀌지 않습니다.\n\n계속할까요?",
+            "프로필 삭제",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            _viewModel.DeleteSelectedAudioProfile();
+            _hasPersistedSettingsChange = true;
+            AppLog.Info("SettingsWindow", "수동 프로필 삭제 성공");
+            System.Windows.MessageBox.Show(
+                this,
+                "선택한 프로필을 삭제했습니다.",
+                "프로필 삭제 완료",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (SettingsPersistenceException exception)
+        {
+            ShowSettingsPersistenceFailure("프로필 삭제 실패", exception);
+        }
+        catch (Exception exception)
+        {
+            ShowUnexpectedSettingsFailure("프로필 삭제 실패", exception);
         }
     }
 

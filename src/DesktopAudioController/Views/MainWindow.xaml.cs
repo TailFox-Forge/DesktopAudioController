@@ -494,8 +494,9 @@ public partial class MainWindow : Window
             var result = settingsWindow.ShowDialog();
             if (result == true)
             {
-                _minimizeToTray = settingsViewModel.MinimizeToTray;
-                _includePreReleaseUpdates = settingsViewModel.IncludePreReleaseUpdates;
+                var persistedSettings = _settingsService.Load();
+                _minimizeToTray = persistedSettings.MinimizeToTray;
+                _includePreReleaseUpdates = persistedSettings.IncludePreReleaseUpdates;
                 await ReloadViewModelAsync("settings_saved");
                 await CheckForUpdateInBackgroundAsync(force: true, reason: "settings_saved");
             }

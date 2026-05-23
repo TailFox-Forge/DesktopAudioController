@@ -1,4 +1,5 @@
 using DesktopAudioController.Models;
+using DesktopAudioController.Services;
 
 namespace DesktopAudioController.ViewModels;
 
@@ -53,7 +54,8 @@ internal static class SettingsSavePlanner
                 EnableDebugLogs = enableDebugLogs,
                 ProgramAudioPreferences = currentSettings.ProgramAudioPreferences
                     .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
-                    .ToList()
+                    .ToList(),
+                AudioProfiles = AudioProfileStore.CloneProfiles(currentSettings.AudioProfiles)
             },
             preservedConfiguredVisibleDevices,
             RequiresRestartToEnableDebugLogs(currentSettings.EnableDebugLogs, enableDebugLogs));

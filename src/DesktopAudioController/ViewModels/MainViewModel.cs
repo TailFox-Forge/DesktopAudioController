@@ -1065,7 +1065,7 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            var settings = CloneSettings(_cachedSettings);
+            var settings = CloneSettings(_settingsService.Load());
             settings.ProgramAudioPreferences = ProgramAudioPreferenceStore.BuildPersistedPreferences(_programAudioPreferencesByKey).ToList();
             _settingsService.Save(settings);
             _cachedSettings = CloneSettings(settings);
@@ -1172,6 +1172,7 @@ public sealed class MainViewModel : ObservableObject
             ShowSystemSounds = settings.ShowSystemSounds,
             ShowOnlyActiveSessions = settings.ShowOnlyActiveSessions,
             IncludePreReleaseUpdates = settings.IncludePreReleaseUpdates,
+            EnableDebugLogs = settings.EnableDebugLogs,
             ProgramAudioPreferences = settings.ProgramAudioPreferences
                 .Select(preference => new ProgramAudioPreference
                 {
@@ -1182,7 +1183,8 @@ public sealed class MainViewModel : ObservableObject
                     Volume = preference.Volume,
                     IsMuted = preference.IsMuted
                 })
-                .ToList()
+                .ToList(),
+            AudioProfiles = AudioProfileStore.CloneProfiles(settings.AudioProfiles)
         };
     }
 

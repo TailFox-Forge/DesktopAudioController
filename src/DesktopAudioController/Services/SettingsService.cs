@@ -66,7 +66,7 @@ public sealed class SettingsService : ISettingsService
             // 디스크에서 읽은 원본 JSON 문자열입니다.
             var json = File.ReadAllText(SettingsFilePath);
             var settings = NormalizeSettings(JsonSerializer.Deserialize<AppSettings>(json, SerializerOptions) ?? new AppSettings());
-            AppLog.Debug("SettingsService", $"Load 성공 visibleDevices={settings.VisibleDeviceIds.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
+            AppLog.Debug("SettingsService", $"Load 성공 visibleDevices={settings.VisibleDeviceIds.Count} profiles={settings.AudioProfiles.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
             return settings;
         }
         catch (Exception exception)
@@ -86,7 +86,7 @@ public sealed class SettingsService : ISettingsService
     public void Save(AppSettings settings)
     {
         settings = NormalizeSettings(settings);
-        AppLog.Info("SettingsService", $"Save 시작 path={SettingsFilePath} visibleDevices={settings.VisibleDeviceIds.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
+        AppLog.Info("SettingsService", $"Save 시작 path={SettingsFilePath} visibleDevices={settings.VisibleDeviceIds.Count} profiles={settings.AudioProfiles.Count} startMinimized={settings.StartMinimized} runAtStartup={settings.RunAtWindowsStartup}");
         try
         {
             WriteSettingsFile(SettingsFilePath, settings);
@@ -124,7 +124,7 @@ public sealed class SettingsService : ISettingsService
             importedSettings = NormalizeSettings(importedSettings);
             AppLog.Info(
                 "SettingsService",
-                $"설정 가져오기 성공 source={sourceFilePath} visibleDevices={importedSettings.VisibleDeviceIds.Count} programPreferences={importedSettings.ProgramAudioPreferences.Count}");
+                $"설정 가져오기 성공 source={sourceFilePath} visibleDevices={importedSettings.VisibleDeviceIds.Count} programPreferences={importedSettings.ProgramAudioPreferences.Count} profiles={importedSettings.AudioProfiles.Count}");
             return importedSettings;
         }
         catch (Exception exception)
@@ -236,13 +236,20 @@ public sealed class SettingsService : ISettingsService
             settings.VisibleDeviceIds = [];
         }
 
-        if (settings.ProgramAudioPreferences is null)
+        settings.ProgramAudioPreferences = NormalizeProgramAudioPreferences(settings.ProgramAudioPreferences);
+        settings.AudioProfiles = NormalizeAudioProfiles(settings.AudioProfiles);
+        return settings;
+    }
+
+    private static List<ProgramAudioPreference> NormalizeProgramAudioPreferences(IEnumerable<ProgramAudioPreference>? preferences)
+    {
+        var normalizedPreferences = new List<ProgramAudioPreference>();
+        if (preferences is null)
         {
-            settings.ProgramAudioPreferences = [];
+            return normalizedPreferences;
         }
 
-        var normalizedPreferences = new List<ProgramAudioPreference>();
-        foreach (var preference in settings.ProgramAudioPreferences)
+        foreach (var preference in preferences)
         {
             if (preference is null)
             {
@@ -254,8 +261,45 @@ public sealed class SettingsService : ISettingsService
             normalizedPreferences.Add(preference);
         }
 
-        settings.ProgramAudioPreferences = normalizedPreferences;
-        return settings;
+        return normalizedPreferences;
+    }
+
+    private static List<AudioProfile> NormalizeAudioProfiles(IEnumerable<AudioProfile>? profiles)
+    {
+        var normalizedProfiles = new List<AudioProfile>();
+        if (profiles is null)
+        {
+            return normalizedProfiles;
+        }
+
+        foreach (var profile in profiles)
+        {
+            if (profile is null)
+            {
+                continue;
+            }
+
+            profile.Name = AudioProfileStore.NormalizeProfileName(profile.Name);
+            if (string.IsNullOrWhiteSpace(profile.Name))
+            {
+                continue;
+            }
+
+            profile.Id = string.IsNullOrWhiteSpace(profile.Id)
+                ? Guid.NewGuid().ToString("N")
+                : profile.Id.Trim();
+            profile.VisibleDeviceIds = profile.VisibleDeviceIds is null
+                ? []
+                : profile.VisibleDeviceIds
+                    .Where(deviceId => !string.IsNullOrWhiteSpace(deviceId))
+                    .Select(deviceId => deviceId.Trim())
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+            profile.ProgramAudioPreferences = NormalizeProgramAudioPreferences(profile.ProgramAudioPreferences);
+            normalizedProfiles.Add(profile);
+        }
+
+        return normalizedProfiles;
     }
 
     private static void TryDeleteTemporarySettingsFile(string tempFilePath)
