@@ -24,14 +24,16 @@ internal static class ApplicationAudioOutputPolicy
             throw new ArgumentException("대상 출력 장치 ID가 비어 있습니다.", nameof(targetDeviceId));
         }
 
+        var policyEndpointId = AudioPolicyEndpointId.ToRenderPolicyEndpointId(targetDeviceId);
+
         ApplyPolicyToRoles(
-            role => ApplyProcessPolicyRole(processId, targetDeviceId, role),
+            role => ApplyProcessPolicyRole(processId, policyEndpointId, role),
             roleSuccessLog: role =>
-                $"앱별 출력 정책 변경 성공 processId={processId} role={role} endpointAbi=HString targetDeviceId={targetDeviceId}",
+                $"앱별 출력 정책 변경 성공 processId={processId} role={role} endpointAbi=HString endpointIdKind=PackedRender targetDeviceId={targetDeviceId}",
             roleFailureLog: (role, hresult) =>
-                $"앱별 출력 정책 변경 실패 processId={processId} role={role} endpointAbi=HString targetDeviceId={targetDeviceId} hresult={hresult}",
+                $"앱별 출력 정책 변경 실패 processId={processId} role={role} endpointAbi=HString endpointIdKind=PackedRender targetDeviceId={targetDeviceId} hresult={hresult}",
             partialFailureLog: (successfulRoles, failedRoles) =>
-                $"앱별 출력 정책 일부 role 실패 processId={processId} endpointAbi=HString successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
+                $"앱별 출력 정책 일부 role 실패 processId={processId} endpointAbi=HString endpointIdKind=PackedRender successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
     }
 
     public static void SetPersistedDefaultOutputDeviceForAppIdentifier(string appIdentifier, string targetDeviceId)
@@ -46,26 +48,28 @@ internal static class ApplicationAudioOutputPolicy
             throw new ArgumentException("대상 출력 장치 ID가 비어 있습니다.", nameof(targetDeviceId));
         }
 
+        var policyEndpointId = AudioPolicyEndpointId.ToRenderPolicyEndpointId(targetDeviceId);
+
         ApplyPolicyToRoles(
-            role => ApplyAppIdentifierPolicyRole(appIdentifier, targetDeviceId, role),
+            role => ApplyAppIdentifierPolicyRole(appIdentifier, policyEndpointId, role),
             roleSuccessLog: role =>
-                $"앱별 출력 정책 변경 성공 appIdentifierSource=audio-session role={role} endpointAbi=HString targetDeviceId={targetDeviceId}",
+                $"앱별 출력 정책 변경 성공 appIdentifierSource=audio-session role={role} endpointAbi=HString endpointIdKind=PackedRender targetDeviceId={targetDeviceId}",
             roleFailureLog: (role, hresult) =>
-                $"앱별 출력 정책 변경 실패 appIdentifierSource=audio-session role={role} endpointAbi=HString targetDeviceId={targetDeviceId} hresult={hresult}",
+                $"앱별 출력 정책 변경 실패 appIdentifierSource=audio-session role={role} endpointAbi=HString endpointIdKind=PackedRender targetDeviceId={targetDeviceId} hresult={hresult}",
             partialFailureLog: (successfulRoles, failedRoles) =>
-                $"앱별 출력 정책 일부 role 실패 appIdentifierSource=audio-session endpointAbi=HString successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
+                $"앱별 출력 정책 일부 role 실패 appIdentifierSource=audio-session endpointAbi=HString endpointIdKind=PackedRender successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
     }
 
     private static uint ApplyProcessPolicyRole(
         uint processId,
-        string targetDeviceId,
+        string policyEndpointId,
         AudioRole role)
     {
         using var factory = CreateFactory();
         var endpointId = IntPtr.Zero;
         try
         {
-            ThrowIfFailed(WindowsCreateString(targetDeviceId, (uint)targetDeviceId.Length, out endpointId));
+            ThrowIfFailed(WindowsCreateString(policyEndpointId, (uint)policyEndpointId.Length, out endpointId));
             return factory.SetPersistedDefaultAudioEndpointForProcessHString(
                 processId,
                 AudioDataFlow.Render,
@@ -83,7 +87,7 @@ internal static class ApplicationAudioOutputPolicy
 
     private static uint ApplyAppIdentifierPolicyRole(
         string appIdentifier,
-        string targetDeviceId,
+        string policyEndpointId,
         AudioRole role)
     {
         using var factory = CreateFactory();
@@ -92,7 +96,7 @@ internal static class ApplicationAudioOutputPolicy
         try
         {
             ThrowIfFailed(WindowsCreateString(appIdentifier, (uint)appIdentifier.Length, out appIdentifierId));
-            ThrowIfFailed(WindowsCreateString(targetDeviceId, (uint)targetDeviceId.Length, out endpointId));
+            ThrowIfFailed(WindowsCreateString(policyEndpointId, (uint)policyEndpointId.Length, out endpointId));
             return factory.SetPersistedDefaultAudioEndpointForAppIdentifierHString(
                 appIdentifierId,
                 AudioDataFlow.Render,
