@@ -13,6 +13,9 @@ namespace DesktopAudioController.Services;
 public sealed class AutomaticUpdateService
 {
     private const string UpdaterExecutableName = "DesktopAudioController.Updater.exe";
+    private static readonly TimeSpan ChecksumProgressMinimumDuration = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan VerificationProgressMinimumDuration = TimeSpan.FromMilliseconds(900);
+    private static readonly TimeSpan ApplyPreparationProgressMinimumDuration = TimeSpan.FromSeconds(1);
     private static readonly Regex Sha256HashPattern = new(
         @"\b(?<hash>[a-fA-F0-9]{64})\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -77,31 +80,54 @@ public sealed class AutomaticUpdateService
             AppLog.Info("AutomaticUpdate", $"업데이트 패키지 다운로드 시작 version={updateCheckResult.LatestVersion}");
             await DownloadFileAsync(updateCheckResult.DownloadUrl, packagePath, cancellationToken);
 
-            progressChanged?.Invoke("체크섬 다운로드 중...");
-            await DownloadFileAsync(updateCheckResult.ChecksumDownloadUrl, checksumPath, cancellationToken);
+            await RunProgressStepAsync(
+                progressChanged,
+                "체크섬 다운로드 중...",
+                ChecksumProgressMinimumDuration,
+                () => DownloadFileAsync(updateCheckResult.ChecksumDownloadUrl, checksumPath, cancellationToken),
+                cancellationToken);
 
-            progressChanged?.Invoke("업데이트 파일 검증 중...");
-            var checksumText = await File.ReadAllTextAsync(checksumPath, cancellationToken);
+            string checksumText = string.Empty;
+            string actualHash = string.Empty;
+            await RunProgressStepAsync(
+                progressChanged,
+                "업데이트 파일 검증 중...",
+                VerificationProgressMinimumDuration,
+                async () =>
+                {
+                    checksumText = await File.ReadAllTextAsync(checksumPath, cancellationToken);
+                    actualHash = await ComputeSha256HashAsync(packagePath, cancellationToken);
+                },
+                cancellationToken);
+
             if (!TryParseSha256Hash(checksumText, out var expectedHash))
             {
                 return AutomaticUpdateStartResult.Fail("sha256 파일에서 체크섬을 읽지 못했습니다.");
             }
 
-            var actualHash = await ComputeSha256HashAsync(packagePath, cancellationToken);
             if (!string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase))
             {
                 AppLog.Warn("AutomaticUpdate", $"업데이트 패키지 sha256 불일치 expected={expectedHash} actual={actualHash}");
                 return AutomaticUpdateStartResult.Fail("다운로드한 업데이트 파일의 sha256 검증에 실패했습니다.");
             }
 
-            progressChanged?.Invoke("업데이트 적용 준비 중...");
-            File.Copy(sourceUpdaterPath, tempUpdaterPath, overwrite: true);
-            StartUpdaterProcess(
-                tempUpdaterPath,
-                currentProcessId,
-                applicationDirectory,
-                applicationExecutablePath,
-                packagePath);
+            await RunProgressStepAsync(
+                progressChanged,
+                "업데이트 적용 준비 중...",
+                ApplyPreparationProgressMinimumDuration,
+                () =>
+                {
+                    File.Copy(sourceUpdaterPath, tempUpdaterPath, overwrite: true);
+                    StartUpdaterProcess(
+                        tempUpdaterPath,
+                        currentProcessId,
+                        applicationDirectory,
+                        applicationExecutablePath,
+                        packagePath);
+
+                    return Task.CompletedTask;
+                },
+                cancellationToken);
 
             AppLog.Info("AutomaticUpdate", $"업데이트 적용 프로세스 시작 version={updateCheckResult.LatestVersion}");
             return AutomaticUpdateStartResult.Success(updateWorkDirectory);
@@ -131,6 +157,16 @@ public sealed class AutomaticUpdateService
         return true;
     }
 
+    internal static TimeSpan CalculateRemainingProgressDelay(TimeSpan elapsed, TimeSpan minimumDuration)
+    {
+        if (minimumDuration <= TimeSpan.Zero || elapsed >= minimumDuration)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return minimumDuration - elapsed;
+    }
+
     private static string BuildUpdateWorkDirectory()
     {
         return Path.Combine(
@@ -149,6 +185,27 @@ public sealed class AutomaticUpdateService
         await using var sourceStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         await using var targetStream = File.Create(targetPath);
         await sourceStream.CopyToAsync(targetStream, cancellationToken);
+    }
+
+    private static async Task RunProgressStepAsync(
+        Action<string>? progressChanged,
+        string message,
+        TimeSpan minimumDuration,
+        Func<Task> operation,
+        CancellationToken cancellationToken)
+    {
+        progressChanged?.Invoke(message);
+        var startedTimestamp = Stopwatch.GetTimestamp();
+
+        await operation();
+
+        var remainingDelay = CalculateRemainingProgressDelay(
+            Stopwatch.GetElapsedTime(startedTimestamp),
+            minimumDuration);
+        if (remainingDelay > TimeSpan.Zero)
+        {
+            await Task.Delay(remainingDelay, cancellationToken);
+        }
     }
 
     private static async Task<string> ComputeSha256HashAsync(string filePath, CancellationToken cancellationToken)

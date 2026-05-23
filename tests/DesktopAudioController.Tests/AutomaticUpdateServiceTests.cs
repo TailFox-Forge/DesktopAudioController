@@ -24,4 +24,24 @@ public sealed class AutomaticUpdateServiceTests
         Assert.False(result);
         Assert.Empty(parsedHash);
     }
+
+    [Fact]
+    public void CalculateRemainingProgressDelay_ReturnsRemainingMinimumDisplayTime()
+    {
+        var remaining = AutomaticUpdateService.CalculateRemainingProgressDelay(
+            TimeSpan.FromMilliseconds(250),
+            TimeSpan.FromSeconds(1));
+
+        Assert.Equal(TimeSpan.FromMilliseconds(750), remaining);
+    }
+
+    [Fact]
+    public void CalculateRemainingProgressDelay_ReturnsZero_WhenElapsedExceedsMinimum()
+    {
+        var remaining = AutomaticUpdateService.CalculateRemainingProgressDelay(
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(1));
+
+        Assert.Equal(TimeSpan.Zero, remaining);
+    }
 }
