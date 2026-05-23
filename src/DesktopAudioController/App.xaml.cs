@@ -128,6 +128,7 @@ public partial class App : System.Windows.Application
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
         _appRunStateService = new AppRunStateService();
+        SessionEnding += App_OnSessionEnding;
 
         // 현재 실행이 Windows 자동 실행 레지스트리를 통해 시작된 경우에만 true입니다.
         var isStartupLaunch = e.Args.Any(argument =>
@@ -286,6 +287,12 @@ public partial class App : System.Windows.Application
         AppLog.Info("App", "OnExit 완료");
         TryMarkCleanShutdown();
         base.OnExit(e);
+    }
+
+    private void App_OnSessionEnding(object sender, SessionEndingCancelEventArgs e)
+    {
+        AppLog.Info("App", $"Windows 세션 종료 감지 reason={e.ReasonSessionEnding}");
+        TryMarkCleanShutdown();
     }
 
     /// <summary>
