@@ -119,7 +119,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan SessionRefreshOperationTimeout = TimeSpan.FromSeconds(1);
 
     // 수동 업데이트 확인 버튼 연타 시 네트워크 요청을 막는 최소 간격입니다.
-    private static readonly TimeSpan ManualUpdateCheckThrottle = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ManualUpdateCheckThrottle = TimeSpan.FromSeconds(5);
 
     // 앱이 켜져 있는 동안 새 릴리즈를 가볍게 재확인하는 간격입니다.
     private static readonly TimeSpan PeriodicUpdateCheckInterval = TimeSpan.FromHours(6);

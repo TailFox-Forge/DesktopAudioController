@@ -10,7 +10,7 @@ PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csp
 UPDATER_PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController.Updater/DesktopAudioController.Updater.csproj"
 
 # 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.13.13-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+VERSION="${1:-v0.13.14-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 
 # 우선순위:
 # 1. DOTNET_BIN 환경 변수
@@ -32,6 +32,8 @@ RUNTIME_ID="win-x64"
 PUBLISH_ROOT="${REPO_ROOT}/artifacts/release/${RUNTIME_ID}/${VERSION}"
 PUBLISH_DIR="${PUBLISH_ROOT}/publish"
 UPDATER_PUBLISH_DIR="${PUBLISH_ROOT}/updater"
+PACKAGE_STAGING_DIR="${PUBLISH_ROOT}/package"
+PACKAGE_PAYLOAD_DIR="${PACKAGE_STAGING_DIR}/DesktopAudioController"
 PACKAGE_DIR="${REPO_ROOT}/artifacts/release/packages"
 PACKAGE_BASENAME="DesktopAudioController-${VERSION}-${RUNTIME_ID}"
 PACKAGE_PATH="${PACKAGE_DIR}/${PACKAGE_BASENAME}.zip"
@@ -40,7 +42,7 @@ CHECKSUM_PATH="${PACKAGE_PATH}.sha256"
 # 이전 실행 산출물이 남아 있으면 혼동되므로 같은 버전의 publish 폴더와 패키지를 정리합니다.
 rm -rf "${PUBLISH_ROOT}"
 rm -f "${PACKAGE_PATH}" "${CHECKSUM_PATH}"
-mkdir -p "${PUBLISH_DIR}" "${UPDATER_PUBLISH_DIR}" "${PACKAGE_DIR}"
+mkdir -p "${PUBLISH_DIR}" "${UPDATER_PUBLISH_DIR}" "${PACKAGE_PAYLOAD_DIR}" "${PACKAGE_DIR}"
 
 create_zip() {
     local source_dir="$1"
@@ -93,9 +95,10 @@ echo "  - RID restore 수행: ${RUNTIME_ID}"
 
 echo "[2/4] updater 포함"
 cp "${UPDATER_PUBLISH_DIR}/DesktopAudioController.Updater.exe" "${PUBLISH_DIR}/DesktopAudioController.Updater.exe"
+cp -a "${PUBLISH_DIR}/." "${PACKAGE_PAYLOAD_DIR}/"
 
 echo "[3/4] zip 생성: ${PACKAGE_PATH}"
-create_zip "${PUBLISH_DIR}" "${PACKAGE_PATH}"
+create_zip "${PACKAGE_STAGING_DIR}" "${PACKAGE_PATH}"
 
 echo "[4/4] sha256 생성: ${CHECKSUM_PATH}"
 (
@@ -106,5 +109,6 @@ echo "[4/4] sha256 생성: ${CHECKSUM_PATH}"
 echo
 echo "배포 산출물 생성 완료"
 echo "  publish:  ${PUBLISH_DIR}"
+echo "  payload:  ${PACKAGE_PAYLOAD_DIR}"
 echo "  package:  ${PACKAGE_PATH}"
 echo "  checksum: ${CHECKSUM_PATH}"
