@@ -196,6 +196,7 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
         var executablePath = ResolveExecutablePath(targetSession);
         var candidateProcessIds = GetCandidateProcessIds(processId, executablePath);
         var processFailures = new List<string>();
+        // Chromium/게임 런처처럼 오디오 세션 PID와 실제 정책 대상 PID가 갈릴 수 있어 같은 실행 파일 PID를 함께 시도합니다.
         AppLog.Info(
             "NativeAudioSessionService",
             $"SetSessionOutputDevice 후보 processIds=[{string.Join(", ", candidateProcessIds)}] executablePath={executablePath ?? "unknown"}");
@@ -219,60 +220,8 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             }
         }
 
-        var appIdentifierFailures = new List<string>();
-        foreach (var candidate in GetCandidateAppIdentifiers(sessionId, executablePath))
-        {
-            try
-            {
-                AppLog.Info(
-                    "NativeAudioSessionService",
-                    $"SetSessionOutputDevice 후보 appIdentifierSource={candidate.Label}");
-                ApplicationAudioOutputPolicy.SetPersistedDefaultOutputDeviceForAppIdentifier(candidate.Value, targetDeviceId);
-                AppLog.Info(
-                    "NativeAudioSessionService",
-                    $"SetSessionOutputDevice 정책 변경 요청 성공 appIdentifierSource={candidate.Label} targetDevice={targetDevice.FriendlyName}");
-                return;
-            }
-            catch (Exception exception)
-            {
-                appIdentifierFailures.Add($"{candidate.Label}:{exception.Message}");
-                AppLog.Warn(
-                    "NativeAudioSessionService",
-                    $"SetSessionOutputDevice 후보 appIdentifierSource 실패 appIdentifierSource={candidate.Label} message={exception.Message}");
-            }
-        }
-
         throw new InvalidOperationException(
-            $"앱별 출력 장치 정책 변경에 실패했습니다. processResults=[{FormatFailures(processFailures)}] appIdentifierResults=[{FormatFailures(appIdentifierFailures)}]");
-    }
-
-    private static IReadOnlyList<AppIdentifierCandidate> GetCandidateAppIdentifiers(string sessionId, string? executablePath)
-    {
-        var result = new List<AppIdentifierCandidate>();
-        AddCandidate(result, "session-tail", TryExtractSessionTail(sessionId));
-        AddCandidate(result, "session-id", sessionId);
-        AddCandidate(result, "executable-path", executablePath);
-        return result
-            .DistinctBy(candidate => candidate.Value, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
-    private static void AddCandidate(List<AppIdentifierCandidate> candidates, string label, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        candidates.Add(new AppIdentifierCandidate(label, value));
-    }
-
-    private static string? TryExtractSessionTail(string sessionId)
-    {
-        var separatorIndex = sessionId.IndexOf('|');
-        return separatorIndex >= 0 && separatorIndex < sessionId.Length - 1
-            ? sessionId[(separatorIndex + 1)..]
-            : null;
+            $"앱별 출력 장치 정책 변경에 실패했습니다. processResults=[{FormatFailures(processFailures)}]");
     }
 
     private static string FormatFailures(IReadOnlyList<string> failures)
@@ -284,8 +233,6 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             : string.Empty;
         return string.Join(" | ", visibleFailures) + suffix;
     }
-
-    private readonly record struct AppIdentifierCandidate(string Label, string Value);
 
     private static IReadOnlyList<uint> GetCandidateProcessIds(uint sessionProcessId, string? executablePath)
     {

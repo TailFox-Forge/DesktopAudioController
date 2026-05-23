@@ -7,11 +7,16 @@ namespace DesktopAudioController.Services;
 /// </summary>
 internal static class ApplicationAudioOutputPolicy
 {
+    // 이 클래스는 공개 API가 없는 Windows.Media.Internal.AudioPolicyConfig를 직접 호출합니다.
+    // .NET COM/WinRT RCW 변환 경로는 이 내부 인터페이스에서 막히므로 원시 vtable 포인터와 HSTRING을 사용합니다.
     private const string AudioPolicyConfigClassName = "Windows.Media.Internal.AudioPolicyConfig";
     private const int SetPersistedDefaultAudioEndpointVtableSlot = 25;
     private static readonly Guid AudioPolicyConfigFactoryIdFor21H2 = new("ab3d4648-e242-459f-b02f-541c70306324");
     private static readonly Guid AudioPolicyConfigFactoryIdForDownlevel = new("2a59116d-6c4f-45e0-a74f-707e3fef9258");
 
+    /// <summary>
+    /// 지정한 프로세스의 앱별 기본 출력 장치를 대상 렌더 장치로 변경합니다.
+    /// </summary>
     public static void SetPersistedDefaultOutputDevice(uint processId, string targetDeviceId)
     {
         if (processId == 0)
@@ -36,30 +41,6 @@ internal static class ApplicationAudioOutputPolicy
                 $"앱별 출력 정책 일부 role 실패 processId={processId} endpointAbi=HString endpointIdKind=PackedRender successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
     }
 
-    public static void SetPersistedDefaultOutputDeviceForAppIdentifier(string appIdentifier, string targetDeviceId)
-    {
-        if (string.IsNullOrWhiteSpace(appIdentifier))
-        {
-            throw new ArgumentException("앱 식별자가 비어 있습니다.", nameof(appIdentifier));
-        }
-
-        if (string.IsNullOrWhiteSpace(targetDeviceId))
-        {
-            throw new ArgumentException("대상 출력 장치 ID가 비어 있습니다.", nameof(targetDeviceId));
-        }
-
-        var policyEndpointId = AudioPolicyEndpointId.ToRenderPolicyEndpointId(targetDeviceId);
-
-        ApplyPolicyToRoles(
-            role => ApplyAppIdentifierPolicyRole(appIdentifier, policyEndpointId, role),
-            roleSuccessLog: role =>
-                $"앱별 출력 정책 변경 성공 appIdentifierSource=audio-session role={role} endpointAbi=HString endpointIdKind=PackedRender targetDeviceId={targetDeviceId}",
-            roleFailureLog: (role, hresult) =>
-                $"앱별 출력 정책 변경 실패 appIdentifierSource=audio-session role={role} endpointAbi=HString endpointIdKind=PackedRender targetDeviceId={targetDeviceId} hresult={hresult}",
-            partialFailureLog: (successfulRoles, failedRoles) =>
-                $"앱별 출력 정책 일부 role 실패 appIdentifierSource=audio-session endpointAbi=HString endpointIdKind=PackedRender successfulRoles=[{string.Join(", ", successfulRoles)}] failedRoles=[{string.Join(", ", failedRoles)}]");
-    }
-
     private static uint ApplyProcessPolicyRole(
         uint processId,
         string policyEndpointId,
@@ -81,38 +62,6 @@ internal static class ApplicationAudioOutputPolicy
             if (endpointId != IntPtr.Zero)
             {
                 WindowsDeleteString(endpointId);
-            }
-        }
-    }
-
-    private static uint ApplyAppIdentifierPolicyRole(
-        string appIdentifier,
-        string policyEndpointId,
-        AudioRole role)
-    {
-        using var factory = CreateFactory();
-        var appIdentifierId = IntPtr.Zero;
-        var endpointId = IntPtr.Zero;
-        try
-        {
-            ThrowIfFailed(WindowsCreateString(appIdentifier, (uint)appIdentifier.Length, out appIdentifierId));
-            ThrowIfFailed(WindowsCreateString(policyEndpointId, (uint)policyEndpointId.Length, out endpointId));
-            return factory.SetPersistedDefaultAudioEndpointForAppIdentifierHString(
-                appIdentifierId,
-                AudioDataFlow.Render,
-                role,
-                endpointId);
-        }
-        finally
-        {
-            if (endpointId != IntPtr.Zero)
-            {
-                WindowsDeleteString(endpointId);
-            }
-
-            if (appIdentifierId != IntPtr.Zero)
-            {
-                WindowsDeleteString(appIdentifierId);
             }
         }
     }
@@ -267,7 +216,6 @@ internal static class ApplicationAudioOutputPolicy
     private sealed class AudioPolicyConfigFactory : IDisposable
     {
         private readonly SetPersistedDefaultAudioEndpointForProcessHStringDelegate _setPersistedDefaultAudioEndpointForProcessHString;
-        private readonly SetPersistedDefaultAudioEndpointForAppIdentifierHStringDelegate _setPersistedDefaultAudioEndpointForAppIdentifierHString;
         private IntPtr _nativePointer;
 
         public AudioPolicyConfigFactory(IntPtr nativePointer)
@@ -284,8 +232,6 @@ internal static class ApplicationAudioOutputPolicy
                 SetPersistedDefaultAudioEndpointVtableSlot * IntPtr.Size);
             _setPersistedDefaultAudioEndpointForProcessHString =
                 Marshal.GetDelegateForFunctionPointer<SetPersistedDefaultAudioEndpointForProcessHStringDelegate>(methodPointer);
-            _setPersistedDefaultAudioEndpointForAppIdentifierHString =
-                Marshal.GetDelegateForFunctionPointer<SetPersistedDefaultAudioEndpointForAppIdentifierHStringDelegate>(methodPointer);
         }
 
         public uint SetPersistedDefaultAudioEndpointForProcessHString(
@@ -296,16 +242,6 @@ internal static class ApplicationAudioOutputPolicy
         {
             ObjectDisposedException.ThrowIf(_nativePointer == IntPtr.Zero, this);
             return _setPersistedDefaultAudioEndpointForProcessHString(_nativePointer, processId, flow, role, endpointId);
-        }
-
-        public uint SetPersistedDefaultAudioEndpointForAppIdentifierHString(
-            IntPtr appIdentifier,
-            AudioDataFlow flow,
-            AudioRole role,
-            IntPtr endpointId)
-        {
-            ObjectDisposedException.ThrowIf(_nativePointer == IntPtr.Zero, this);
-            return _setPersistedDefaultAudioEndpointForAppIdentifierHString(_nativePointer, appIdentifier, flow, role, endpointId);
         }
 
         public void Dispose()
@@ -324,14 +260,6 @@ internal static class ApplicationAudioOutputPolicy
     private delegate uint SetPersistedDefaultAudioEndpointForProcessHStringDelegate(
         IntPtr self,
         uint processId,
-        AudioDataFlow flow,
-        AudioRole role,
-        IntPtr endpointId);
-
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate uint SetPersistedDefaultAudioEndpointForAppIdentifierHStringDelegate(
-        IntPtr self,
-        IntPtr appIdentifier,
         AudioDataFlow flow,
         AudioRole role,
         IntPtr endpointId);
