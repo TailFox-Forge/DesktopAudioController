@@ -217,7 +217,46 @@ public sealed class CachedAppIconService : IAppIconService
     /// <summary>
     /// 실제 파일에서 아이콘을 읽어 WPF ImageSource로 변환합니다.
     /// </summary>
-    private static ImageSource? LoadIcon(string executablePath)
+    private static ImageSource? LoadIcon(string iconSourcePath)
+    {
+        if (IsBitmapImageFile(iconSourcePath))
+        {
+            return LoadBitmapImage(iconSourcePath);
+        }
+
+        return LoadAssociatedIcon(iconSourcePath);
+    }
+
+    private static bool IsBitmapImageFile(string iconSourcePath)
+    {
+        var extension = Path.GetExtension(iconSourcePath);
+        return extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ImageSource? LoadBitmapImage(string imagePath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(imagePath);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.DecodePixelWidth = 32;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static ImageSource? LoadAssociatedIcon(string executablePath)
     {
         try
         {

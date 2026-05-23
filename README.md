@@ -4,7 +4,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 기본 Windows 볼륨 믹서보다 좁은 목적에 맞춰 만들어졌습니다. 사용자가 고른 출력 장치만 메인 화면에 표시하고, 각 장치에서 실제로 소리를 내는 프로그램 세션을 장치 카드 안에서 바로 조절합니다.
 
-- 최신 버전: `v0.15.3`
+- 최신 버전: `v0.15.4`
 - 배포 형태: `win-x64` portable zip
 - 실행 환경: Windows 10/11 x64
 - 릴리즈 페이지: <https://github.com/TailFox-Forge/DesktopAudioController/releases>
@@ -23,7 +23,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 ## 빠른 시작
 
-1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.15.3-win-x64.zip`을 다운로드합니다.
+1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.15.4-win-x64.zip`을 다운로드합니다.
 2. 원하는 위치에 압축을 풉니다.
 
 ```text
@@ -67,7 +67,9 @@ D:\DesktopAudioController\
 - 출력 장치 변경
 ```
 
-세션 카드에는 현재 그 프로그램이 어느 출력 장치에서 감지됐는지도 함께 표시됩니다. 출력 장치를 바꾼 뒤 바로 이동하지 않으면 해당 프로그램의 재생을 다시 시작하거나 앱을 다시 실행해 주세요.
+출력 변경 메뉴에서는 현재 장치와 기본 장치를 구분해 표시합니다. 출력 장치를 바꾼 뒤 바로 이동하지 않으면 해당 프로그램의 재생을 다시 시작하거나 앱을 다시 실행해 주세요.
+
+Store 앱이 패키지 리소스 아이콘을 제공하는 경우에는 설치된 패키지의 PNG 아이콘을 우선 사용합니다. 패키지 아이콘을 찾지 못하면 기존처럼 실행 파일 아이콘으로 폴백합니다.
 
 장치 전체 재열거는 무거운 작업이므로, 프로그램 패널을 열어둔 상태에서는 세션 목록만 가볍게 갱신합니다.
 
@@ -427,7 +429,7 @@ dotnet build src/DesktopAudioController.Updater/DesktopAudioController.Updater.c
 ### 배포 zip 생성
 
 ```bash
-bash scripts/publish-win-x64.sh v0.15.3-local
+bash scripts/publish-win-x64.sh v0.15.4-local
 ```
 
 생성되는 파일:

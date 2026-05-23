@@ -19,6 +19,41 @@ public sealed class IconSourcePathResolverTests
     }
 
     [Fact]
+    public void ResolvePackageIconSourcePath_ResolvesPackagedAssetVariant()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var packageDirectory = Path.Combine(tempDirectory.DirectoryPath, "Contoso.App_1.0.0.0_x64__abc123");
+        var assetPath = Path.Combine(packageDirectory, "Assets", "AppIcon.scale-200.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(assetPath)!);
+        File.WriteAllText(assetPath, string.Empty);
+
+        var resolvedPath = IconSourcePathResolver.ResolvePackageIconSourcePath(
+            "@{Contoso.App_abc123?ms-resource://Contoso.App/Files/Assets/AppIcon.png}",
+            [tempDirectory.DirectoryPath]);
+
+        Assert.Equal(assetPath, resolvedPath);
+    }
+
+    [Fact]
+    public void ResolvePreferredIconSourcePath_UsesPackagedIconBeforeExecutableFallback()
+    {
+        using var tempDirectory = new TemporaryDirectory();
+        var packageDirectory = Path.Combine(tempDirectory.DirectoryPath, "Contoso.App_1.0.0.0_x64__abc123");
+        var assetPath = Path.Combine(packageDirectory, "Assets", "AppIcon.targetsize-32.png");
+        var executablePath = Path.Combine(tempDirectory.DirectoryPath, "ApplicationFrameHost.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(assetPath)!);
+        File.WriteAllText(assetPath, string.Empty);
+        File.WriteAllText(executablePath, string.Empty);
+
+        var resolvedPath = IconSourcePathResolver.ResolvePreferredIconSourcePath(
+            "@{Contoso.App_abc123?ms-resource://Contoso.App/Files/Assets/AppIcon.png}",
+            executablePath,
+            [tempDirectory.DirectoryPath]);
+
+        Assert.Equal(assetPath, resolvedPath);
+    }
+
+    [Fact]
     public void ResolvePreferredIconSourcePath_PrefersSessionFileIcon_WhenResourceIndexIsPresent()
     {
         using var tempDirectory = new TemporaryDirectory();

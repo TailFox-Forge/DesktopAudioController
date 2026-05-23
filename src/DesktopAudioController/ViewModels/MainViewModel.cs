@@ -518,7 +518,7 @@ public sealed class MainViewModel : ObservableObject
 
         foreach (var session in snapshot.Sessions)
         {
-            deviceViewModel.Sessions.Add(CreateSessionViewModel(deviceViewModel, GetEffectiveSessionSnapshot(device.Id, session)));
+            deviceViewModel.Sessions.Add(CreateSessionViewModel(device.Id, GetEffectiveSessionSnapshot(device.Id, session)));
         }
 
         return deviceViewModel;
@@ -561,7 +561,6 @@ public sealed class MainViewModel : ObservableObject
                     snapshot.MatchKey,
                     snapshot.DisplayName,
                     snapshot.DisambiguationText,
-                    device.Name,
                     snapshot.ExecutablePath,
                     snapshot.IconSourcePath,
                     iconImageForSnapshot,
@@ -578,7 +577,7 @@ public sealed class MainViewModel : ObservableObject
                 continue;
             }
 
-            device.Sessions.Add(CreateSessionViewModel(device, snapshot));
+            device.Sessions.Add(CreateSessionViewModel(device.Id, snapshot));
         }
     }
 
@@ -707,18 +706,17 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>
     /// 서비스 모델을 화면용 세션 뷰모델로 변환합니다.
     /// </summary>
-    private AudioSessionViewModel CreateSessionViewModel(VisibleDeviceViewModel device, AudioSessionInfo session)
+    private AudioSessionViewModel CreateSessionViewModel(string deviceId, AudioSessionInfo session)
     {
         // cachedIcon은 캐시에 이미 있는 경우 초기 렌더링에 바로 사용할 수 있는 값입니다.
         var cachedIcon = _appIconService.TryGetCachedIcon(session.IconSourcePath);
 
         var viewModel = new AudioSessionViewModel(
-            device.Id,
+            deviceId,
             session.Id,
             session.MatchKey,
             session.DisplayName,
             session.DisambiguationText,
-            device.Name,
             session.ExecutablePath,
             session.IconSourcePath,
             cachedIcon,
