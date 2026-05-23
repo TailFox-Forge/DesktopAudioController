@@ -1567,7 +1567,7 @@ public partial class MainWindow : Window
 
                 UpdateStatusText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x00, 0xAA, 0x66));
                 var publishedDateText = updateCheckResult.PublishedAtUtc.HasValue
-                    ? $" · {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd} 공개"
+                    ? $" · 공개: {updateCheckResult.PublishedAtUtc.Value.ToLocalTime():yyyy-MM-dd HH:mm}"
                     : string.Empty;
                 var preReleaseText = updateCheckResult.IsPreRelease ? " (프리릴리즈)" : string.Empty;
                 UpdateStatusText.Text = $"새 버전 {updateCheckResult.LatestVersion}{preReleaseText} 업데이트 가능{publishedDateText}";

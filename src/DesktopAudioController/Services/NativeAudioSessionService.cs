@@ -2,6 +2,7 @@ using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 using DesktopAudioController.Models;
 using System.Diagnostics;
+using System.IO;
 
 namespace DesktopAudioController.Services;
 
@@ -192,10 +193,83 @@ public sealed class NativeAudioSessionService : IAudioSessionService, IDisposabl
             throw new InvalidOperationException("프로세스 ID가 없는 오디오 세션은 출력 장치를 변경할 수 없습니다.");
         }
 
-        ApplicationAudioOutputPolicy.SetPersistedDefaultOutputDevice((uint)processId, targetDeviceId);
+        var executablePath = ResolveExecutablePath(targetSession);
+        var candidateProcessIds = GetCandidateProcessIds(processId, executablePath);
+        var failures = new List<string>();
         AppLog.Info(
             "NativeAudioSessionService",
-            $"SetSessionOutputDevice 완료 processId={processId} targetDevice={targetDevice.FriendlyName}");
+            $"SetSessionOutputDevice 후보 processIds=[{string.Join(", ", candidateProcessIds)}] executablePath={executablePath ?? "unknown"}");
+
+        foreach (var candidateProcessId in candidateProcessIds)
+        {
+            try
+            {
+                ApplicationAudioOutputPolicy.SetPersistedDefaultOutputDevice((uint)candidateProcessId, targetDeviceId);
+                AppLog.Info(
+                    "NativeAudioSessionService",
+                    $"SetSessionOutputDevice 정책 변경 요청 성공 processId={candidateProcessId} targetDevice={targetDevice.FriendlyName}");
+                return;
+            }
+            catch (Exception exception)
+            {
+                failures.Add($"{candidateProcessId}:{exception.Message}");
+                AppLog.Warn(
+                    "NativeAudioSessionService",
+                    $"SetSessionOutputDevice 후보 processId 실패 processId={candidateProcessId}",
+                    exception);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"앱별 출력 장치 정책 변경에 실패했습니다. processResults=[{string.Join(" | ", failures)}]");
+    }
+
+    private static IReadOnlyList<uint> GetCandidateProcessIds(uint sessionProcessId, string? executablePath)
+    {
+        var result = new List<uint> { sessionProcessId };
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            return result;
+        }
+
+        var processName = Path.GetFileNameWithoutExtension(executablePath);
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return result;
+        }
+
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            using (process)
+            {
+                if ((uint)process.Id == sessionProcessId)
+                {
+                    continue;
+                }
+
+                var currentExecutablePath = TryGetProcessExecutablePath(process);
+                if (!string.Equals(currentExecutablePath, executablePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                result.Add((uint)process.Id);
+            }
+        }
+
+        return result.Distinct().ToArray();
+    }
+
+    private static string? TryGetProcessExecutablePath(Process process)
+    {
+        try
+        {
+            return process.MainModule?.FileName;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
