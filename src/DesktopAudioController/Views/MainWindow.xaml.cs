@@ -1072,6 +1072,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            Directory.CreateDirectory(AppLog.LogDirectoryPath);
             Process.Start(new ProcessStartInfo(AppLog.LogDirectoryPath)
             {
                 UseShellExecute = true
@@ -1132,14 +1133,28 @@ public partial class MainWindow : Window
         try
         {
             var totalSeconds = Math.Max(1, (int)Math.Ceiling(delay.TotalSeconds));
-            _notifyIcon.BalloonTipTitle = "DesktopAudioController";
-            _notifyIcon.BalloonTipText = $"오디오 초기화가 지연되어 {totalSeconds}초 뒤 자동으로 다시 시작합니다.";
-            _notifyIcon.ShowBalloonTip(5000);
+            ShowTrayNotification(
+                "DesktopAudioController",
+                $"오디오 초기화가 지연되어 {totalSeconds}초 뒤 자동으로 다시 시작합니다.");
             AppLog.Info("MainWindow", $"자동 재시작 안내 표시 delaySeconds={totalSeconds}");
         }
         catch (Exception exception)
         {
             AppLog.Warn("MainWindow", "자동 재시작 안내 표시 실패", exception);
+        }
+    }
+
+    private void ShowTrayNotification(string title, string text)
+    {
+        try
+        {
+            _notifyIcon.BalloonTipTitle = title;
+            _notifyIcon.BalloonTipText = text;
+            _notifyIcon.ShowBalloonTip(5000);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainWindow", $"트레이 알림 표시 실패 title={title}", exception);
         }
     }
 
@@ -1340,7 +1355,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var trayMenuSignature = BuildTrayMenuSignature();
+        var settings = LoadSettingsForTrayMenu();
+        var trayMenuSignature = BuildTrayMenuSignature(settings);
         if (!force && string.Equals(_lastTrayMenuSignature, trayMenuSignature, StringComparison.Ordinal))
         {
             return;
@@ -1383,6 +1399,19 @@ public partial class MainWindow : Window
         trayMenu.Items.Add("장치 다시 읽기", null, (_, _) => RunOnUiThread(() =>
         {
             _ = RefreshStateViewAsync("tray_refresh");
+        }));
+        trayMenu.Items.Add(BuildAudioProfileTrayMenu(settings));
+        trayMenu.Items.Add("로그 폴더 열기", null, (_, _) => RunOnUiThread(() =>
+        {
+            if (!TryOpenLogFolder())
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    "로그 폴더를 열지 못했습니다.",
+                    "로그 폴더 열기 실패",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
         }));
 
         if (_viewModel.VisibleDevices.Count > 0)
@@ -1442,6 +1471,103 @@ public partial class MainWindow : Window
         trayMenu.Items.Add(muteMenu);
         trayMenu.Items.Add(new Forms.ToolStripSeparator());
         trayMenu.Items.Add("앱 종료", null, (_, _) => ExitApplication());
+    }
+
+    private AppSettings LoadSettingsForTrayMenu()
+    {
+        try
+        {
+            return _settingsService.Load();
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("MainWindow", "트레이 메뉴 설정 로드 실패", exception);
+            return new AppSettings();
+        }
+    }
+
+    private Forms.ToolStripMenuItem BuildAudioProfileTrayMenu(AppSettings settings)
+    {
+        var profileMenu = new Forms.ToolStripMenuItem("프로필 적용");
+        if (settings.AudioProfiles.Count == 0)
+        {
+            profileMenu.Enabled = false;
+            return profileMenu;
+        }
+
+        var appliedProfileId = AudioProfileStore.FindAppliedProfileId(settings);
+        foreach (var profile in settings.AudioProfiles.OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var localProfileId = profile.Id;
+            var profileItem = new Forms.ToolStripMenuItem(profile.Name)
+            {
+                Checked = string.Equals(profile.Id, appliedProfileId, StringComparison.Ordinal)
+            };
+
+            profileItem.Click += (_, _) => RunOnUiThread(() =>
+            {
+                _ = ApplyAudioProfileFromTrayAsync(localProfileId);
+            });
+
+            profileMenu.DropDownItems.Add(profileItem);
+        }
+
+        return profileMenu;
+    }
+
+    private async Task ApplyAudioProfileFromTrayAsync(string profileId)
+    {
+        if (TryActivateExistingSettingsWindow())
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "설정 창이 열려 있어 트레이에서 프로필을 적용하지 않았습니다.\n설정 창을 닫은 뒤 다시 시도해 주세요.",
+                "프로필 적용 보류",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            _viewModel.FlushPendingProgramPreferenceSave();
+            var currentSettings = _settingsService.Load();
+            var profile = currentSettings.AudioProfiles.FirstOrDefault(profile =>
+                string.Equals(profile.Id, profileId, StringComparison.Ordinal))
+                ?? throw new InvalidOperationException("선택한 프로필을 설정 파일에서 찾지 못했습니다.");
+            var appliedSettings = AudioProfileStore.ApplyProfile(currentSettings, profile);
+
+            AppLog.Info(
+                "MainWindow",
+                $"트레이 수동 프로필 적용 profileId={profile.Id} name={profile.Name} visibleDevices={profile.VisibleDeviceIds.Count} programPreferences={profile.ProgramAudioPreferences.Count}");
+            _settingsService.Save(appliedSettings);
+            _minimizeToTray = appliedSettings.MinimizeToTray;
+            _includePreReleaseUpdates = appliedSettings.IncludePreReleaseUpdates;
+            _lastTrayMenuSignature = null;
+
+            var reloaded = await ReloadViewModelAsync("tray_profile_applied");
+            RefreshTrayMenu(force: true);
+            ShowTrayNotification("프로필 적용", $"{profile.Name} 프로필을 적용했습니다.");
+            if (!reloaded)
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    "프로필은 저장했지만 화면 새로고침에 실패했습니다.\n장치 다시 읽기를 실행해 주세요.",
+                    "프로필 적용",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("MainWindow", $"트레이 수동 프로필 적용 실패 profileId={profileId}", exception);
+            System.Windows.MessageBox.Show(
+                this,
+                $"프로필을 적용하지 못했습니다.\n\n원인: {exception.Message}",
+                "프로필 적용 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     /// <summary>
@@ -1966,12 +2092,20 @@ public partial class MainWindow : Window
         RefreshTrayMenu(force: true);
     }
 
-    private string BuildTrayMenuSignature()
+    private string BuildTrayMenuSignature(AppSettings settings)
     {
-        return string.Join(
+        var deviceSignature = string.Join(
             "\n",
             _viewModel.VisibleDevices.Select(device =>
                 $"{device.Id}|{device.Name}|{device.IsDefault}|{device.IsConnected}|{device.IsMuted}"));
+        var appliedProfileId = AudioProfileStore.FindAppliedProfileId(settings) ?? string.Empty;
+        var profileSignature = string.Join(
+            "\n",
+            settings.AudioProfiles
+                .OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(profile => $"{profile.Id}|{profile.Name}"));
+
+        return $"{deviceSignature}\nprofiles:{appliedProfileId}\n{profileSignature}";
     }
 
     private NotificationRefreshBatch DrainPendingNotificationBatchLocked()
