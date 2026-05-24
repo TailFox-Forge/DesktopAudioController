@@ -33,11 +33,14 @@
     <Compile Include="..\..\src\DesktopAudioController\ViewModels\SettingsSavePlanner.cs" Link="Source\ViewModels\SettingsSavePlanner.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Views\ManualRefreshCoordinator.cs" Link="Source\Views\ManualRefreshCoordinator.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AppLog.cs" Link="Source\Services\AppLog.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\AppBuildInfo.cs" Link="Source\Services\AppBuildInfo.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AudioProfileStore.cs" Link="Source\Services\AudioProfileStore.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AppRunStateService.cs" Link="Source\Services\AppRunStateService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AudioPolicyEndpointId.cs" Link="Source\Services\AudioPolicyEndpointId.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\AutomaticUpdateService.cs" Link="Source\Services\AutomaticUpdateService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\GitHubReleaseUpdateCheckService.cs" Link="Source\Services\GitHubReleaseUpdateCheckService.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\DiagnosticPackageService.cs" Link="Source\Services\DiagnosticPackageService.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\DiagnosticRedactor.cs" Link="Source\Services\DiagnosticRedactor.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\IconSourcePathResolver.cs" Link="Source\Services\IconSourcePathResolver.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ISettingsService.cs" Link="Source\Services\ISettingsService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\IUpdateCheckService.cs" Link="Source\Services\IUpdateCheckService.cs" />

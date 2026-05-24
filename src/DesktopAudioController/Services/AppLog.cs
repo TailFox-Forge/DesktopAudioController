@@ -1,7 +1,5 @@
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace DesktopAudioController.Services;
 
@@ -17,19 +15,6 @@ public static class AppLog
     private const long MaxTotalLogBytes = 100L * 1024 * 1024;
     private const long MaxSingleLogBytes = 5L * 1024 * 1024;
     private const long StartupWriteReserveBytes = 1L * 1024 * 1024;
-    private static readonly Regex SensitiveKeyPattern = new(
-        @"(?<key>\b(?:deviceId|sessionId|defaultDeviceId|groupingId|path|backup|iconPath|executablePath|outputPath)=)(?<value>.*?)(?=\s+\w+=|$)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex GenericWindowsPathPattern = new(
-        @"[A-Za-z]:\\(?:[^\s\\\r\n:]+\\)*[^\s\\\r\n:]+",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex GenericUnixPathPattern = new(
-        @"\/home\/[^\/\s]+(?:\/[^\s:]+)+",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex ManagedLogFileNamePattern = new(
-        @"^DesktopAudioController-\d{8}(?:\.\d+)?\.log$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
     // 현재 실행에서 사용할 로그 파일 경로입니다.
     private static string? _logFilePath;
 
@@ -169,7 +154,7 @@ public static class AppLog
     private static void PrepareWritableLogFile(int upcomingWriteBytes)
     {
         if (!string.IsNullOrWhiteSpace(_logFilePath)
-            && !ManagedLogFileNamePattern.IsMatch(Path.GetFileName(_logFilePath)))
+            && !IsManagedLogFileName(Path.GetFileName(_logFilePath)))
         {
             EnsureCurrentLogFileExists();
             return;
@@ -243,6 +228,26 @@ public static class AppLog
 
         var numberText = fileName[prefix.Length..^4];
         return int.TryParse(numberText, out index);
+    }
+
+    private static bool IsManagedLogFileName(string fileName)
+    {
+        if (!fileName.StartsWith("DesktopAudioController-", StringComparison.OrdinalIgnoreCase) ||
+            !fileName.EndsWith(".log", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var dateAndIndexText = fileName["DesktopAudioController-".Length..^4];
+        var dotIndex = dateAndIndexText.IndexOf('.');
+        var dateText = dotIndex >= 0 ? dateAndIndexText[..dotIndex] : dateAndIndexText;
+        if (dateText.Length != 8 || !dateText.All(char.IsDigit))
+        {
+            return false;
+        }
+
+        return dotIndex < 0 ||
+            int.TryParse(dateAndIndexText[(dotIndex + 1)..], out _);
     }
 
     private static void EnsureCurrentLogFileExists()
@@ -365,66 +370,7 @@ public static class AppLog
     /// </summary>
     private static string Sanitize(string input)
     {
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            return input;
-        }
-
-        var sanitized = SensitiveKeyPattern.Replace(input, static match =>
-        {
-            var key = match.Groups["key"].Value;
-            var value = match.Groups["value"].Value;
-            return key + MaskKnownValue(key, value);
-        });
-
-        sanitized = GenericWindowsPathPattern.Replace(sanitized, static match => MaskPathValue(match.Value));
-        sanitized = GenericUnixPathPattern.Replace(sanitized, static match => MaskPathValue(match.Value));
-        return sanitized;
-    }
-
-    private static string MaskKnownValue(string key, string value)
-    {
-        return key switch
-        {
-            "deviceId=" or "sessionId=" or "defaultDeviceId=" or "groupingId=" => MaskIdentifier(value),
-            "path=" or "backup=" or "iconPath=" or "executablePath=" or "outputPath=" => MaskPathValue(value),
-            _ => value
-        };
-    }
-
-    private static string MaskIdentifier(string value)
-    {
-        var trimmed = value.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(trimmed))
-        {
-            return "[id:redacted]";
-        }
-
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(trimmed)));
-        return $"[id:{hash[..8]}]";
-    }
-
-    private static string MaskPathValue(string value)
-    {
-        var trimmed = value.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(trimmed))
-        {
-            return "[path:redacted]";
-        }
-
-        var normalized = trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var parts = normalized.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
-        var fileName = parts.LastOrDefault();
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            fileName = Path.GetFileName(normalized);
-        }
-        if (string.IsNullOrWhiteSpace(fileName))
-        {
-            fileName = "redacted";
-        }
-
-        return $"[path:{fileName}]";
+        return DiagnosticRedactor.RedactText(input);
     }
 
     private readonly record struct CleanupState(string CurrentLogFullPath, DateTime CutoffUtc);

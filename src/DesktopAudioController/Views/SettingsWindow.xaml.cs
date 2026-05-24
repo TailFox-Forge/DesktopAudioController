@@ -161,6 +161,46 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void ExportDiagnosticPackageButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "진단 패키지 내보내기",
+            Filter = "ZIP 진단 패키지 (*.zip)|*.zip|모든 파일 (*.*)|*.*",
+            FileName = $"DesktopAudioController-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
+            AddExtension = true,
+            DefaultExt = ".zip",
+            OverwritePrompt = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var packagePath = _viewModel.ExportDiagnosticPackage(dialog.FileName);
+            AppLog.Info("SettingsWindow", $"진단 패키지 내보내기 성공 path={packagePath}");
+            System.Windows.MessageBox.Show(
+                this,
+                $"진단 패키지를 생성했습니다.\n\n경로: {packagePath}",
+                "진단 패키지 내보내기 완료",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("SettingsWindow", "진단 패키지 내보내기 실패", exception);
+            System.Windows.MessageBox.Show(
+                this,
+                $"진단 패키지를 만들지 못했습니다.\n\n원인: {exception.Message}",
+                "진단 패키지 내보내기 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
     private void ImportSettingsButton_OnClick(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog

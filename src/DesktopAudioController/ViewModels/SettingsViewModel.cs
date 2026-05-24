@@ -256,6 +256,15 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 최근 로그, 설정, 캐시, 버전 정보를 마스킹한 zip 진단 패키지로 내보냅니다.
+    /// </summary>
+    public string ExportDiagnosticPackage(string destinationZipPath)
+    {
+        var diagnosticPackageService = new DiagnosticPackageService(_settingsService);
+        return diagnosticPackageService.Export(destinationZipPath);
+    }
+
+    /// <summary>
     /// 외부 JSON 설정 파일을 현재 앱 설정으로 저장하고 화면 상태에도 반영합니다.
     /// </summary>
     public void ImportSettings(string sourceFilePath)

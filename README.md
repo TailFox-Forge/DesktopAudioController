@@ -4,7 +4,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 기본 Windows 볼륨 믹서보다 좁은 목적에 맞춰 만들어졌습니다. 사용자가 고른 출력 장치만 메인 화면에 표시하고, 각 장치에서 실제로 소리를 내는 프로그램 세션을 장치 카드 안에서 바로 조절합니다.
 
-- 최신 버전: `v0.16.3`
+- 최신 버전: `v0.16.4`
 - 배포 형태: `win-x64` portable zip
 - 실행 환경: Windows 10/11 x64
 - 릴리즈 페이지: <https://github.com/TailFox-Forge/DesktopAudioController/releases>
@@ -17,6 +17,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 - 프로그램별 볼륨 / 음소거 / 사용자 지정 이름 저장
 - 프로그램별 출력 장치 변경
 - 수동 프로필 저장 / 적용
+- 마스킹된 진단 패키지 내보내기
 - 트레이 상주와 빠른 장치 제어
 - 앱 내 자동 업데이트
 - 필요할 때만 켜는 디버그 로그
@@ -24,7 +25,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 ## 빠른 시작
 
-1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.16.3-win-x64.zip`을 다운로드합니다.
+1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.16.4-win-x64.zip`을 다운로드합니다.
 2. 원하는 위치에 압축을 풉니다.
 
 ```text
@@ -258,6 +259,7 @@ Strinova-Win64-Shipping.exe -> Strinova
 ```
 
 로그에는 문제 파악에 필요한 정보가 기록됩니다. 공개 이슈에 로그를 올리기 전에는 내용을 한 번 읽어보는 것을 권장합니다.
+설정창의 `진단 패키지 내보내기`를 사용하면 최근 로그, 설정 JSON, 캐시와 버전 정보를 경로/식별자 마스킹 후 zip으로 묶을 수 있습니다.
 
 ## 문제 해결
 
@@ -453,7 +455,7 @@ dotnet build src/DesktopAudioController.Updater/DesktopAudioController.Updater.c
 ### 배포 zip 생성
 
 ```bash
-bash scripts/publish-win-x64.sh v0.16.3-local
+bash scripts/publish-win-x64.sh v0.16.4-local
 ```
 
 생성되는 파일:
