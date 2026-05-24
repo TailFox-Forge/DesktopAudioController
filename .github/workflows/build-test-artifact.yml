@@ -30,36 +30,39 @@ jobs:
       - name: Resolve artifact version
         shell: pwsh
         run: |
+          [xml]$project = Get-Content src/DesktopAudioController/DesktopAudioController.csproj
+          $projectVersion = $project.Project.PropertyGroup.Version | Select-Object -First 1
+          if ([string]::IsNullOrWhiteSpace($projectVersion)) {
+            throw "Project Version is missing in DesktopAudioController.csproj."
+          }
+
           $sha = "${{ github.sha }}".Substring(0, 7)
           $suffix = "${{ inputs.artifact_suffix }}"
           if ([string]::IsNullOrWhiteSpace($suffix)) {
             $suffix = "test-$sha"
           }
 
-          $version = "v0.13.7-$suffix"
-          $publishRoot = "artifacts/release/win-x64/$version"
-          $publishDir = "$publishRoot/publish"
-          $packageDir = "artifacts/release/packages"
-          $packageBaseName = "DesktopAudioController-$version-win-x64"
-          $packagePath = "$packageDir/$packageBaseName.zip"
+          $safeSuffix = $suffix.Trim() -replace '[^A-Za-z0-9._-]', '-'
+          if ([string]::IsNullOrWhiteSpace($safeSuffix)) {
+            $safeSuffix = "test-$sha"
+          }
+
+          $version = "v$projectVersion-$safeSuffix"
+          $runtimeId = "win-x64"
+          $packageBaseName = "DesktopAudioController-$version-$runtimeId"
+          $packagePath = "artifacts/release/packages/$packageBaseName.zip"
           $checksumPath = "$packagePath.sha256"
 
           "ARTIFACT_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PUBLISH_ROOT=$publishRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PUBLISH_DIR=$publishDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PACKAGE_DIR=$packageDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PACKAGE_BASENAME=$packageBaseName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PACKAGE_PATH=$packagePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CHECKSUM_PATH=$checksumPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Restore
+      - name: Restore tests
         shell: pwsh
         run: |
-          dotnet restore src/DesktopAudioController/DesktopAudioController.csproj `
-            -r win-x64 `
+          dotnet restore tests/DesktopAudioController.Tests/DesktopAudioController.Tests.csproj `
             -p:EnableWindowsTargeting=true
-
-          dotnet restore tests/DesktopAudioController.Tests/DesktopAudioController.Tests.csproj
 
       - name: Test
         shell: pwsh
@@ -69,40 +72,18 @@ jobs:
             -p:EnableWindowsTargeting=true `
             --no-restore
 
-      - name: Publish
-        shell: pwsh
+      - name: Publish package
+        shell: bash
+        env:
+          DOTNET_BIN: dotnet
         run: |
-          Remove-Item -Recurse -Force $env:PUBLISH_ROOT -ErrorAction SilentlyContinue
-          Remove-Item -Force $env:PACKAGE_PATH, $env:CHECKSUM_PATH -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path $env:PUBLISH_DIR | Out-Null
-          New-Item -ItemType Directory -Force -Path $env:PACKAGE_DIR | Out-Null
+          bash scripts/publish-win-x64.sh "$ARTIFACT_VERSION"
 
-          dotnet publish src/DesktopAudioController/DesktopAudioController.csproj `
-            -c Release `
-            -r win-x64 `
-            --self-contained true `
-            --no-restore `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:DebugType=None `
-            -p:DebugSymbols=false `
-            -p:EnableWindowsTargeting=true `
-            -o $env:PUBLISH_DIR
-
-      - name: Package zip
-        shell: pwsh
+      - name: Verify sha256
+        shell: bash
         run: |
-          if (Test-Path $env:PACKAGE_PATH) {
-            Remove-Item -Force $env:PACKAGE_PATH
-          }
-
-          Compress-Archive -Path "$env:PUBLISH_DIR/*" -DestinationPath $env:PACKAGE_PATH
-
-      - name: Write sha256
-        shell: pwsh
-        run: |
-          $hash = (Get-FileHash -Algorithm SHA256 $env:PACKAGE_PATH).Hash.ToLowerInvariant()
-          "$hash  $env:PACKAGE_BASENAME.zip" | Out-File -FilePath $env:CHECKSUM_PATH -Encoding ascii
+          cd artifacts/release/packages
+          sha256sum -c "${PACKAGE_BASENAME}.zip.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

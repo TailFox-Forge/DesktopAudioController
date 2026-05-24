@@ -9,8 +9,14 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csproj"
 UPDATER_PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController.Updater/DesktopAudioController.Updater.csproj"
 
-# 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.16.7-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+PROJECT_VERSION="$(sed -n 's:.*<Version>\([^<][^<]*\)</Version>.*:\1:p' "${PROJECT_PATH}" | head -n 1 | tr -d '\r')"
+if [[ -z "${PROJECT_VERSION}" ]]; then
+    echo "DesktopAudioController.csproj에서 Version 값을 찾지 못했습니다." >&2
+    exit 1
+fi
+
+# 사용자가 명시하지 않으면 프로젝트 버전과 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
+VERSION="${1:-v${PROJECT_VERSION}-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || true)"
 if [[ -z "${GIT_COMMIT}" ]]; then
     GIT_COMMIT="unknown"
@@ -28,6 +34,18 @@ if [[ -z "${DOTNET_BIN}" ]]; then
         DOTNET_BIN="${HOME}/.dotnet/dotnet"
     else
         echo "dotnet 실행 파일을 찾지 못했습니다. DOTNET_BIN을 지정하거나 .NET SDK를 설치하십시오." >&2
+        exit 1
+    fi
+fi
+
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_BIN="$(command -v python3)"
+    elif command -v python >/dev/null 2>&1; then
+        PYTHON_BIN="$(command -v python)"
+    else
+        echo "python 실행 파일을 찾지 못했습니다. PYTHON_BIN을 지정하거나 Python을 설치하십시오." >&2
         exit 1
     fi
 fi
@@ -52,7 +70,7 @@ create_zip() {
     local source_dir="$1"
     local target_zip="$2"
 
-    python3 - "${source_dir}" "${target_zip}" <<'PY'
+    "${PYTHON_BIN}" - "${source_dir}" "${target_zip}" <<'PY'
 import pathlib
 import sys
 import zipfile
