@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -11,7 +10,6 @@ using DesktopAudioController.ViewModels;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
-using Forms = System.Windows.Forms;
 using WpfButton = System.Windows.Controls.Button;
 using WpfContextMenu = System.Windows.Controls.ContextMenu;
 using WpfMenuItem = System.Windows.Controls.MenuItem;
@@ -65,8 +63,8 @@ public partial class MainWindow : Window
     // 업데이트 확인 시 prerelease를 포함할지 여부도 설정 저장 직후 메모리에 반영합니다.
     private bool _includePreReleaseUpdates;
 
-    // 시스템 트레이 영역에 표시할 아이콘 인스턴스입니다.
-    private readonly Forms.NotifyIcon _notifyIcon;
+    // 시스템 트레이 아이콘과 메뉴 구성을 담당하는 서비스입니다.
+    private readonly TrayMenuService _trayMenuService;
 
     // 오디오 콜백 스레드와 UI 스레드가 함께 접근하는 새로고침 큐 상태를 직렬화하는 잠금 객체입니다.
     private readonly object _notificationRefreshSyncRoot = new();
@@ -130,9 +128,6 @@ public partial class MainWindow : Window
 
     // 설정창 장치 로딩도 COM 조회이므로 메인 UI를 막지 않게 비동기로 열고, 실패 시 에러로 돌립니다.
     private static readonly TimeSpan SettingsLoadTimeout = TimeSpan.FromSeconds(6);
-
-    // 트레이 메뉴는 실제 표시 내용이 바뀔 때만 다시 구성합니다.
-    private string? _lastTrayMenuSignature;
 
     // 시작 시 제한 모드로 전환됐을 때 상단에 표시할 경고 문구입니다.
     private readonly string? _startupWarningMessage;
@@ -198,7 +193,7 @@ public partial class MainWindow : Window
         _startupWarningMessage = startupWarningMessage;
         _previousRunIncident = previousRunIncident;
         _requiresStartupBackgroundRefresh = requiresStartupBackgroundRefresh;
-        _notifyIcon = CreateNotifyIcon();
+        _trayMenuService = new TrayMenuService(() => RunOnUiThread(RestoreFromTray));
         _sessionRefreshTimer = new DispatcherTimer();
         _sessionRefreshTimer.Tick += SessionRefreshTimer_OnTick;
         _updateCheckTimer = new DispatcherTimer
@@ -560,7 +555,7 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
         StartupStatusText.Visibility = Visibility.Collapsed;
         StartupStatusText.Text = string.Empty;
-        _lastTrayMenuSignature = null;
+        _trayMenuService.InvalidateMenu();
         UpdateEmptyState();
         RefreshTrayMenu(force: true);
     }
@@ -1022,8 +1017,7 @@ public partial class MainWindow : Window
         _sessionRefreshTimer.Tick -= SessionRefreshTimer_OnTick;
         _updateCheckTimer.Stop();
         _updateCheckTimer.Tick -= UpdateCheckTimer_OnTick;
-        _notifyIcon.Visible = false;
-        _notifyIcon.Dispose();
+        _trayMenuService.Dispose();
         base.OnClosed(e);
     }
 
@@ -1097,24 +1091,6 @@ public partial class MainWindow : Window
         return TryOpenReleasePage($"https://github.com/TailFox-Forge/DesktopAudioController/issues/new?labels=bug&title={title}&body={body}");
     }
 
-    /// <summary>
-    /// 시스템 트레이 아이콘과 컨텍스트 메뉴를 생성합니다.
-    /// </summary>
-    private Forms.NotifyIcon CreateNotifyIcon()
-    {
-        // notifyIcon은 창이 숨겨진 상태에서도 사용자가 앱을 복원하거나 종료할 수 있게 해줍니다.
-        var notifyIcon = new Forms.NotifyIcon
-        {
-            Text = "DesktopAudioController",
-            Icon = TryLoadTrayIcon() ?? SystemIcons.Application,
-            Visible = true
-        };
-
-        notifyIcon.ContextMenuStrip = new Forms.ContextMenuStrip();
-        notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
-        return notifyIcon;
-    }
-
     private void ApplyStartupStatus()
     {
         if (string.IsNullOrWhiteSpace(_startupWarningMessage))
@@ -1146,16 +1122,7 @@ public partial class MainWindow : Window
 
     private void ShowTrayNotification(string title, string text)
     {
-        try
-        {
-            _notifyIcon.BalloonTipTitle = title;
-            _notifyIcon.BalloonTipText = text;
-            _notifyIcon.ShowBalloonTip(5000);
-        }
-        catch (Exception exception)
-        {
-            AppLog.Warn("MainWindow", $"트레이 알림 표시 실패 title={title}", exception);
-        }
+        _trayMenuService.ShowNotification(title, text);
     }
 
     private void ShowPreviousRunIncidentIfNeeded()
@@ -1203,26 +1170,6 @@ public partial class MainWindow : Window
                     MessageBoxImage.Warning);
             }
         }));
-    }
-
-    private static Icon? TryLoadTrayIcon()
-    {
-        try
-        {
-            var executablePath = Environment.ProcessPath;
-            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
-            {
-                return null;
-            }
-
-            using var extractedIcon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
-            return extractedIcon?.Clone() as Icon;
-        }
-        catch (Exception exception)
-        {
-            AppLog.Warn("MainWindow", "트레이 아이콘 로드 실패", exception);
-            return null;
-        }
     }
 
     /// <summary>
@@ -1273,7 +1220,7 @@ public partial class MainWindow : Window
             AppLog.Info("MainWindow", "트레이 종료 요청 처리");
             _isExitRequested = true;
             _viewModel.FlushPendingProgramPreferenceSave();
-            _notifyIcon.Visible = false;
+            _trayMenuService.Hide();
             StopAutomaticSessionRefresh();
             Close();
         });
@@ -1288,7 +1235,7 @@ public partial class MainWindow : Window
 
         _isExitRequested = true;
         _viewModel.FlushPendingProgramPreferenceSave();
-        _notifyIcon.Visible = false;
+        _trayMenuService.Hide();
         StopAutomaticSessionRefresh();
         Close();
     }
@@ -1350,127 +1297,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void RefreshTrayMenu(bool force = false)
     {
-        if (_notifyIcon.ContextMenuStrip is null)
-        {
-            return;
-        }
-
         var settings = LoadSettingsForTrayMenu();
-        var trayMenuSignature = BuildTrayMenuSignature(settings);
-        if (!force && string.Equals(_lastTrayMenuSignature, trayMenuSignature, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _lastTrayMenuSignature = trayMenuSignature;
-
-        // trayMenu는 현재 상태 기준으로 완전히 다시 만드는 트레이 메뉴입니다.
-        var trayMenu = _notifyIcon.ContextMenuStrip;
-        trayMenu.Items.Clear();
-
-        var defaultDevice = _viewModel.VisibleDevices.FirstOrDefault(device => device.IsDefault);
-        _notifyIcon.Text = defaultDevice is null
-            ? "DesktopAudioController"
-            : $"DesktopAudioController - 기본: {TrimNotifyText(defaultDevice.Name)}";
-
-        var statusItem = new Forms.ToolStripMenuItem(
-            defaultDevice is null
-                ? "현재 기본 장치: 없음"
-                : $"현재 기본 장치: {defaultDevice.Name}")
-        {
-            Enabled = false
-        };
-
-        trayMenu.Items.Add(statusItem);
-        if (_minimizeToTray)
-        {
-            trayMenu.Items.Add(new Forms.ToolStripMenuItem("닫기 버튼 -> 트레이 최소화")
-            {
-                Enabled = false
-            });
-        }
-
-        trayMenu.Items.Add("창 열기", null, (_, _) => RunOnUiThread(RestoreFromTray));
-        trayMenu.Items.Add("설정 열기", null, (_, _) => RunOnUiThread(() =>
-        {
-            RestoreFromTray();
-            _ = OpenSettingsInternalAsync();
-        }));
-        trayMenu.Items.Add("장치 다시 읽기", null, (_, _) => RunOnUiThread(() =>
-        {
-            _ = RefreshStateViewAsync("tray_refresh");
-        }));
-        trayMenu.Items.Add(BuildAudioProfileTrayMenu(settings));
-        trayMenu.Items.Add("로그 폴더 열기", null, (_, _) => RunOnUiThread(() =>
-        {
-            if (!TryOpenLogFolder())
-            {
-                System.Windows.MessageBox.Show(
-                    this,
-                    "로그 폴더를 열지 못했습니다.",
-                    "로그 폴더 열기 실패",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-            }
-        }));
-
-        if (_viewModel.VisibleDevices.Count > 0)
-        {
-            trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        }
-
-        var deviceMenu = new Forms.ToolStripMenuItem("기본 출력 바꾸기");
-        var muteMenu = new Forms.ToolStripMenuItem("장치 음소거");
-        foreach (var device in _viewModel.VisibleDevices)
-        {
-            // localDevice는 foreach 캡처 안전성을 위한 지역 참조입니다.
-            var localDevice = device;
-            var menuLabel = BuildTrayDeviceMenuLabel(localDevice.Name, localDevice.IsConnected);
-            var defaultItem = new Forms.ToolStripMenuItem(menuLabel)
-            {
-                Checked = localDevice.IsDefault,
-                Enabled = localDevice.IsConnected
-            };
-
-            defaultItem.Click += (_, _) => RunOnUiThread(() =>
-            {
-                try
-                {
-                    TrySetDefaultDevice(localDevice);
-                }
-                catch (Exception exception)
-                {
-                    HandleSetDefaultFailure(localDevice, exception);
-                }
-            });
-
-            var muteItem = new Forms.ToolStripMenuItem(menuLabel)
-            {
-                Checked = localDevice.IsMuted,
-                Enabled = localDevice.IsConnected
-            };
-
-            muteItem.Click += (_, _) => RunOnUiThread(() =>
-            {
-                try
-                {
-                    localDevice.IsMuted = !localDevice.IsMuted;
-                    RefreshTrayMenu(force: true);
-                }
-                catch
-                {
-                    // 트레이 토글 실패는 다음 새로고침에서 복구합니다.
-                }
-            });
-
-            deviceMenu.DropDownItems.Add(defaultItem);
-            muteMenu.DropDownItems.Add(muteItem);
-        }
-
-        trayMenu.Items.Add(deviceMenu);
-        trayMenu.Items.Add(muteMenu);
-        trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        trayMenu.Items.Add("앱 종료", null, (_, _) => ExitApplication());
+        _trayMenuService.Refresh(BuildTrayMenuState(settings), force);
     }
 
     private AppSettings LoadSettingsForTrayMenu()
@@ -1486,33 +1314,75 @@ public partial class MainWindow : Window
         }
     }
 
-    private Forms.ToolStripMenuItem BuildAudioProfileTrayMenu(AppSettings settings)
+    private TrayMenuService.MenuState BuildTrayMenuState(AppSettings settings)
     {
-        var profileMenu = new Forms.ToolStripMenuItem("프로필 적용");
-        if (settings.AudioProfiles.Count == 0)
-        {
-            profileMenu.Enabled = false;
-            return profileMenu;
-        }
-
-        var appliedProfileId = AudioProfileStore.FindAppliedProfileId(settings);
-        foreach (var profile in settings.AudioProfiles.OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase))
-        {
-            var localProfileId = profile.Id;
-            var profileItem = new Forms.ToolStripMenuItem(profile.Name)
+        var devices = _viewModel.VisibleDevices
+            .Select(device =>
             {
-                Checked = string.Equals(profile.Id, appliedProfileId, StringComparison.Ordinal)
-            };
+                var localDevice = device;
+                return new TrayMenuService.Device(
+                    localDevice.Id,
+                    localDevice.Name,
+                    localDevice.IsDefault,
+                    localDevice.IsConnected,
+                    localDevice.IsMuted,
+                    () => RunOnUiThread(() =>
+                    {
+                        try
+                        {
+                            TrySetDefaultDevice(localDevice);
+                        }
+                        catch (Exception exception)
+                        {
+                            HandleSetDefaultFailure(localDevice, exception);
+                        }
+                    }),
+                    () => RunOnUiThread(() =>
+                    {
+                        try
+                        {
+                            localDevice.IsMuted = !localDevice.IsMuted;
+                            RefreshTrayMenu(force: true);
+                        }
+                        catch
+                        {
+                            // 트레이 토글 실패는 다음 새로고침에서 복구합니다.
+                        }
+                    }));
+            })
+            .ToList();
 
-            profileItem.Click += (_, _) => RunOnUiThread(() =>
+        return new TrayMenuService.MenuState(
+            devices,
+            settings,
+            _minimizeToTray,
+            () => RunOnUiThread(RestoreFromTray),
+            () => RunOnUiThread(() =>
             {
-                _ = ApplyAudioProfileFromTrayAsync(localProfileId);
-            });
-
-            profileMenu.DropDownItems.Add(profileItem);
-        }
-
-        return profileMenu;
+                RestoreFromTray();
+                _ = OpenSettingsInternalAsync();
+            }),
+            () => RunOnUiThread(() =>
+            {
+                _ = RefreshStateViewAsync("tray_refresh");
+            }),
+            profileId => RunOnUiThread(() =>
+            {
+                _ = ApplyAudioProfileFromTrayAsync(profileId);
+            }),
+            () => RunOnUiThread(() =>
+            {
+                if (!TryOpenLogFolder())
+                {
+                    System.Windows.MessageBox.Show(
+                        this,
+                        "로그 폴더를 열지 못했습니다.",
+                        "로그 폴더 열기 실패",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+            }),
+            () => ExitApplication());
     }
 
     private async Task ApplyAudioProfileFromTrayAsync(string profileId)
@@ -1543,7 +1413,7 @@ public partial class MainWindow : Window
             _settingsService.Save(appliedSettings);
             _minimizeToTray = appliedSettings.MinimizeToTray;
             _includePreReleaseUpdates = appliedSettings.IncludePreReleaseUpdates;
-            _lastTrayMenuSignature = null;
+            _trayMenuService.InvalidateMenu();
 
             var reloaded = await ReloadViewModelAsync("tray_profile_applied");
             RefreshTrayMenu(force: true);
@@ -1568,19 +1438,6 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
-    }
-
-    /// <summary>
-    /// NotifyIcon 텍스트 길이 제한에 맞춰 장치 이름을 적당히 줄입니다.
-    /// </summary>
-    private static string TrimNotifyText(string text)
-    {
-        return text.Length <= 32 ? text : $"{text[..29]}...";
-    }
-
-    private static string BuildTrayDeviceMenuLabel(string deviceName, bool isConnected)
-    {
-        return isConnected ? deviceName : $"{deviceName} (연결 안 됨)";
     }
 
     /// <summary>
@@ -2090,22 +1947,6 @@ public partial class MainWindow : Window
         }
 
         RefreshTrayMenu(force: true);
-    }
-
-    private string BuildTrayMenuSignature(AppSettings settings)
-    {
-        var deviceSignature = string.Join(
-            "\n",
-            _viewModel.VisibleDevices.Select(device =>
-                $"{device.Id}|{device.Name}|{device.IsDefault}|{device.IsConnected}|{device.IsMuted}"));
-        var appliedProfileId = AudioProfileStore.FindAppliedProfileId(settings) ?? string.Empty;
-        var profileSignature = string.Join(
-            "\n",
-            settings.AudioProfiles
-                .OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase)
-                .Select(profile => $"{profile.Id}|{profile.Name}"));
-
-        return $"{deviceSignature}\nprofiles:{appliedProfileId}\n{profileSignature}";
     }
 
     private NotificationRefreshBatch DrainPendingNotificationBatchLocked()
