@@ -13,6 +13,7 @@ public sealed class SettingsSavePlannerTests
             VisibleDeviceIds = ["device-a", "device-b"],
             StartMinimized = false,
             RunAtWindowsStartup = true,
+            LastAppliedAudioProfileId = "profile-id",
             ProgramAudioPreferences =
             [
                 new ProgramAudioPreference
@@ -52,6 +53,7 @@ public sealed class SettingsSavePlannerTests
         Assert.False(savePlan.Settings.RunAtWindowsStartup);
         Assert.True(savePlan.Settings.EnableDebugLogs);
         Assert.True(savePlan.RequiresRestartToEnableDebugLogs);
+        Assert.Equal("profile-id", savePlan.Settings.LastAppliedAudioProfileId);
         Assert.Single(savePlan.Settings.ProgramAudioPreferences);
         Assert.Single(savePlan.Settings.AudioProfiles);
     }

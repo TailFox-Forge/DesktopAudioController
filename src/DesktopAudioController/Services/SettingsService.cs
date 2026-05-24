@@ -238,6 +238,9 @@ public sealed class SettingsService : ISettingsService
 
         settings.ProgramAudioPreferences = NormalizeProgramAudioPreferences(settings.ProgramAudioPreferences);
         settings.AudioProfiles = NormalizeAudioProfiles(settings.AudioProfiles);
+        settings.LastAppliedAudioProfileId = NormalizeLastAppliedAudioProfileId(
+            settings.LastAppliedAudioProfileId,
+            settings.AudioProfiles);
         return settings;
     }
 
@@ -300,6 +303,21 @@ public sealed class SettingsService : ISettingsService
         }
 
         return normalizedProfiles;
+    }
+
+    private static string NormalizeLastAppliedAudioProfileId(
+        string? lastAppliedAudioProfileId,
+        IEnumerable<AudioProfile> profiles)
+    {
+        var normalizedProfileId = lastAppliedAudioProfileId?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedProfileId))
+        {
+            return string.Empty;
+        }
+
+        return profiles.Any(profile => string.Equals(profile.Id, normalizedProfileId, StringComparison.Ordinal))
+            ? normalizedProfileId
+            : string.Empty;
     }
 
     private static void TryDeleteTemporarySettingsFile(string tempFilePath)

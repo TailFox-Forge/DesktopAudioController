@@ -10,7 +10,7 @@ PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController/DesktopAudioController.csp
 UPDATER_PROJECT_PATH="${REPO_ROOT}/src/DesktopAudioController.Updater/DesktopAudioController.Updater.csproj"
 
 # 사용자가 명시하지 않으면 현재 커밋 기준 로컬 검증용 버전명을 사용합니다.
-VERSION="${1:-v0.16.2-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
+VERSION="${1:-v0.16.3-local-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || true)"
 if [[ -z "${GIT_COMMIT}" ]]; then
     GIT_COMMIT="unknown"

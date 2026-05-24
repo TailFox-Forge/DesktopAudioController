@@ -57,6 +57,11 @@ public sealed class AppSettings
     public List<ProgramAudioPreference> ProgramAudioPreferences { get; set; } = [];
 
     /// <summary>
+    /// 사용자가 마지막으로 명시 적용한 수동 오디오 프로필 ID입니다.
+    /// </summary>
+    public string LastAppliedAudioProfileId { get; set; } = string.Empty;
+
+    /// <summary>
     /// 사용자가 명시적으로 저장하고 적용할 수 있는 수동 오디오 프로필 목록입니다.
     /// </summary>
     public List<AudioProfile> AudioProfiles { get; set; } = [];

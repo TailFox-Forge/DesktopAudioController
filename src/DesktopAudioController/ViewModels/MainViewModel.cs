@@ -1184,6 +1184,7 @@ public sealed class MainViewModel : ObservableObject
                     IsMuted = preference.IsMuted
                 })
                 .ToList(),
+            LastAppliedAudioProfileId = settings.LastAppliedAudioProfileId,
             AudioProfiles = AudioProfileStore.CloneProfiles(settings.AudioProfiles)
         };
     }

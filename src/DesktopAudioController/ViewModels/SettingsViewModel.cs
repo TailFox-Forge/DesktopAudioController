@@ -320,8 +320,13 @@ public sealed class SettingsViewModel : ObservableObject
             throw new InvalidOperationException("선택한 프로필을 설정 파일에서 찾지 못했습니다.");
         }
 
+        if (string.Equals(currentSettings.LastAppliedAudioProfileId, deletedProfileId, StringComparison.Ordinal))
+        {
+            currentSettings.LastAppliedAudioProfileId = string.Empty;
+        }
+
         _settingsService.Save(currentSettings);
-        RefreshAudioProfiles(currentSettings.AudioProfiles);
+        RefreshAudioProfiles(currentSettings.AudioProfiles, AudioProfileStore.FindAppliedProfileId(currentSettings));
         AppLog.Info("SettingsViewModel", $"수동 프로필 삭제 profileId={deletedProfileId}");
     }
 
@@ -381,7 +386,7 @@ public sealed class SettingsViewModel : ObservableObject
         IncludePreReleaseUpdates = snapshot.Settings.IncludePreReleaseUpdates;
         _loadedEnableDebugLogs = snapshot.Settings.EnableDebugLogs;
         EnableDebugLogs = snapshot.Settings.EnableDebugLogs;
-        RefreshAudioProfiles(snapshot.Settings.AudioProfiles, SelectedAudioProfile?.Id);
+        RefreshAudioProfiles(snapshot.Settings.AudioProfiles, AudioProfileStore.FindAppliedProfileId(snapshot.Settings));
         OnPropertyChanged(nameof(ShowsDebugLogRestartWarning));
         RequiresRestartToEnableDebugLogs = false;
     }
@@ -433,16 +438,13 @@ public sealed class SettingsViewModel : ObservableObject
 
     private void RefreshAudioProfiles(IReadOnlyList<AudioProfile> profiles, string? preferredSelectedProfileId = null)
     {
-        var selectedProfileId = preferredSelectedProfileId ?? SelectedAudioProfile?.Id;
-
         AudioProfiles.Clear();
         foreach (var profile in profiles.OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase))
         {
             AudioProfiles.Add(new AudioProfileSelectionViewModel(profile.Id, profile.Name));
         }
 
-        SelectedAudioProfile = AudioProfiles.FirstOrDefault(profile => profile.Id == selectedProfileId)
-            ?? AudioProfiles.FirstOrDefault();
+        SelectedAudioProfile = AudioProfiles.FirstOrDefault(profile => profile.Id == preferredSelectedProfileId);
         OnPropertyChanged(nameof(HasAudioProfiles));
         OnPropertyChanged(nameof(HasSelectedAudioProfile));
     }

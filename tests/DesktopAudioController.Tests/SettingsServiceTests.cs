@@ -23,6 +23,7 @@ public sealed class SettingsServiceTests
             ShowSystemSounds = true,
             ShowOnlyActiveSessions = true,
             EnableDebugLogs = true,
+            LastAppliedAudioProfileId = "profile-game",
             ProgramAudioPreferences =
             [
                 new ProgramAudioPreference
@@ -69,6 +70,7 @@ public sealed class SettingsServiceTests
         Assert.Equal(settings.ShowSystemSounds, loaded.ShowSystemSounds);
         Assert.Equal(settings.ShowOnlyActiveSessions, loaded.ShowOnlyActiveSessions);
         Assert.Equal(settings.EnableDebugLogs, loaded.EnableDebugLogs);
+        Assert.Equal("profile-game", loaded.LastAppliedAudioProfileId);
 
         var preference = Assert.Single(loaded.ProgramAudioPreferences);
         Assert.Equal("path:C:\\Apps\\game.exe", preference.MatchKey);
@@ -268,6 +270,7 @@ public sealed class SettingsServiceTests
             {
               "VisibleDeviceIds": null,
               "ProgramAudioPreferences": null,
+              "LastAppliedAudioProfileId": "missing-profile",
               "AudioProfiles": [
                 {
                   "Id": null,
@@ -289,6 +292,7 @@ public sealed class SettingsServiceTests
 
         Assert.Empty(loaded.VisibleDeviceIds);
         Assert.Empty(loaded.ProgramAudioPreferences);
+        Assert.Empty(loaded.LastAppliedAudioProfileId);
         var profile = Assert.Single(loaded.AudioProfiles);
         Assert.False(string.IsNullOrWhiteSpace(profile.Id));
         Assert.Equal("작업", profile.Name);

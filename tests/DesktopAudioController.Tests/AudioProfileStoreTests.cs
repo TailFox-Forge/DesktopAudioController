@@ -95,8 +95,118 @@ public sealed class AudioProfileStoreTests
         Assert.True(applied.ShowOnlyActiveSessions);
         Assert.True(applied.IncludePreReleaseUpdates);
         Assert.True(applied.EnableDebugLogs);
+        Assert.Equal("profile-id", applied.LastAppliedAudioProfileId);
         Assert.Single(applied.AudioProfiles);
         Assert.Equal("name:Player", Assert.Single(applied.ProgramAudioPreferences).MatchKey);
+    }
+
+    [Fact]
+    public void FindAppliedProfileId_PrefersLastAppliedProfileWhenProfilesShareSettings()
+    {
+        var settings = new AppSettings
+        {
+            VisibleDeviceIds = ["device-a"],
+            LastAppliedAudioProfileId = "profile-b",
+            AudioProfiles =
+            [
+                new AudioProfile
+                {
+                    Id = "profile-a",
+                    Name = "A",
+                    VisibleDeviceIds = ["device-a"]
+                },
+                new AudioProfile
+                {
+                    Id = "profile-b",
+                    Name = "B",
+                    VisibleDeviceIds = ["device-a"]
+                }
+            ]
+        };
+
+        var appliedProfileId = AudioProfileStore.FindAppliedProfileId(settings);
+
+        Assert.Equal("profile-b", appliedProfileId);
+    }
+
+    [Fact]
+    public void FindAppliedProfileId_ReturnsMatchingProfileWhenLastAppliedIsMissing()
+    {
+        var settings = new AppSettings
+        {
+            VisibleDeviceIds = ["device-b", "device-a"],
+            ShowOnlyConnectedDevices = false,
+            ShowSystemSounds = true,
+            ShowOnlyActiveSessions = true,
+            ProgramAudioPreferences =
+            [
+                new ProgramAudioPreference
+                {
+                    MatchKey = "name:Player",
+                    DisplayName = "Player",
+                    CustomDisplayName = "Music",
+                    Volume = 44,
+                    IsMuted = true
+                }
+            ],
+            AudioProfiles =
+            [
+                new AudioProfile
+                {
+                    Id = "profile-a",
+                    Name = "A",
+                    VisibleDeviceIds = ["device-a"],
+                    ShowOnlyConnectedDevices = true
+                },
+                new AudioProfile
+                {
+                    Id = "profile-b",
+                    Name = "B",
+                    VisibleDeviceIds = ["device-a", "device-b"],
+                    ShowOnlyConnectedDevices = false,
+                    ShowSystemSounds = true,
+                    ShowOnlyActiveSessions = true,
+                    ProgramAudioPreferences =
+                    [
+                        new ProgramAudioPreference
+                        {
+                            MatchKey = "name:Player",
+                            DisplayName = "Player",
+                            CustomDisplayName = "Music",
+                            Volume = 44,
+                            IsMuted = true
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var appliedProfileId = AudioProfileStore.FindAppliedProfileId(settings);
+
+        Assert.Equal("profile-b", appliedProfileId);
+    }
+
+    [Fact]
+    public void FindAppliedProfileId_ReturnsNullWhenSettingsNoLongerMatchProfile()
+    {
+        var settings = new AppSettings
+        {
+            VisibleDeviceIds = ["device-custom"],
+            LastAppliedAudioProfileId = "profile-b",
+            AudioProfiles =
+            [
+                new AudioProfile
+                {
+                    Id = "profile-b",
+                    Name = "B",
+                    VisibleDeviceIds = ["device-profile"]
+                }
+            ]
+        };
+
+        var appliedProfileId = AudioProfileStore.FindAppliedProfileId(settings);
+
+        Assert.Null(appliedProfileId);
     }
 
     [Fact]

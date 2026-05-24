@@ -55,6 +55,7 @@ internal static class SettingsSavePlanner
                 ProgramAudioPreferences = currentSettings.ProgramAudioPreferences
                     .Where(preference => !string.IsNullOrWhiteSpace(preference.MatchKey))
                     .ToList(),
+                LastAppliedAudioProfileId = currentSettings.LastAppliedAudioProfileId,
                 AudioProfiles = AudioProfileStore.CloneProfiles(currentSettings.AudioProfiles)
             },
             preservedConfiguredVisibleDevices,

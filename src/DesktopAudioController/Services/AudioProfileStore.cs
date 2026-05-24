@@ -41,8 +41,29 @@ internal static class AudioProfileStore
             IncludePreReleaseUpdates = currentSettings.IncludePreReleaseUpdates,
             EnableDebugLogs = currentSettings.EnableDebugLogs,
             ProgramAudioPreferences = CloneProgramAudioPreferences(profile.ProgramAudioPreferences),
+            LastAppliedAudioProfileId = profile.Id,
             AudioProfiles = CloneProfiles(currentSettings.AudioProfiles)
         };
+    }
+
+    public static string? FindAppliedProfileId(AppSettings settings)
+    {
+        var lastAppliedProfileId = settings.LastAppliedAudioProfileId?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(lastAppliedProfileId))
+        {
+            var lastAppliedProfile = settings.AudioProfiles.FirstOrDefault(profile =>
+                string.Equals(profile.Id, lastAppliedProfileId, StringComparison.Ordinal));
+            if (lastAppliedProfile is not null && ProfileMatchesSettings(lastAppliedProfile, settings))
+            {
+                return lastAppliedProfile.Id;
+            }
+        }
+
+        return settings.AudioProfiles
+            .Where(profile => ProfileMatchesSettings(profile, settings))
+            .OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(profile => profile.Id)
+            .FirstOrDefault();
     }
 
     public static List<AudioProfile> CloneProfiles(IEnumerable<AudioProfile> profiles)
@@ -138,4 +159,64 @@ internal static class AudioProfileStore
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }
+
+    private static bool ProfileMatchesSettings(AudioProfile profile, AppSettings settings)
+    {
+        return EquivalentVisibleDeviceIds(profile.VisibleDeviceIds, settings.VisibleDeviceIds) &&
+            profile.ShowOnlyConnectedDevices == settings.ShowOnlyConnectedDevices &&
+            profile.ShowSystemSounds == settings.ShowSystemSounds &&
+            profile.ShowOnlyActiveSessions == settings.ShowOnlyActiveSessions &&
+            EquivalentProgramAudioPreferences(profile.ProgramAudioPreferences, settings.ProgramAudioPreferences);
+    }
+
+    private static bool EquivalentVisibleDeviceIds(IEnumerable<string> left, IEnumerable<string> right)
+    {
+        return NormalizeVisibleDeviceIds(left).SequenceEqual(NormalizeVisibleDeviceIds(right), StringComparer.Ordinal);
+    }
+
+    private static List<string> NormalizeVisibleDeviceIds(IEnumerable<string> visibleDeviceIds)
+    {
+        return visibleDeviceIds
+            .Where(deviceId => !string.IsNullOrWhiteSpace(deviceId))
+            .Select(deviceId => deviceId.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(deviceId => deviceId, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static bool EquivalentProgramAudioPreferences(
+        IEnumerable<ProgramAudioPreference> left,
+        IEnumerable<ProgramAudioPreference> right)
+    {
+        return BuildPreferenceSignatures(left).SequenceEqual(BuildPreferenceSignatures(right));
+    }
+
+    private static List<ProgramAudioPreferenceSignature> BuildPreferenceSignatures(
+        IEnumerable<ProgramAudioPreference> preferences)
+    {
+        return preferences
+            .Where(preference => preference is not null && !string.IsNullOrWhiteSpace(preference.MatchKey))
+            .Select(preference => new ProgramAudioPreferenceSignature(
+                preference.MatchKey.Trim(),
+                preference.ExecutablePath?.Trim() ?? string.Empty,
+                preference.DisplayName?.Trim() ?? string.Empty,
+                preference.CustomDisplayName?.Trim() ?? string.Empty,
+                preference.Volume,
+                preference.IsMuted))
+            .OrderBy(signature => signature.MatchKey, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(signature => signature.ExecutablePath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(signature => signature.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(signature => signature.CustomDisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(signature => signature.Volume)
+            .ThenBy(signature => signature.IsMuted)
+            .ToList();
+    }
+
+    private sealed record ProgramAudioPreferenceSignature(
+        string MatchKey,
+        string ExecutablePath,
+        string DisplayName,
+        string CustomDisplayName,
+        int Volume,
+        bool IsMuted);
 }
