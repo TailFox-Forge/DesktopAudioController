@@ -414,9 +414,21 @@ public sealed class SettingsViewModel : ObservableObject
         ApplySnapshot(new SettingsSnapshot
         {
             Settings = settings,
-            Devices = _audioDeviceCatalogService.GetAvailableOutputDevices().ToList()
+            Devices = BuildCurrentDeviceSnapshot()
         });
         RequiresRestartToEnableDebugLogs = requiresRestartToEnableDebugLogs;
+    }
+
+    private List<AudioDeviceInfo> BuildCurrentDeviceSnapshot()
+    {
+        return AvailableDevices
+            .Select(device => new AudioDeviceInfo
+            {
+                Id = device.Id,
+                Name = device.DisplayName,
+                IsConnected = device.IsConnected
+            })
+            .ToList();
     }
 
     private void RefreshAudioProfiles(IReadOnlyList<AudioProfile> profiles, string? preferredSelectedProfileId = null)
