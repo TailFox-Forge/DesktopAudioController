@@ -4,7 +4,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 기본 Windows 볼륨 믹서보다 좁은 목적에 맞춰 만들어졌습니다. 사용자가 고른 출력 장치만 메인 화면에 표시하고, 각 장치에서 실제로 소리를 내는 프로그램 세션을 장치 카드 안에서 바로 조절합니다.
 
-- 최신 버전: `v0.16.8`
+- 최신 버전: `v0.16.9`
 - 배포 형태: `win-x64` portable zip
 - 실행 환경: Windows 10/11 x64
 - 릴리즈 페이지: <https://github.com/TailFox-Forge/DesktopAudioController/releases>
@@ -25,7 +25,7 @@ DesktopAudioController는 Windows에서 여러 출력 장치를 자주 바꾸거
 
 ## 빠른 시작
 
-1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.16.8-win-x64.zip`을 다운로드합니다.
+1. [릴리즈 페이지](https://github.com/TailFox-Forge/DesktopAudioController/releases)에서 `DesktopAudioController-v0.16.9-win-x64.zip`을 다운로드합니다.
 2. 원하는 위치에 압축을 풉니다.
 
 ```text
@@ -391,6 +391,8 @@ DesktopAudioController/
   LICENSE
   docs/
     design.md
+    roadmap.md
+    regression-checklist.md
     release-notes-template.md
     v1-release-criteria.md
     images/
@@ -480,6 +482,8 @@ DesktopAudioController/
 ## 문서와 릴리즈
 
 - 설계 문서: [docs/design.md](docs/design.md)
+- 로드맵: [docs/roadmap.md](docs/roadmap.md)
+- 회귀 검증 체크리스트: [docs/regression-checklist.md](docs/regression-checklist.md)
 - v1.0.0 출고 기준: [docs/v1-release-criteria.md](docs/v1-release-criteria.md)
 - 릴리즈 노트 템플릿: [docs/release-notes-template.md](docs/release-notes-template.md)
 - GitHub Releases: <https://github.com/TailFox-Forge/DesktopAudioController/releases>
