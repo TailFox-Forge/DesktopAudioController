@@ -49,7 +49,7 @@ public sealed class DiagnosticPackageServiceTests
         File.WriteAllText(runStateFilePath, """{ "IsRunning": true }""");
         File.WriteAllText(
             logFilePath,
-            "2026-05-24 [INFO] deviceId={0.0.0.00000000}.{log-secret} path=C:\\Users\\tester\\DesktopAudioController\\settings.json");
+            "2026-05-24 [INFO] deviceId={0.0.0.00000000}.{log-secret} path=C:\\Users\\tester\\DesktopAudioController\\settings.json executablePath=[path:DesktopAudioController.exe]");
         File.SetLastWriteTimeUtc(logFilePath, new DateTime(2026, 5, 24, 0, 0, 0, DateTimeKind.Utc));
 
         var service = new DiagnosticPackageService(
@@ -74,6 +74,8 @@ public sealed class DiagnosticPackageServiceTests
         Assert.Contains("[id:", snapshotEntryContent, StringComparison.Ordinal);
         Assert.Contains("[id:", logEntryContent, StringComparison.Ordinal);
         Assert.Contains("[path:settings.json]", logEntryContent, StringComparison.Ordinal);
+        Assert.Contains("executablePath=[path:DesktopAudioController.exe]", logEntryContent, StringComparison.Ordinal);
+        Assert.DoesNotContain("[path:[path:", logEntryContent, StringComparison.Ordinal);
         Assert.Contains("\"Version\":", diagnosticInfoContent, StringComparison.Ordinal);
         Assert.DoesNotContain("device-secret", settingsEntryContent, StringComparison.Ordinal);
         Assert.DoesNotContain("snapshot-secret", snapshotEntryContent, StringComparison.Ordinal);

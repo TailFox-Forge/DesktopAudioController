@@ -203,6 +203,11 @@ internal static class DiagnosticRedactor
             return "[id:redacted]";
         }
 
+        if (IsAlreadyMaskedIdentifier(trimmed))
+        {
+            return trimmed;
+        }
+
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(trimmed)));
         return $"[id:{hash[..8]}]";
     }
@@ -213,6 +218,16 @@ internal static class DiagnosticRedactor
         if (string.IsNullOrWhiteSpace(trimmed))
         {
             return "[path:redacted]";
+        }
+
+        if (TryGetAlreadyMaskedPath(trimmed, out var maskedPath))
+        {
+            return maskedPath;
+        }
+
+        if (TryUnwrapMaskedPath(trimmed, out var unwrappedPath))
+        {
+            trimmed = unwrappedPath;
         }
 
         var normalized = trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -229,5 +244,45 @@ internal static class DiagnosticRedactor
         }
 
         return $"[path:{fileName}]";
+    }
+
+    private static bool IsAlreadyMaskedIdentifier(string value)
+    {
+        return value.StartsWith("[id:", StringComparison.Ordinal) &&
+            value.EndsWith(']');
+    }
+
+    private static bool TryGetAlreadyMaskedPath(string value, out string maskedPath)
+    {
+        maskedPath = string.Empty;
+        if (!value.StartsWith("[path:", StringComparison.Ordinal) ||
+            !value.EndsWith(']'))
+        {
+            return false;
+        }
+
+        var inner = value["[path:".Length..^1];
+        if (string.IsNullOrWhiteSpace(inner) ||
+            inner.Contains('\\', StringComparison.Ordinal) ||
+            inner.Contains('/', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        maskedPath = value;
+        return true;
+    }
+
+    private static bool TryUnwrapMaskedPath(string value, out string unwrappedPath)
+    {
+        unwrappedPath = string.Empty;
+        if (!value.StartsWith("[path:", StringComparison.Ordinal) ||
+            !value.EndsWith(']'))
+        {
+            return false;
+        }
+
+        unwrappedPath = value["[path:".Length..^1];
+        return true;
     }
 }

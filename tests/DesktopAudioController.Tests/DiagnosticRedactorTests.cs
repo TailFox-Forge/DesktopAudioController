@@ -49,4 +49,31 @@ public sealed class DiagnosticRedactorTests
         Assert.DoesNotContain("profile-secret", content, StringComparison.Ordinal);
         Assert.DoesNotContain("C:\\Users\\tester", content, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void RedactText_DoesNotDoubleMaskAlreadyRedactedValues()
+    {
+        var content = DiagnosticRedactor.RedactText(
+            "executablePath=[path:DesktopAudioController.exe] outputPath=[path:probe.json] deviceId=[id:1234ABCD] profileId=[id:5678EF90] sessionId=[id:ABCDEF12] path=[path:settings.json]");
+
+        Assert.Contains("executablePath=[path:DesktopAudioController.exe]", content, StringComparison.Ordinal);
+        Assert.Contains("outputPath=[path:probe.json]", content, StringComparison.Ordinal);
+        Assert.Contains("deviceId=[id:1234ABCD]", content, StringComparison.Ordinal);
+        Assert.Contains("profileId=[id:5678EF90]", content, StringComparison.Ordinal);
+        Assert.Contains("sessionId=[id:ABCDEF12]", content, StringComparison.Ordinal);
+        Assert.Contains("path=[path:settings.json]", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("[path:[path:", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("[id:[id:", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RedactText_ReMasksUnsafePathInsideMaskedWrapper()
+    {
+        var content = DiagnosticRedactor.RedactText(
+            "executablePath=[path:C:\\Users\\tester\\Apps\\player.exe]");
+
+        Assert.Contains("executablePath=[path:player.exe]", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("C:\\Users\\tester", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("[path:[path:", content, StringComparison.Ordinal);
+    }
 }
