@@ -67,6 +67,20 @@ public sealed class DiagnosticRedactorTests
     }
 
     [Fact]
+    public void RedactText_ReMasksUnsafeIdInsideMaskedWrapper()
+    {
+        var content = DiagnosticRedactor.RedactText(
+            "deviceId=[id:{0.0.0.00000000}.{31eb64c3-5812-4a38-a735-251180dbf545}] defaultDeviceId=[id:{0.0.0.00000000}.{e7b2e3cb-062d-4b2d-878b-d37a1686b71a}]");
+
+        Assert.Contains("deviceId=[id:", content, StringComparison.Ordinal);
+        Assert.Contains("defaultDeviceId=[id:", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("{0.0.0.00000000}", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("31eb64c3", content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("e7b2e3cb", content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("[id:[id:", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RedactText_ReMasksUnsafePathInsideMaskedWrapper()
     {
         var content = DiagnosticRedactor.RedactText(

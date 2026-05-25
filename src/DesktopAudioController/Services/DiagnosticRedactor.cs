@@ -248,8 +248,19 @@ internal static class DiagnosticRedactor
 
     private static bool IsAlreadyMaskedIdentifier(string value)
     {
-        return value.StartsWith("[id:", StringComparison.Ordinal) &&
-            value.EndsWith(']');
+        if (!value.StartsWith("[id:", StringComparison.Ordinal) ||
+            !value.EndsWith(']'))
+        {
+            return false;
+        }
+
+        var inner = value["[id:".Length..^1];
+        if (string.Equals(inner, "redacted", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return inner.Length == 8 && inner.All(Uri.IsHexDigit);
     }
 
     private static bool TryGetAlreadyMaskedPath(string value, out string maskedPath)
