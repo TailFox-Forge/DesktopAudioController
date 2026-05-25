@@ -76,4 +76,17 @@ public sealed class DiagnosticRedactorTests
         Assert.DoesNotContain("C:\\Users\\tester", content, StringComparison.Ordinal);
         Assert.DoesNotContain("[path:[path:", content, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void RedactText_MasksPackagePathWithSpaces()
+    {
+        var content = DiagnosticRedactor.RedactText(
+            "packagePath=C:\\Users\\tester\\Desktop Audio Controller\\DesktopAudioController diagnostics.zip issuePageOpened=True clipboardCopied=True");
+
+        Assert.Contains("packagePath=[path:DesktopAudioController diagnostics.zip]", content, StringComparison.Ordinal);
+        Assert.Contains("issuePageOpened=True", content, StringComparison.Ordinal);
+        Assert.Contains("clipboardCopied=True", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("C:\\Users\\tester", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Desktop Audio Controller", content, StringComparison.Ordinal);
+    }
 }

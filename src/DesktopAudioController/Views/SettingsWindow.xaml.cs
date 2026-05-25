@@ -163,15 +163,7 @@ public partial class SettingsWindow : Window
 
     private void ExportDiagnosticPackageButton_OnClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new Microsoft.Win32.SaveFileDialog
-        {
-            Title = "진단 패키지 내보내기",
-            Filter = "ZIP 진단 패키지 (*.zip)|*.zip|모든 파일 (*.*)|*.*",
-            FileName = $"DesktopAudioController-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
-            AddExtension = true,
-            DefaultExt = ".zip",
-            OverwritePrompt = true
-        };
+        var dialog = CreateDiagnosticPackageSaveDialog("진단 패키지 내보내기");
 
         if (dialog.ShowDialog(this) != true)
         {
@@ -198,6 +190,115 @@ public partial class SettingsWindow : Window
                 "진단 패키지 내보내기 실패",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+        }
+    }
+
+    private void ExportDiagnosticIssueDraftButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = CreateDiagnosticPackageSaveDialog("진단 패키지 및 이슈 작성");
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var draft = _viewModel.ExportDiagnosticIssueDraft(dialog.FileName);
+            var copiedToClipboard = TryCopyIssueBodyToClipboard(draft.Body);
+            var openedIssuePage = TryOpenIssueDraftPage(draft.IssueUrl);
+            var openedPackageFolder = TryOpenPackageFolder(draft.DiagnosticPackagePath);
+            AppLog.Info(
+                "SettingsWindow",
+                $"진단 이슈 초안 생성 성공 packagePath={draft.DiagnosticPackagePath} issuePageOpened={openedIssuePage} folderOpened={openedPackageFolder} clipboardCopied={copiedToClipboard}");
+
+            var clipboardText = copiedToClipboard
+                ? "이슈 본문도 클립보드에 복사했습니다."
+                : "클립보드 복사는 실패했습니다. 열린 이슈 화면의 본문을 확인해 주세요.";
+            var issuePageText = openedIssuePage
+                ? "GitHub 이슈 작성 화면을 열었습니다."
+                : "GitHub 이슈 작성 화면을 열지 못했습니다.";
+            var folderText = openedPackageFolder
+                ? "진단 패키지 위치도 열었습니다."
+                : $"진단 패키지 경로: {draft.DiagnosticPackagePath}";
+
+            System.Windows.MessageBox.Show(
+                this,
+                $"진단 패키지와 이슈 초안을 만들었습니다.\n\n{issuePageText}\n{clipboardText}\n{folderText}\n\n공개 전 zip 내용과 이슈 본문을 확인한 뒤 직접 제출/첨부해 주세요.",
+                "진단 이슈 초안 생성 완료",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception exception)
+        {
+            AppLog.Error("SettingsWindow", "진단 이슈 초안 생성 실패", exception);
+            System.Windows.MessageBox.Show(
+                this,
+                $"진단 이슈 초안을 만들지 못했습니다.\n\n원인: {exception.Message}",
+                "진단 이슈 초안 생성 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private static Microsoft.Win32.SaveFileDialog CreateDiagnosticPackageSaveDialog(string title)
+    {
+        return new Microsoft.Win32.SaveFileDialog
+        {
+            Title = title,
+            Filter = "ZIP 진단 패키지 (*.zip)|*.zip|모든 파일 (*.*)|*.*",
+            FileName = $"DesktopAudioController-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
+            AddExtension = true,
+            DefaultExt = ".zip",
+            OverwritePrompt = true
+        };
+    }
+
+    private static bool TryCopyIssueBodyToClipboard(string issueBody)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(issueBody);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("SettingsWindow", "진단 이슈 본문 클립보드 복사 실패", exception);
+            return false;
+        }
+    }
+
+    private static bool TryOpenIssueDraftPage(string issueUrl)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(issueUrl)
+            {
+                UseShellExecute = true
+            });
+            return true;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("SettingsWindow", "GitHub 이슈 작성 화면 열기 실패", exception);
+            return false;
+        }
+    }
+
+    private static bool TryOpenPackageFolder(string packagePath)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{packagePath}\"")
+            {
+                UseShellExecute = true
+            });
+            return true;
+        }
+        catch (Exception exception)
+        {
+            AppLog.Warn("SettingsWindow", $"진단 패키지 위치 열기 실패 path={packagePath}", exception);
+            return false;
         }
     }
 

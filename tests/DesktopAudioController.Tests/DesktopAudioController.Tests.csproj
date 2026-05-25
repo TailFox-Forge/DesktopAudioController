@@ -40,6 +40,8 @@
     <Compile Include="..\..\src\DesktopAudioController\Services\AutomaticUpdateService.cs" Link="Source\Services\AutomaticUpdateService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\GitHubReleaseUpdateCheckService.cs" Link="Source\Services\GitHubReleaseUpdateCheckService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\DiagnosticPackageService.cs" Link="Source\Services\DiagnosticPackageService.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\DiagnosticIssueDraft.cs" Link="Source\Services\DiagnosticIssueDraft.cs" />
+    <Compile Include="..\..\src\DesktopAudioController\Services\DiagnosticIssueDraftService.cs" Link="Source\Services\DiagnosticIssueDraftService.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\DiagnosticRedactor.cs" Link="Source\Services\DiagnosticRedactor.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\IconSourcePathResolver.cs" Link="Source\Services\IconSourcePathResolver.cs" />
     <Compile Include="..\..\src\DesktopAudioController\Services\ISettingsService.cs" Link="Source\Services\ISettingsService.cs" />

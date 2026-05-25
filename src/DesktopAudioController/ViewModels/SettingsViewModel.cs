@@ -265,6 +265,16 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 진단 패키지를 만들고 GitHub 이슈 작성 화면에 넣을 redacted 초안을 생성합니다.
+    /// </summary>
+    public DiagnosticIssueDraft ExportDiagnosticIssueDraft(string destinationZipPath)
+    {
+        var packagePath = ExportDiagnosticPackage(destinationZipPath);
+        var draftService = new DiagnosticIssueDraftService();
+        return draftService.BuildDraft(packagePath);
+    }
+
+    /// <summary>
     /// 외부 JSON 설정 파일을 현재 앱 설정으로 저장하고 화면 상태에도 반영합니다.
     /// </summary>
     public void ImportSettings(string sourceFilePath)

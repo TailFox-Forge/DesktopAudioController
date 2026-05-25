@@ -12,7 +12,7 @@ namespace DesktopAudioController.Services;
 internal static class DiagnosticRedactor
 {
     private static readonly Regex SensitiveKeyPattern = new(
-        @"(?<key>\b(?:deviceId|sessionId|defaultDeviceId|groupingId|profileId|matchKey|path|backup|iconPath|executablePath|outputPath|settingsPath|logDirectory|snapshotPath)=)(?<value>.*?)(?=\s+\w+=|$)",
+        @"(?<key>\b(?:deviceId|sessionId|defaultDeviceId|groupingId|profileId|matchKey|path|backup|iconPath|executablePath|outputPath|packagePath|settingsPath|logDirectory|snapshotPath)=)(?<value>.*?)(?=\s+\w+=|$)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex GenericWindowsPathPattern = new(
@@ -190,7 +190,7 @@ internal static class DiagnosticRedactor
         return key switch
         {
             "deviceId=" or "sessionId=" or "defaultDeviceId=" or "groupingId=" or "profileId=" or "matchKey=" => MaskIdentifier(value),
-            "path=" or "backup=" or "iconPath=" or "executablePath=" or "outputPath=" or "settingsPath=" or "logDirectory=" or "snapshotPath=" => MaskPathValue(value),
+            "path=" or "backup=" or "iconPath=" or "executablePath=" or "outputPath=" or "packagePath=" or "settingsPath=" or "logDirectory=" or "snapshotPath=" => MaskPathValue(value),
             _ => value
         };
     }

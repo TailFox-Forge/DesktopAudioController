@@ -178,11 +178,16 @@
                            Foreground="#666"
                            Text="켜면 장치 열거, 세션 조회, 새로고침 단계 같은 DEBUG 로그를 함께 기록합니다."
                            TextWrapping="Wrap" />
-                <Button Width="168"
-                        Margin="24,0,0,12"
-                        HorizontalAlignment="Left"
-                        Click="ExportDiagnosticPackageButton_OnClick"
-                        Content="진단 패키지 내보내기" />
+                <WrapPanel Margin="24,0,0,12">
+                    <Button Width="168"
+                            Margin="0,0,8,8"
+                            Click="ExportDiagnosticPackageButton_OnClick"
+                            Content="진단 패키지 내보내기" />
+                    <Button Width="208"
+                            Margin="0,0,8,8"
+                            Click="ExportDiagnosticIssueDraftButton_OnClick"
+                            Content="진단 패키지 및 이슈 작성" />
+                </WrapPanel>
                 <TextBlock Margin="24,-4,0,12"
                            Foreground="#B35A00"
                            Text="저장하면 처음부터 디버그 로그를 기록하기 위해 앱이 자동으로 재시작됩니다."
